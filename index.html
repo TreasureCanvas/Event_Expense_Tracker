@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<!--
+  ==========================================================================
+  ⚠️ ไฟล์นี้ต้องถูกวางไว้ 2 ที่ ให้เนื้อหาตรงกันเป๊ะเสมอ:
+  1. Apps Script Editor > ไฟล์ HTML ชื่อ "index" (ไม่ต้องมี .html ต่อท้ายตอนตั้งชื่อ)
+     - นี่คือไฟล์ที่ระบบใช้จริงตอนพนักงานกดลิงก์ .../exec?page=form&event=EV-xxxx
+     - ถ้าลืมอัปเดตไฟล์นี้ ลิงก์ที่แชร์ออกไปจะยังเป็น "ดีไซน์เก่า" อยู่ตลอด
+       แม้จะแก้ไฟล์ที่วางใน Google Sites ไปแล้วก็ตาม เพราะเป็นคนละไฟล์กัน!
+  2. (ถ้าต้องการ) วางในกล่อง "Embed code" ของ Google Sites เพื่อทำหน้า
+     Landing Page อธิบายระบบ - ไม่บังคับ ไม่ใช่ลิงก์หลักที่ส่งให้พนักงานกรอกฟอร์ม
+
+  🎨 แก้สี/ธีมของหน้านี้: ดูตัวแปร CSS ในบล็อก :root{...} ด้านล่างนี้เลย
+  (บรรทัดถัดจากนี้ไม่กี่บรรทัด) เปลี่ยนค่าสีตรงนั้นที่เดียว มีผลกับทั้งหน้า
+  ==========================================================================
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ใบเบิกค่าเดินทาง</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+  /* ===== 🎨 ธีมสีหลักของทั้งหน้า - แก้ตรงนี้ที่เดียว ===== */
+  :root{
+    --brand:#FE6D43; --brand-dark:#222222; --accent:#e8a33d;
+    --bg:#F6F7FB; --card:#ffffff; --line:#e2e5e1; --text:#20281f;
+    --muted:#686868; --danger:#c0392b; --ok:#1f7a4d; --warn:#b9770e;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:'Sarabun',sans-serif; font-size:15px; line-height:1.55;
+    padding:18px;
+  }
+  .wrap{max-width:760px; margin:0 auto;}
+  h1{font-size:20px; color:var(--brand-dark); margin:0 0 4px;}
+  .sub{color:var(--muted); margin:0 0 20px; font-size:13.5px;}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:18px 18px 20px; margin-bottom:16px; box-shadow:0 1px 2px rgba(0,0,0,.03);
+  }
+  .card h2{font-size:15.5px; margin:0 0 14px; color:var(--brand-dark); display:flex; align-items:center; gap:8px;}
+  .card h2 .badge{background:var(--brand); color:#fff; border-radius:20px; font-size:12px; padding:2px 9px; font-weight:600;}
+  label{display:block; font-size:13px; color:var(--muted); margin-bottom:5px; font-weight:600;}
+  input, select{
+    width:100%; padding:10px 11px; border:1px solid var(--line); border-radius:9px;
+    font-family:inherit; font-size:14.5px; background:#fff; color:var(--text);
+  }
+  input:focus, select:focus{outline:none; border-color:var(--brand);}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .field{margin-bottom:12px;}
+  .trip-section-title{
+    display:flex; align-items:center; gap:8px; margin:22px 0 12px; font-size:15.5px; font-weight:700; color:var(--brand-dark);
+  }
+  .trip-section-title:first-child{margin-top:0;}
+  .trip-section-title .arrow{font-size:18px;}
+  .day-block{border:1.5px solid var(--line); border-radius:12px; padding:14px; margin-bottom:16px; background:#fbfbfd;}
+  .day-header{display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap; margin-bottom:4px;}
+  .segment{
+    background:#fff; border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px;
+  }
+  .segment-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;}
+  /* custom dropdown for segment type - built from details/summary instead of a
+     native <select>, since native dropdown popups can misbehave inside
+     sandboxed iframes (e.g. when this form is embedded via Google Sites) */
+  .type-dropdown{position:relative; min-width:170px;}
+  .type-dropdown summary{
+    list-style:none; cursor:pointer; padding:9px 30px 9px 11px; border:1px solid var(--line); border-radius:9px;
+    background:#fff; font-size:14px; display:block; position:relative; user-select:none;
+  }
+  .type-dropdown summary::-webkit-details-marker{display:none;}
+  .type-dropdown summary::after{content:'▾'; position:absolute; right:11px; top:50%; transform:translateY(-50%); font-size:11px; color:var(--muted);}
+  .type-dropdown[open] summary::after{content:'▴';}
+  .type-dropdown[open] summary{border-color:var(--brand);}
+  .type-options{
+    position:absolute; z-index:50; top:calc(100% + 4px); left:0; min-width:220px; max-height:260px; overflow-y:auto;
+    background:#fff; border:1px solid var(--line); border-radius:9px; box-shadow:0 4px 14px rgba(0,0,0,.14); padding:4px;
+  }
+  .type-options .type-opt{padding:8px 10px; border-radius:6px; cursor:pointer; font-size:14px;}
+  .type-options .type-opt:hover{background:#f1f4f0;}
+  .type-options .type-opt.active{background:var(--brand); color:#fff;}
+  .amount-line{
+    display:flex; justify-content:space-between; align-items:center; margin-top:8px;
+    font-size:13.5px; color:var(--muted);
+  }
+  .amount-line b{color:var(--brand-dark); font-size:15px;}
+  .trip-total-line{
+    display:flex; justify-content:space-between; font-size:14px; color:var(--brand-dark);
+    font-weight:700; padding:8px 2px 4px; border-top:1px dashed var(--line); margin-top:4px;
+  }
+  .attach-box{margin-top:9px;}
+  .attach-box .preview-list{margin-top:8px; display:flex; flex-wrap:wrap; gap:8px;}
+  .attach-thumb{position:relative; display:inline-flex; align-items:center; gap:6px; background:#f1f4f0; border-radius:8px; padding:4px 8px 4px 4px;}
+  .attach-thumb img{height:38px; width:38px; object-fit:cover; border-radius:6px;}
+  .attach-thumb a{font-size:12px; color:var(--brand-dark);}
+  .attach-thumb .rm{cursor:pointer; color:var(--danger); font-weight:700; font-size:13px; padding:0 3px;}
+  .attach-warn{color:var(--danger); font-size:12.5px; margin-top:5px; display:none;}
+  .btn{
+    border:none; border-radius:9px; padding:9px 15px; font-family:inherit; font-weight:600;
+    font-size:13.5px; cursor:pointer; transition:.15s;
+  }
+  .btn-primary{background:var(--brand); color:#fff;}
+  .btn-primary:hover{background:var(--brand-dark);}
+  .btn-outline{background:#fff; border:1px solid var(--line); color:var(--text);}
+  .btn-outline:hover{border-color:var(--brand);}
+  .btn-ghost{background:transparent; color:var(--danger); padding:6px 10px; font-size:12.5px;}
+  .btn-add-segment{width:100%; border:1.5px dashed #c9d2c6; background:#fff; color:var(--brand-dark);}
+  .footer-actions{display:flex; gap:10px; flex-wrap:wrap; margin-top:6px;}
+  .total-box{
+    background:var(--brand); color:#fff; border-radius:var(--radius); padding:16px 18px;
+    display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;
+  }
+  .total-box .num{font-size:24px; font-weight:700;}
+  textarea.summary-preview{
+    width:100%; min-height:170px; font-family:monospace; font-size:12.5px; padding:10px;
+    border:1px solid var(--line); border-radius:9px; background:#fafbf9; white-space:pre;
+  }
+  .msg{padding:11px 13px; border-radius:9px; font-size:13.5px; margin-bottom:14px; display:none;}
+  .msg.err{background:#fdeceb; color:var(--danger); border:1px solid #f3c6c1;}
+  .msg.ok{background:#eaf6ef; color:var(--ok); border:1px solid #bfe5cd;}
+  .msg.warn{background:#fdf3e2; color:var(--warn); border:1px solid #f3ddb0;}
+  .hint{font-size:12px; color:var(--muted); margin-top:3px;}
+  #printArea{position:fixed; left:-9999px; top:0; width:700px; background:#fff; padding:36px; font-family:'Sarabun',sans-serif; color:#20281f;}
+  #pHeaderBlock{padding:4px 8px 4px 4px; background:#fff;}
+  #pFooterBlock{padding:4px 8px 4px 4px; background:#fff;}
+  #printArea .day-block{padding:4px 4px 12px 4px; background:#fff;}
+  #printArea .doc-header{display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #FE6D43; padding-bottom:14px; margin-bottom:18px;}
+  #printArea .doc-title{font-size:22px; font-weight:700; color:#222222; margin:0;}
+  #printArea .doc-subtitle{font-size:13px; color:#686868; margin-top:3px;}
+  #printArea .doc-id{font-size:12px; color:#686868; text-align:right;}
+  #printArea .meta-box{background:#F6F7FB; border-radius:10px; padding:14px 16px; margin-bottom:18px; font-size:13px; display:grid; grid-template-columns:1fr 1fr; gap:6px 18px;}
+  #printArea .meta-box .label{color:#686868; font-weight:600;}
+  #printArea .day-title{font-size:15px; font-weight:700; color:#222222; background:#FE6D43; color:#fff; padding:6px 12px; border-radius:6px 6px 0 0; margin:20px 0 0;}
+  #printArea .dir-title{font-size:13px; font-weight:700; color:#222222; margin:10px 0 3px;}
+  #printArea h2{font-size:18px; margin:0 0 2px;}
+  #printArea h3{font-size:14px; margin:16px 0 4px; color:#222222;}
+  #printArea table{width:100%; border-collapse:collapse; font-size:12px; margin-top:4px;}
+  #printArea th, #printArea td{border:1px solid #ddd; padding:6px 8px; text-align:left;}
+  #printArea th{background:#eef2ec;}
+  #printArea td.amt, #printArea th.amt{text-align:right;}
+  #printArea .subtotal-row td{background:#fafafa; font-weight:600;}
+  #printArea .grand-total-box{background:#222222; color:#fff; border-radius:10px; padding:14px 18px; margin-top:22px; display:flex; justify-content:space-between; align-items:center; font-size:16px; font-weight:700;}
+  #printArea .sign-area{display:grid; grid-template-columns:1fr 1fr; gap:40px; margin-top:56px;}
+  #printArea .sign-line{border-top:1px solid #888; padding-top:6px; font-size:12px; color:#686868; text-align:center;}
+  .req{color:var(--danger);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📋 ใบเบิกค่าเดินทาง (เชื่อมโยงกิจกรรม)</h1>
+  <p class="sub" id="eventLabel">กำลังโหลดข้อมูลกิจกรรม...</p>
+
+  <div class="msg err" id="msgErr"></div>
+  <div class="msg ok" id="msgOk"></div>
+  <div class="msg warn" id="msgWarn"></div>
+
+  <!-- META -->
+  <div class="card">
+    <h2><span class="badge">1</span> ข้อมูลผู้เบิก</h2>
+    <div class="grid2">
+      <div class="field">
+        <label>ชื่อผู้เบิก (ชื่อ-นามสกุล) <span class="req">*</span></label>
+        <input id="employeeName" list="employeeSuggestions" placeholder="เช่น สมชาย ใจดี" onblur="onEmployeeBlur()">
+        <datalist id="employeeSuggestions"></datalist>
+      </div>
+      <div class="field">
+        <label>แผนก/ฝ่าย <span class="req">*</span></label>
+        <input id="department" placeholder="เช่น ฝ่ายการตลาด">
+      </div>
+    </div>
+    <div class="field">
+      <label>วัตถุประสงค์การเดินทาง <span class="req">*</span></label>
+      <input id="purpose" placeholder="เช่น ประชุมลูกค้า, อบรมประจำปี">
+    </div>
+    <div class="field">
+      <label>ราคาน้ำมันอ้างอิง (แก๊สโซฮอล์ 91) บาท/ลิตร</label>
+      <input id="fuelPrice" type="number" step="0.01" min="0" value="34.57"
+        onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '34.57';">
+      <div class="hint">ราคานี้เป็นค่าอ้างอิงที่ปรับปรุงด้วยมือเป็นระยะ ไม่ใช่ราคาสดแบบเรียลไทม์ — กรุณาตรวจสอบราคาจริงวันที่เดินทาง (เช่นที่ gasprice.kapook.com) แล้วแก้ไขให้ตรงได้เสมอ</div>
+    </div>
+  </div>
+
+  <!-- TRIPS: one block per day, each with ขาไป + ขากลับ -->
+  <div class="card">
+    <h2><span class="badge">2</span> รายการเดินทาง</h2>
+    <div id="tripsContainer"></div>
+  </div>
+
+  <!-- TOTAL -->
+  <div class="total-box">
+    <span>ยอดรวมทั้งหมด</span>
+    <span class="num" id="grandTotal">0.00 บาท</span>
+  </div>
+
+  <!-- OUTPUT -->
+  <div class="card">
+    <h2><span class="badge">3</span> ตรวจสอบก่อนส่งเอกสาร</h2>
+    <label>สรุปสำหรับคัดลอกเก็บไว้/ส่งต่อ</label>
+    <textarea class="summary-preview" id="summaryPreview" readonly></textarea>
+    <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:600; cursor:pointer;">
+      <input type="checkbox" id="compressImages" checked style="width:auto;">
+      🗜️ ย่อรูปหลักฐานให้ไฟล์ PDF เล็กลง (ย่อขนาดภาพ ไม่ใช่บีบคุณภาพ — ยังคมชัด อ่านได้ปกติ, เหมาะสำหรับส่งอีเมล)
+    </label>
+    <div class="hint">ค่าเริ่มต้น: ย่อรูป (ไฟล์เล็กลงมาก คุณภาพยังชัดเจนอ่านได้ปกติ) — เอาติ๊กออกถ้าต้องการฝังรูปคุณภาพต้นฉบับเต็ม (ไฟล์จะใหญ่ขึ้นมาก)</div>
+    <div class="footer-actions" style="margin-top:14px;">
+      <button class="btn btn-outline" onclick="downloadPdf()">⬇️ ดาวน์โหลด PDF</button>
+      <button class="btn btn-primary" onclick="submitForm()">✅ ยืนยันส่งเอกสาร</button>
+    </div>
+  </div>
+  <div style="text-align:center; color:var(--muted); font-size:11px; margin-top:20px;">Build: 2026-07-22-v10 (index.html)</div>
+</div>
+
+<!-- hidden printable template used by jsPDF (captured via html2canvas so Thai fonts render correctly as pixels) -->
+<div id="printArea">
+  <div id="pHeaderBlock">
+    <div class="doc-header">
+      <div>
+        <p class="doc-title">เอกสารค่าเดินทาง</p>
+        <p class="doc-subtitle" id="pEventName"></p>
+      </div>
+      <div class="doc-id">
+        วันที่ออกเอกสาร: <span id="pIssueDate"></span>
+      </div>
+    </div>
+    <div class="meta-box" id="pMeta"></div>
+  </div>
+  <div id="pDaysWrap"></div>
+  <div id="pFooterBlock">
+    <div class="grand-total-box"><span>ยอดรวมทั้งสิ้น</span><span id="pTotal"></span></div>
+    <div class="sign-area">
+      <div class="sign-line">ลงชื่อผู้เบิก / วันที่</div>
+      <div class="sign-line">ลงชื่อผู้อนุมัติ / วันที่</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   CONFIG — แก้ตรงนี้หลัง Deploy Google Apps Script แล้ว
+   ========================================================= */
+const API_URL = 'https://script.google.com/macros/s/AKfycbx-HTaZ-LBl47XG4thlunfa8t0NSP6xwOAJr4QYMbSViHtkSjgLON1w6PeRb_tU8bM/exec';
+
+/* Apps Script redirects script.google.com/.../exec -> script.googleusercontent.com/...
+   on the FIRST load, and the browser's window.location on the client after
+   that redirect does NOT retain the original ?event=... query string - even
+   though the server received it correctly before redirecting. This is the
+   actual cause of "ไม่มีรหัสกิจกรรม" errors, not just a cosmetic address-bar
+   quirk. Fix: read it from server-side templating instead, which is baked
+   into the HTML before the redirect ever happens. */
+let SERVER_EVENT_ID = '<?= eventId ?>';
+// If this file was instead pasted raw into a Google Sites "Embed code" box
+// (not served through Apps Script's HtmlService), the scriptlet above is
+// never processed and stays as literal text - detect that and fall back to
+// reading the URL directly instead.
+if (SERVER_EVENT_ID.indexOf('<?') !== -1) SERVER_EVENT_ID = '';
+
+const params = new URLSearchParams(window.location.search);
+const EVENT_ID = SERVER_EVENT_ID || params.get('event') || '';
+const TODAY_ISO = new Date().toISOString().slice(0,10); // used as max= on date pickers - no future travel dates
+
+/* =========================================================
+   ตารางราคาตั๋ว BTS สายสีเขียว (ต้นทาง-ปลายทางแบบเต็ม 61 สถานี)
+   ที่มา: ประกาศ "ค่าโดยสารที่เรียกเก็บ" ของ BTS มีผลใช้บังคับ
+   ตั้งแต่ 1 พ.ย. 2568 (fare_matrix_Eff.1Nov25_SJC.pdf, bts.co.th)
+   ========================================================= */
+const BTS_GREEN_STATIONS = ["คูคต", "แยก คปอ.", "พิพิธภัณฑ์กองทัพอากาศ", "โรงพยาบาลภูมิพลอดุลยเดช", "สะพานใหม่", "สายหยุด", "พหลโยธิน 59", "วัดพระศรีมหาธาตุ", "กรมทหารราบที่ 11", "บางบัว", "กรมป่าไม้", "มหาวิทยาลัยเกษตรศาสตร์", "เสนานิคม", "รัชโยธิน", "พหลโยธิน 24", "ห้าแยกลาดพร้าว", "หมอชิต", "สะพานควาย", "เสนาร่วม", "อารีย์", "สนามเป้า", "อนุสาวรีย์ชัยสมรภูมิ", "พญาไท", "ราชเทวี", "สยาม", "ชิดลม", "เพลินจิต", "นานา", "อโศก", "พร้อมพงษ์", "ทองหล่อ", "เอกมัย", "พระโขนง", "อ่อนนุช", "บางจาก", "ปุณณวิถี", "อุดมสุข", "บางนา", "แบริ่ง", "สำโรง", "ปู่เจ้า", "ช้างเอราวัณ", "โรงเรียนนายเรือ", "ปากน้ำ", "ศรีนครินทร์", "แพรกษา", "สายลวด", "เคหะฯ", "สนามกีฬาแห่งชาติ", "ราชดำริ", "ศาลาแดง", "ช่องนนทรี", "เซนต์หลุยส์", "สุรศักดิ์", "สะพานตากสิน", "กรุงธนบุรี", "วงเวียนใหญ่", "โพธิ์นิมิตร", "ตลาดพลู", "วุฒากาศ", "บางหว้า"];
+const BTS_GREEN_FUTURE_INDEX = 18; // เสนาร่วม (N6*) - สถานีในอนาคต ยังไม่เปิดใช้งาน ไม่ให้เลือก
+const BTS_GREEN_MATRIX_FLAT = [17,17,19,22,24,27,29,32,34,37,39,42,44,45,45,45,45,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,17,17,17,19,22,24,27,29,32,34,37,39,42,44,45,45,45,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,19,17,17,17,19,22,24,27,29,32,34,37,39,42,44,45,45,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,22,19,17,17,17,19,22,24,27,29,32,34,37,39,42,44,45,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,24,22,19,17,17,17,19,22,24,27,29,32,34,37,39,42,44,61,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,27,24,22,19,17,17,17,19,22,24,27,29,32,34,37,39,42,59,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,29,27,24,22,19,17,17,17,19,22,24,27,29,32,34,37,39,56,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,32,29,27,24,22,19,17,17,17,19,22,24,27,29,32,34,37,54,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,34,32,29,27,24,22,19,17,17,17,19,22,24,27,29,32,34,51,59,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,37,34,32,29,27,24,22,19,17,17,17,19,22,24,27,29,32,49,57,60,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,39,37,34,32,29,27,24,22,19,17,17,17,19,22,24,27,29,46,54,57,61,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,42,39,37,34,32,29,27,24,22,19,17,17,17,19,22,24,27,44,52,55,59,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,44,42,39,37,34,32,29,27,24,22,19,17,17,17,19,22,24,41,49,52,56,59,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,45,44,42,39,37,34,32,29,27,24,22,19,17,17,17,19,22,39,47,50,54,57,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,45,45,44,42,39,37,34,32,29,27,24,22,19,17,17,17,19,36,44,47,51,54,59,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,45,45,45,44,42,39,37,34,32,29,27,24,22,19,17,17,17,34,42,45,49,52,57,60,64,64,64,64,64,64,64,64,64,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,64,64,64,64,64,64,64,64,65,65,65,65,45,45,45,45,44,42,39,37,34,32,29,27,24,22,19,17,17,17,25,28,32,35,40,43,47,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,47,47,47,47,47,47,47,47,47,64,65,65,65,62,62,62,62,61,59,56,54,51,49,46,44,41,39,36,34,17,17,17,25,28,32,35,40,43,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,64,62,59,57,54,52,49,47,44,42,25,17,17,17,25,28,32,35,40,43,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,43,43,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,62,60,57,55,52,50,47,45,28,25,17,17,17,25,28,32,35,40,43,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,40,40,43,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,64,61,59,56,54,51,49,32,28,25,17,17,17,25,28,32,35,40,43,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,35,35,40,43,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,64,62,59,57,54,52,35,32,28,25,17,17,17,25,28,32,35,40,43,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,32,32,35,40,43,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,62,59,57,40,35,32,28,25,17,17,17,25,28,32,35,40,43,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,28,28,32,35,40,43,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,60,43,40,35,32,28,25,17,17,17,25,28,32,35,40,43,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,25,25,28,32,35,40,43,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,43,40,35,32,28,25,17,17,17,25,28,32,35,40,43,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,17,17,25,28,32,35,40,43,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,43,40,35,32,28,25,17,17,17,25,28,32,35,40,43,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,25,25,28,32,35,40,43,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,43,40,35,32,28,25,17,17,17,25,28,32,35,40,43,60,62,65,65,65,65,65,65,65,65,65,65,65,65,28,28,32,35,40,43,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,43,40,35,32,28,25,17,17,17,25,28,32,35,40,57,59,62,64,65,65,65,65,65,65,65,65,65,65,32,32,35,40,43,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,43,40,35,32,28,25,17,17,17,25,28,32,35,52,54,57,59,62,64,65,65,65,65,65,65,65,65,35,35,40,43,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,43,40,35,32,28,25,17,17,17,25,28,32,49,51,54,56,59,61,64,65,65,65,65,65,65,65,40,40,43,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,47,43,40,35,32,28,25,17,17,17,25,28,45,47,50,52,55,57,60,62,65,65,65,65,65,65,43,43,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,47,47,43,40,35,32,28,25,17,17,17,25,42,44,47,49,52,54,57,59,62,64,65,65,65,65,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,47,47,47,43,40,35,32,28,25,17,17,17,34,36,39,41,44,46,49,51,54,56,59,61,62,62,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,47,47,47,47,43,40,35,32,28,25,17,17,17,19,22,24,27,29,32,34,37,39,42,44,45,45,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,64,64,64,64,64,64,64,64,64,60,57,52,49,45,42,34,17,17,17,19,22,24,27,29,32,34,37,39,42,44,45,64,64,64,64,64,64,64,64,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,59,54,51,47,44,36,19,17,17,17,19,22,24,27,29,32,34,37,39,42,44,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,57,54,50,47,39,22,19,17,17,17,19,22,24,27,29,32,34,37,39,42,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,59,56,52,49,41,24,22,19,17,17,17,19,22,24,27,29,32,34,37,39,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,59,55,52,44,27,24,22,19,17,17,17,19,22,24,27,29,32,34,37,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,61,57,54,46,29,27,24,22,19,17,17,17,19,22,24,27,29,32,34,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,60,57,49,32,29,27,24,22,19,17,17,17,19,22,24,27,29,32,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,59,51,34,32,29,27,24,22,19,17,17,17,19,22,24,27,29,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,54,37,34,32,29,27,24,22,19,17,17,17,19,22,24,27,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,56,39,37,34,32,29,27,24,22,19,17,17,17,19,22,24,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,59,42,39,37,34,32,29,27,24,22,19,17,17,17,19,22,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,61,44,42,39,37,34,32,29,27,24,22,19,17,17,17,19,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,45,44,42,39,37,34,32,29,27,24,22,19,17,17,17,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,45,45,44,42,39,37,34,32,29,27,24,22,19,17,17,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,43,40,35,32,28,25,17,25,28,32,35,40,43,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,17,25,28,32,35,40,43,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,43,40,35,32,28,25,17,25,28,32,35,40,43,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,25,17,17,25,28,32,35,40,43,60,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,43,40,35,32,28,25,28,32,35,40,43,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,28,17,17,17,25,28,32,35,40,57,59,62,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,43,40,35,32,28,32,35,40,43,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,32,25,17,17,17,25,28,32,35,52,54,57,59,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,43,40,35,32,35,40,43,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,35,28,25,17,17,17,25,28,32,49,51,54,56,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,43,40,35,40,43,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,40,32,28,25,17,17,17,25,28,45,47,50,52,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,47,43,40,43,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,43,35,32,28,25,17,17,17,17,34,36,39,41,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,47,47,43,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,47,40,35,32,28,25,17,17,17,34,36,39,41,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,47,47,47,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,47,43,40,35,32,28,17,17,17,17,19,22,24,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,60,57,52,49,45,34,34,17,17,17,19,22,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,59,54,51,47,36,36,19,17,17,17,19,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,57,54,50,39,39,22,19,17,17,17,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,59,56,52,41,41,24,22,19,17,17];
+const BTS_GREEN_N = 61;
+
+/* =========================================================
+   ตาราง Array สถานี + สูตรคำนวณราคาตั๋วเที่ยวเดียว
+   ========================================================= */
+const RAIL_LINES = {
+  BTS_GREEN: {
+    label: 'BTS สายสีเขียว (สุขุมวิท/สีลม)',
+    matrix: true, // ใช้ตารางราคาจริงแบบ Matrix แทนสูตรประมาณการ
+    stations: BTS_GREEN_STATIONS
+  },
+  BTS_GOLD: {
+    label: 'BTS สายสีทอง (กรุงธนบุรี - คลองสาน)',
+    flatRate: 16, // เหมาจ่ายตลอดสาย
+    stations: ['กรุงธนบุรี', 'เจริญนคร (ไอคอนสยาม)', 'คลองสาน']
+  },
+  BTS_YELLOW: {
+    label: 'BTS สายสีเหลือง (ลาดพร้าว - สำโรง)',
+    base: 15, step: 2.2, max: 45,
+    stations: ['ลาดพร้าว', 'ภาวนา', 'โชคชัย 4', 'ลาดพร้าว 71', 'ลาดพร้าว 83', 'มหาดไทย', 'ลาดพร้าว 101', 'บางกะปิ', 'แยกลำสาลี', 'ศรีกรีฑา', 'หัวหมาก', 'กล่ำ', 'พัฒนาการ', 'ศรีนครินทร์ 38', 'สวนหลวง ร.9', 'ศรีอุดม', 'ศรีเอี่ยม', 'ศรีลาซาล', 'ศรีแบริ่ง', 'ศรีด่าน', 'ศรีเทพา', 'ทิพพาวาลย์', 'สำโรง']
+  },
+  BTS_PINK: {
+    label: 'BTS สายสีชมพู (แคราย - มีนบุรี)',
+    base: 15, step: 2.2, max: 45,
+    stations: ['ศูนย์ราชการนนทบุรี', 'แคราย', 'สนามบินน้ำ', 'สามัคคี', 'ชลประทาน', 'ปากเกร็ด', 'แจ้งวัฒนะ-ปากเกร็ด 28', 'เมืองทองธานี', 'แจ้งวัฒนะ 14', 'ศูนย์ราชการแจ้งวัฒนะ', 'โทรคมนาคมแห่งชาติ', 'หลักสี่', 'ราชภัฏพระนคร', 'วัดพระศรีมหาธาตุ', 'รามอินทรา 3', 'ลาดปลาเค้า', 'รามอินทรา กม.4', 'มัยลาภ', 'วัชรพล', 'รามอินทรา กม.6', 'คู้บอน', 'รามอินทรา 83', 'วงแหวนรามอินทรา', 'นพรัตน์', 'บางชัน', 'เศรษฐบุตรบำเพ็ญ', 'ตลาดมีนบุรี', 'มีนบุรี']
+  },
+  ARL: {
+    label: 'Airport Rail Link (พญาไท - สุวรรณภูมิ)',
+    fareTable: [0, 15, 20, 25, 30, 35, 40, 45, 45], // ตารางราคาจริง ARL ตามจำนวนสถานี
+    stations: ['พญาไท', 'ราชปรารภ', 'มักกะสัน', 'รามคำแหง', 'หัวหมาก', 'บ้านทับช้าง', 'ลาดกระบัง', 'สุวรรณภูมิ']
+  },
+  // NOTE: Purple Line and Red Line separately have a government "20 baht flat
+  // fare" scheme, but it only applies to travelers who specifically registered
+  // a linked EMV/Rabbit card via the "ทางรัฐ" app - not every employee will
+  // have done this, so the figures below are the STANDARD published fares
+  // (safer default for expense reporting; employees can edit if they used the
+  // discounted scheme).
+  MRT_BLUE: {
+    label: 'MRT สีน้ำเงิน',
+    // ตารางราคาจริงตามที่แจ้ง (คิดตามจำนวนสถานีที่เดินทาง ไม่ใช่สูตรเชิงเส้น)
+    fareTable: [0,17,20,22,25,27,29,32,34,37,39,42,44], // index=จำนวนสถานีที่เดินทาง, ตั้งแต่ 12 สถานีขึ้นไป = 44
+    stations: ['ท่าพระ','จรัญฯ 13','ไฟฉาย','บางขุนนนท์','บางยี่ขัน','สิรินธร','บางพลัด','บางอ้อ','บางโพ','เตาปูน','บางซื่อ','กำแพงเพชร','สวนจตุจักร','พหลโยธิน','ลาดพร้าว','รัชดาภิเษก','สุทธิสาร','ห้วยขวาง','ศูนย์วัฒนธรรมแห่งประเทศไทย','พระราม 9','เพชรบุรี','สุขุมวิท','ศูนย์การประชุมแห่งชาติสิริกิติ์','คลองเตย','ลุมพินี','สีลม','สามย่าน','หัวลำโพง','วัดมังกร','สามยอด','สนามไชย','อิสรภาพ','บางไผ่','บางหว้า','เพชรเกษม 48','ภาษีเจริญ','บางแค','หลักสอง']
+  },
+  MRT_PURPLE: {
+    label: 'MRT สีม่วง',
+    // สูตรตามที่แจ้ง: ค่าแรกเข้า 14 บาท + (สถานีที่เดินทาง-1)×2 บาท เพดานสูงสุด 42 บาท
+    base: 14, step: 2, max: 42,
+    stations: ['คลองบางไผ่','ตลาดบางใหญ่','สามแยกบางใหญ่','บางพลู','บางรักใหญ่','บางรักน้อยท่าอิฐ','ไทรม้า','สะพานพระนั่งเกล้า','แยกนนทบุรี 1','บางกระสอ','ศูนย์ราชการนนทบุรี','กระทรวงสาธารณสุข','แยกติวานนท์','วงศ์สว่าง','บางซ่อน','เตาปูน']
+  },
+  SRT_RED: {
+    label: 'SRT สีแดง',
+    base: 12, step: 3, max: 42,
+    stations: ['กลางกรุง(บางซื่อ)','จตุจักร','วัดเสมียนนารี','บางเขน','ทุ่งสองห้อง','หลักสี่','การเคหะฯ','ดอนเมือง','หลักหก','รังสิต','บางซ่อน','บางบำหรุ','ตลิ่งชัน','ศาลายา','ศิริราช']
+  }
+};
+
+const SEGMENT_TYPES = [
+  { value:'BTS_GREEN', label:'BTS สายสีเขียว', kind:'rail' },
+  { value:'BTS_GOLD', label:'BTS สายสีทอง', kind:'rail' },
+  { value:'BTS_YELLOW', label:'BTS สายสีเหลือง', kind:'rail' },
+  { value:'BTS_PINK', label:'BTS สายสีชมพู', kind:'rail' },
+  { value:'ARL', label:'Airport Rail Link', kind:'rail' },
+  { value:'MRT_BLUE', label:'MRT สีน้ำเงิน', kind:'rail' },
+  { value:'MRT_PURPLE', label:'MRT สีม่วง', kind:'rail' },
+  { value:'SRT_RED', label:'SRT สีแดง', kind:'rail' },
+  { value:'CAR', label:'รถยนต์ส่วนตัว', kind:'car' },
+  { value:'TAXI', label:'แท็กซี่', kind:'manual' },
+  { value:'GRAB', label:'เรียกรถผ่านแอป', kind:'manual' },
+  { value:'MOTORCYCLE', label:'วินมอเตอร์ไซค์', kind:'manual' },
+  { value:'PARKING', label:'ค่าจอดรถ', kind:'manual' },
+  { value:'OTHER', label:'อื่นๆ', kind:'manual' }
+];
+
+let state = { days: [ newDay() ] };
+let employeeList = [];
+let eventName = '';
+
+function newSegment(){ return { type:'GRAB', origin:'', destination:'', distanceKm:'', amount:0, otherDescription:'', attachments:[], attachmentUrls:[] }; }
+function newDay(date){ return { date: date || '', outboundSegments:[newSegment()], returnSegments:[newSegment()] }; }
+
+// backend/Code.gs stores tripDetails as a flat array of {label, date, segments}.
+// These helpers convert to/from that shape so the day-based UI stays compatible
+// with the existing backend without needing any Code.gs changes.
+function daysToTripsArray(days){
+  const arr = [];
+  days.forEach(day=>{
+    arr.push({ label:'ขาไป', date: day.date, segments: day.outboundSegments });
+    arr.push({ label:'ขากลับ', date: day.date, segments: day.returnSegments });
+  });
+  return arr;
+}
+function tripsArrayToDays(trips){
+  const days = [];
+  for(let k=0; k<trips.length; k+=2){
+    const outboundTrip = trips[k] || {};
+    const returnTrip = trips[k+1] || {};
+    days.push({
+      date: outboundTrip.date || returnTrip.date || '',
+      outboundSegments: (outboundTrip.segments && outboundTrip.segments.length) ? outboundTrip.segments : [newSegment()],
+      returnSegments: (returnTrip.segments && returnTrip.segments.length) ? returnTrip.segments : [newSegment()]
+    });
+  }
+  return days.length ? days : [newDay()];
+}
+
+/* =========================================================
+   ฟังก์ชันคำนวณราคาตั๋วรถไฟฟ้า (railFare) - ฉบับแก้ไข Bug
+   ========================================================= */
+function railFare(line, origin, destination) {
+  const cfg = RAIL_LINES[line];
+  if (!cfg || !origin || !destination || origin === destination) return 0;
+
+  const i = cfg.stations.indexOf(origin);
+  const j = cfg.stations.indexOf(destination);
+  if (i < 0 || j < 0) return 0;
+
+  const dist = Math.abs(i - j);
+
+  // ----------------------------------------------------
+  // เคสที่ 1: BTS สายสีเขียว — ราคาจริงจากตาราง Matrix ทางการ (ไม่ใช่การประมาณ)
+  // ----------------------------------------------------
+  if (line === 'BTS_GREEN') {
+    return BTS_GREEN_MATRIX_FLAT[i * BTS_GREEN_N + j];
+  }
+
+  // ----------------------------------------------------
+  // เคสที่ 2: สายสีทอง (Flat Rate เหมาจ่ายตลอดสาย)
+  // ----------------------------------------------------
+  if (cfg.flatRate) {
+    return cfg.flatRate;
+  }
+
+  // ----------------------------------------------------
+  // เคสที่ 3: ARL (คิดตาม Array ตารางราคาจริง)
+  // ----------------------------------------------------
+  if (cfg.fareTable) {
+    return dist < cfg.fareTable.length ? cfg.fareTable[dist] : cfg.fareTable[cfg.fareTable.length - 1];
+  }
+
+  // ----------------------------------------------------
+  // เคสที่ 4: สายทั่วไป (MRT สีน้ำเงิน/ม่วง, SRT สีแดง, BTS สีเหลือง/ชมพู)
+  // สูตร: base + ((สถานีที่ผ่าน - 1) * step)
+  // ----------------------------------------------------
+  const calculated = cfg.base + ((dist - 1) * cfg.step);
+  return Math.min(Math.round(calculated), cfg.max);
+}
+
+/* =========================================================
+   ฟังก์ชันช่วยเรื่องสถานี — ใช้กับ <input list="..."> แบบพิมพ์ค้นหาได้
+   ========================================================= */
+function getSelectableStations(line){
+  const cfg = RAIL_LINES[line];
+  if(!cfg || !cfg.stations) return [];
+  if(line === 'BTS_GREEN'){
+    return cfg.stations.filter((s,idx)=>idx !== BTS_GREEN_FUTURE_INDEX);
+  }
+  return cfg.stations;
+}
+
+function isValidStation(line, name){
+  if(!name) return true; // empty is "not yet chosen", not invalid
+  const cfg = RAIL_LINES[line];
+  return !!(cfg && cfg.stations && cfg.stations.includes(name));
+}
+
+function stationDatalistOptions(line){
+  return getSelectableStations(line).map(s=>`<option value="${s}">`).join('');
+}
+
+/* ---------- INIT: load event + employee list from backend ---------- */
+async function loadEventInfo(){
+  if(!EVENT_ID){
+    document.getElementById('eventLabel').textContent = '';
+    showMsg('err','ลิงก์นี้ไม่มีรหัสกิจกรรม (?event=EV-xxxx) กรุณาใช้ลิงก์ที่สตาฟส่งให้เท่านั้น');
+    return;
+  }
+  try{
+    const res = await callApi('getEventInfo', { eventId: EVENT_ID });
+    if(!res.ok){ showMsg('err', res.error); document.getElementById('eventLabel').textContent=''; return; }
+    eventName = res.event.eventName;
+    document.getElementById('eventLabel').textContent = 'กิจกรรม: ' + eventName;
+    employeeList = res.employees || [];
+    document.getElementById('employeeSuggestions').innerHTML =
+      employeeList.map(e=>`<option value="${e.name}">`).join('');
+  }catch(err){
+    showMsg('err','เชื่อมต่อระบบหลังบ้านไม่สำเร็จ: '+err+' (ตรวจสอบว่าตั้งค่า API_URL ในโค้ดถูกต้องแล้ว)');
+  }
+  try{
+    const fp = await callApi('getFuelPrice', {});
+    if(fp.ok){ document.getElementById('fuelPrice').value = fp.price; }
+  }catch(err){ /* ignore - manual value remains */ }
+}
+
+/* when the employee finishes typing their name: try to auto-fill department
+   from the roster, and reload any previous submission for editing */
+async function onEmployeeBlur(){
+  const name = document.getElementById('employeeName').value.trim();
+  if(!name) return;
+  const match = employeeList.find(e=>e.name===name);
+  if(match && match.department && !document.getElementById('department').value){
+    document.getElementById('department').value = match.department;
+  }
+
+  try{
+    const res = await callApi('getMySubmission', { eventId: EVENT_ID, employeeName: name });
+    if(res.ok && res.exists){
+      document.getElementById('department').value = res.data.department || document.getElementById('department').value;
+      document.getElementById('purpose').value = res.data.purpose || '';
+      if(res.data.fuelRefPrice) document.getElementById('fuelPrice').value = res.data.fuelRefPrice;
+      if(res.data.trips && res.data.trips.length){ state.days = tripsArrayToDays(res.data.trips); }
+      showMsg('warn', `พบเอกสารที่เคยส่งไว้แล้ว (สถานะล่าสุด: ${res.data.status}) — ระบบดึงข้อมูลเดิมมาให้แก้ไข การกด "ยืนยันส่งเอกสาร" จะบันทึกทับเวอร์ชันเดิม`);
+      render();
+    }
+  }catch(err){ /* if this check fails, just continue with a blank form */ }
+}
+
+/* ---------- RENDER TRIPS (multi-day: each day has date + ขาไป + ขากลับ) ---------- */
+function addDay(){ state.days.push(newDay()); render(); }
+function removeDay(di){ if(state.days.length<=1) return; state.days.splice(di,1); render(); }
+function dayUpdate(di,field,value){ state.days[di][field] = value; refreshTotals(); }
+function addSegment(di,key){ state.days[di][key].push(newSegment()); render(); }
+function removeSegment(di,key,si){ state.days[di][key].splice(si,1); render(); }
+
+function render(){
+  const c = document.getElementById('tripsContainer');
+  c.innerHTML = state.days.map((day,di)=>{
+    const outHtml = day.outboundSegments.map((seg,si)=>renderSegment(di,'outboundSegments',seg,si)).join('');
+    const retHtml = day.returnSegments.map((seg,si)=>renderSegment(di,'returnSegments',seg,si)).join('');
+    const outTotal = day.outboundSegments.reduce((s,seg)=>s+(parseFloat(seg.amount)||0),0);
+    const retTotal = day.returnSegments.reduce((s,seg)=>s+(parseFloat(seg.amount)||0),0);
+    return `
+      <div class="day-block">
+        <div class="day-header">
+          <div class="field" style="margin:0; max-width:220px;">
+            <label>วันที่เดินทาง (วันที่ ${di+1})</label>
+            <input type="date" value="${day.date}" max="${TODAY_ISO}" onchange="dayUpdate(${di},'date',this.value)">
+          </div>
+          ${state.days.length>1 ? `<button class="btn btn-ghost" onclick="removeDay(${di})">ลบวันนี้ออกทั้งหมด</button>` : ''}
+        </div>
+
+        <div class="trip-section-title"><span class="arrow">🛫</span> ขาไป</div>
+        ${outHtml}
+        <button class="btn btn-add-segment" onclick="addSegment(${di},'outboundSegments')">+ เพิ่มต่อการเดินทาง (ขาไป)</button>
+        <div class="trip-total-line"><span>ยอดรวม ขาไป</span><span id="subtotal-${di}-outboundSegments">${fmt(outTotal)} บาท</span></div>
+
+        <div class="trip-section-title"><span class="arrow">🛬</span> ขากลับ</div>
+        ${retHtml}
+        <button class="btn btn-add-segment" onclick="addSegment(${di},'returnSegments')">+ เพิ่มต่อการเดินทาง (ขากลับ)</button>
+        <div class="trip-total-line"><span>ยอดรวม ขากลับ</span><span id="subtotal-${di}-returnSegments">${fmt(retTotal)} บาท</span></div>
+      </div>
+    `;
+  }).join('') + `<button class="btn btn-outline" style="width:100%; margin-top:4px;" onclick="addDay()">+ เพิ่มวันเดินทาง (สำหรับกิจกรรมหลายวัน)</button>`;
+  updateTotals();
+}
+
+function renderSegment(di,key,seg,si){
+  const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
+  let body = '';
+  if(typeCfg.kind==='rail'){
+    const originInvalid = seg.origin && !isValidStation(seg.type, seg.origin);
+    const destInvalid = seg.destination && !isValidStation(seg.type, seg.destination);
+    const dlId = `dl-${di}-${key}-${si}-${seg.type}`;
+    body = `
+      <div class="grid2">
+        <div class="field"><label>สถานีต้นทาง <span class="req">*</span></label>
+          <input list="${dlId}-o" value="${seg.origin}" placeholder="พิมพ์ชื่อสถานี..."
+            onfocus="this.dataset.prev=this.value; this.value='';"
+            onblur="if(!this.value) this.value=this.dataset.prev||'';"
+            oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)">
+          <datalist id="${dlId}-o">${stationDatalistOptions(seg.type)}</datalist>
+          <div class="hint" id="hint-o-${di}-${key}-${si}" style="color:var(--danger); display:${originInvalid?'block':'none'};">ไม่พบสถานีนี้ กรุณาเลือกจากรายการ</div>
+        </div>
+        <div class="field"><label>สถานีปลายทาง <span class="req">*</span></label>
+          <input list="${dlId}-d" value="${seg.destination}" placeholder="พิมพ์ชื่อสถานี..."
+            onfocus="this.dataset.prev=this.value; this.value='';"
+            onblur="if(!this.value) this.value=this.dataset.prev||'';"
+            oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)">
+          <datalist id="${dlId}-d">${stationDatalistOptions(seg.type)}</datalist>
+          <div class="hint" id="hint-d-${di}-${key}-${si}" style="color:var(--danger); display:${destInvalid?'block':'none'};">ไม่พบสถานีนี้ กรุณาเลือกจากรายการ</div>
+        </div>
+      </div>
+      <div class="field"><label>จำนวนเงิน (บาท) — คำนวณอัตโนมัติ แก้ไขได้ <span class="req">*</span></label>
+        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? seg.amount : ''}"
+          oninput="segAmountInput(${di},'${key}',${si},this.value)"
+          onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>`;
+  } else if(typeCfg.kind==='car'){
+    body = `
+      <div class="grid2">
+        <div class="field"><label>จาก (ต้นทาง) <span class="req">*</span></label>
+          <input value="${seg.origin}" oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)" placeholder="เช่น ออฟฟิศ"></div>
+        <div class="field"><label>ไป (ปลายทาง) <span class="req">*</span></label>
+          <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder="เช่น สนามบิน"></div>
+      </div>
+      <div class="field"><label>ระยะทาง (กิโลเมตร) <span class="req">*</span></label>
+        <input type="number" step="0.1" min="0" placeholder="0.0" value="${seg.distanceKm || ''}" oninput="segFieldInput(${di},'${key}',${si},'distanceKm',this.value)"></div>
+      <div class="field"><label>จำนวนเงิน (บาท) — คำนวณอัตโนมัติ แก้ไขได้ <span class="req">*</span></label>
+        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? seg.amount : ''}"
+          oninput="segAmountInput(${di},'${key}',${si},this.value)"
+          onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>
+      <div class="hint">สูตร: (ระยะทาง ÷ 15) × ราคาน้ำมันแก๊สโซฮอลล์91 ณ วันเดินทาง</div>`;
+  } else {
+    const otherField = seg.type==='OTHER' ? `
+      <div class="field"><label>รายละเอียดเพิ่มเติม (ระบุประเภทการเดินทาง) <span class="req">*</span></label>
+        <input value="${seg.otherDescription||''}" oninput="segFieldInput(${di},'${key}',${si},'otherDescription',this.value)" placeholder="เช่น เรือข้ามฟาก, รถสองแถว"></div>` : '';
+    body = `
+      ${otherField}
+      <div class="grid2">
+        <div class="field"><label>จาก (ต้นทาง) <span class="req">*</span></label>
+          <input value="${seg.origin}" oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)" placeholder="เช่น ออฟฟิศ"></div>
+        <div class="field"><label>ไป (ปลายทาง) <span class="req">*</span></label>
+          <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder="เช่น สนามบิน"></div>
+      </div>
+      <div class="field"><label>จำนวนเงิน (บาท) <span class="req">*</span></label>
+        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? seg.amount : ''}"
+          oninput="segAmountInput(${di},'${key}',${si},this.value)"
+          onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>`;
+  }
+
+  const thumbs = (seg.attachments||[]).map((a,ai)=>`
+      <span class="attach-thumb"><img src="${a.base64}"><span class="rm" onclick="removeNewAttachment(${di},'${key}',${si},${ai})">✕</span></span>`).join('')
+    + (seg.attachmentUrls||[]).map((u,ui)=>`
+      <span class="attach-thumb"><a href="${u}" target="_blank">📎 ไฟล์เดิม ${ui+1}</a><span class="rm" onclick="removeExistingAttachment(${di},'${key}',${si},${ui})">✕</span></span>`).join('');
+
+  const attachHtml = `
+    <div class="attach-box">
+      <label>แนบรูปภาพหลักฐาน/สลิป (แนบได้มากกว่า 1 ไฟล์ ไม่บังคับ)</label>
+      <input type="file" accept="image/*" multiple onchange="handleFiles(event, ${di}, '${key}', ${si})">
+      ${thumbs ? `<div class="preview-list">${thumbs}</div>` : ''}
+    </div>`;
+
+  const currentTypeLabel = typeCfg.label;
+  const typeOptionsHtml = SEGMENT_TYPES.map(t=>
+    `<div class="type-opt ${t.value===seg.type?'active':''}" onclick="this.closest('details').open=false; segUpdate(${di},'${key}',${si},'type','${t.value}')">${t.label}</div>`
+  ).join('');
+
+  return `
+    <div class="segment">
+      <div class="segment-head">
+        <details class="type-dropdown">
+          <summary>${currentTypeLabel}</summary>
+          <div class="type-options">${typeOptionsHtml}</div>
+        </details>
+        <button class="btn btn-ghost" onclick="removeSegment(${di},'${key}',${si})">ลบ</button>
+      </div>
+      ${body}
+      ${attachHtml}
+    </div>`;
+}
+
+function segUpdate(di,key,si,field,value){
+  // structural change only (segment type) - layout differs per type, so a full
+  // re-render is required here. Live text/number typing goes through
+  // segFieldInput() instead, which never touches the DOM inputs themselves.
+  const seg = state.days[di][key][si];
+  Object.assign(seg, newSegment(), {type:value});
+  recalcSegment(seg);
+  render();
+}
+
+// Handles live typing (station name, origin/destination, distance, manual amount).
+// Deliberately does NOT call render() - rebuilding the container's innerHTML on
+// every keystroke destroys and recreates the <input>, which loses focus and
+// only lets the user type one character at a time. Instead we just update the
+// state and patch the specific amount/hint elements directly.
+function segFieldInput(di,key,si,field,value){
+  const seg = state.days[di][key][si];
+  seg[field] = value;
+
+  const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
+  // origin/destination/distanceKm define the ROUTE, so they refresh the
+  // suggested auto-calculated amount. The amount field itself is a separate,
+  // directly-editable input (segAmountInput) so a manual override sticks
+  // until the route changes again.
+  if((field==='origin' || field==='destination' || field==='distanceKm') &&
+     (typeCfg.kind==='rail' || typeCfg.kind==='car')){
+    recalcSegment(seg);
+    const amtInput = document.getElementById(`amtinput-${di}-${key}-${si}`);
+    if(amtInput) amtInput.value = seg.amount;
+  }
+
+  if(field==='origin' || field==='destination'){
+    if(typeCfg.kind==='rail'){
+      const hintO = document.getElementById(`hint-o-${di}-${key}-${si}`);
+      const hintD = document.getElementById(`hint-d-${di}-${key}-${si}`);
+      if(hintO) hintO.style.display = (seg.origin && !isValidStation(seg.type, seg.origin)) ? 'block' : 'none';
+      if(hintD) hintD.style.display = (seg.destination && !isValidStation(seg.type, seg.destination)) ? 'block' : 'none';
+    }
+  }
+
+  refreshTotals();
+}
+
+// Direct amount edits (all kinds) - the user's number is authoritative and is
+// never silently overwritten unless they change the route again.
+function segAmountInput(di,key,si,value){
+  const seg = state.days[di][key][si];
+  seg.amount = parseFloat(value) || 0;
+  refreshTotals();
+}
+
+// Recomputes and patches the day subtotals + grand total + summary preview,
+// without rebuilding any input elements (keeps focus intact while typing).
+// Sums seg.amount directly - does NOT recalculate it, so manual overrides
+// made via segAmountInput are never silently reverted.
+function refreshTotals(){
+  let grand = 0;
+  state.days.forEach((day,di)=>{
+    ['outboundSegments','returnSegments'].forEach(key=>{
+      let subtotal = 0;
+      day[key].forEach(seg=>{ subtotal += (parseFloat(seg.amount)||0); });
+      grand += subtotal;
+      const subEl = document.getElementById(`subtotal-${di}-${key}`);
+      if(subEl) subEl.textContent = fmt(subtotal) + ' บาท';
+    });
+  });
+  document.getElementById('grandTotal').textContent = fmt(grand) + ' บาท';
+  document.getElementById('summaryPreview').value = buildSummaryText(grand);
+  return grand;
+}
+
+// Auto-calculates a SUGGESTED amount from route/distance. Only called when
+// origin/destination/distanceKm change (see segFieldInput) or when the fuel
+// price changes (see refreshCarFares) - never during generic totals-summing,
+// so a manually-typed amount is never silently overwritten.
+function recalcSegment(seg){
+  const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
+  if(typeCfg.kind==='rail'){
+    seg.amount = railFare(seg.type, seg.origin, seg.destination);
+  } else if(typeCfg.kind==='car'){
+    const price = parseFloat(document.getElementById('fuelPrice').value)||0;
+    const dist = parseFloat(seg.distanceKm)||0;
+    seg.amount = Math.round((dist/15*price)*100)/100;
+  }
+  // 'manual' kind: no auto-calculation possible, amount is always typed directly
+}
+
+// When the global fuel price changes, refresh the suggested amount for every
+// CAR-type segment (unless the user has since typed a different number into
+// that specific segment's amount box - we can't tell the difference here, so
+// like origin/destination changes, this intentionally re-suggests the price).
+function refreshCarFares(){
+  state.days.forEach((day,di)=>{
+    ['outboundSegments','returnSegments'].forEach(key=>{
+      day[key].forEach((seg,si)=>{
+        const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
+        if(typeCfg.kind==='car'){
+          recalcSegment(seg);
+          const amtInput = document.getElementById(`amtinput-${di}-${key}-${si}`);
+          if(amtInput) amtInput.value = seg.amount;
+        }
+      });
+    });
+  });
+  refreshTotals();
+}
+
+// NOTE: photos are stored at their original resolution/quality (no resizing
+// or recompression here) so the PDF can embed the exact original file bytes
+// later - see generatePdfBlob(), which places these directly via jsPDF's
+// addImage() rather than rasterizing them through html2canvas.
+function handleFiles(evt, di, key, si){
+  const files = Array.from(evt.target.files || []);
+  if(files.length===0) return;
+  let loaded = 0;
+  files.forEach(file=>{
+    const reader = new FileReader();
+    reader.onload = e=>{
+      state.days[di][key][si].attachments.push({ base64: e.target.result, fileName: file.name, mimeType: file.type });
+      loaded++;
+      if(loaded===files.length) render();
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function removeNewAttachment(di,key,si,ai){ state.days[di][key][si].attachments.splice(ai,1); render(); }
+function removeExistingAttachment(di,key,si,ui){ state.days[di][key][si].attachmentUrls.splice(ui,1); render(); }
+
+function updateTotals(){
+  return refreshTotals();
+}
+
+function fmt(n){ return (Number(n)||0).toLocaleString('th-TH',{minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+function segmentLine(seg){
+  const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
+  const amt = fmt(seg.amount);
+  if(typeCfg.kind==='car'){
+    return `เดินทางด้วยรถยนต์ส่วนตัว จาก ${seg.origin||'-'} ไป ${seg.destination||'-'} ระยะทาง ${seg.distanceKm||0} กม. ราคา ${amt} บาท`;
+  }
+  const label = (seg.type==='OTHER' && seg.otherDescription) ? `อื่นๆ (${seg.otherDescription})` : typeCfg.label;
+  return `เดินทางด้วย ${label} จาก ${seg.origin||'-'} ไป ${seg.destination||'-'} ราคา ${amt} บาท`;
+}
+
+function formatThaiDate(dateStr){
+  if(!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  if(isNaN(d)) return dateStr;
+  return d.toLocaleDateString('th-TH', {day:'2-digit', month:'2-digit', year:'numeric'});
+}
+
+// สรุปเรียงตามวัน: ขาไป/ขากลับ ของ Day1 ก่อน แล้วค่อย Day2, ... จบด้วยยอดรวมทั้งหมด
+function buildSummaryText(total){
+  const lines = [];
+  const empName = document.getElementById('employeeName').value.trim();
+  const dept = document.getElementById('department').value.trim();
+  lines.push(`${empName || '-'} - ${dept || '-'}`);
+  lines.push('');
+
+  state.days.forEach((day)=>{
+    const dateLabel = formatThaiDate(day.date);
+    lines.push(`[${dateLabel || 'ไม่ระบุวันที่'}]`);
+
+    let outTotal = 0;
+    lines.push('=== ขาไป ===');
+    day.outboundSegments.forEach(seg=>{
+      outTotal += (parseFloat(seg.amount)||0);
+      lines.push(segmentLine(seg));
+    });
+    lines.push(`ยอดรวม: ${fmt(outTotal)} บาท`);
+
+    let retTotal = 0;
+    lines.push('=== ขากลับ ===');
+    day.returnSegments.forEach(seg=>{
+      retTotal += (parseFloat(seg.amount)||0);
+      lines.push(segmentLine(seg));
+    });
+    lines.push(`ยอดรวม: ${fmt(retTotal)} บาท`);
+    lines.push('');
+  });
+
+  lines.push(`ยอดรวมการเดินทางทั้งหมด: ${fmt(total)} บาท`);
+  return lines.join('\n');
+}
+
+/* ---------- VALIDATION ---------- */
+function validate(){
+  let ok = true;
+  const errors = [];
+
+  if(!document.getElementById('employeeName').value.trim()){ errors.push('กรุณากรอกชื่อผู้เบิก'); ok=false; }
+  if(!document.getElementById('department').value.trim()){ errors.push('กรุณากรอกแผนก/ฝ่าย'); ok=false; }
+  if(!document.getElementById('purpose').value.trim()){ errors.push('กรุณากรอกวัตถุประสงค์การเดินทาง'); ok=false; }
+
+  state.days.forEach((day,di)=>{
+    if(!day.date){ errors.push(`วันที่ ${di+1}: กรุณาเลือกวันที่เดินทาง`); ok=false; }
+    else if(day.date > TODAY_ISO){ errors.push(`วันที่ ${di+1}: ไม่สามารถเลือกวันที่ในอนาคตได้`); ok=false; }
+
+    [['outboundSegments','ขาไป'],['returnSegments','ขากลับ']].forEach(([key,label])=>{
+      const segments = day[key];
+      if(segments.length===0){ errors.push(`วันที่ ${di+1} (${label}) ต้องมีอย่างน้อย 1 ต่อการเดินทาง`); ok=false; }
+      segments.forEach((seg,si)=>{
+        const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
+        const tag = `วันที่ ${di+1} (${label}) รายการที่ ${si+1}`;
+
+        if(typeCfg.kind==='rail' || typeCfg.kind==='manual' || typeCfg.kind==='car'){
+          if(!seg.origin){ errors.push(`${tag}: กรุณากรอกต้นทาง`); ok=false; }
+          else if(typeCfg.kind==='rail' && !isValidStation(seg.type, seg.origin)){ errors.push(`${tag}: ชื่อสถานีต้นทางไม่ถูกต้อง`); ok=false; }
+
+          if(!seg.destination){ errors.push(`${tag}: กรุณากรอกปลายทาง`); ok=false; }
+          else if(typeCfg.kind==='rail' && !isValidStation(seg.type, seg.destination)){ errors.push(`${tag}: ชื่อสถานีปลายทางไม่ถูกต้อง`); ok=false; }
+        }
+
+        if(typeCfg.kind==='car' && !(parseFloat(seg.distanceKm) > 0)){
+          errors.push(`${tag}: กรุณากรอกระยะทาง`); ok=false;
+        }
+
+        if(seg.type==='OTHER' && !(seg.otherDescription||'').trim()){
+          errors.push(`${tag}: กรุณาระบุรายละเอียดประเภทการเดินทาง`); ok=false;
+        }
+
+        if(!(parseFloat(seg.amount) > 0)){
+          errors.push(`${tag}: กรุณากรอกจำนวนเงิน`); ok=false;
+        }
+      });
+    });
+  });
+
+  if(!ok) showMsg('err', errors.join(' / '));
+  return ok;
+}
+
+function showMsg(type, text){
+  ['Err','Ok','Warn'].forEach(t=>{ const el=document.getElementById('msg'+t); if(el) el.style.display='none'; });
+  const key = type.charAt(0).toUpperCase()+type.slice(1);
+  const el = document.getElementById('msg'+key);
+  if(el){ el.textContent = text; el.style.display='block'; el.scrollIntoView({behavior:'smooth', block:'center'}); }
+}
+
+/* ---------- PDF GENERATION (renders via html2canvas so Thai glyphs are captured as pixels) ---------- */
+function buildPrintArea(total){
+  document.getElementById('pEventName').textContent = eventName || '';
+  document.getElementById('pIssueDate').textContent = formatThaiDate(new Date().toISOString().slice(0,10));
+  document.getElementById('pMeta').innerHTML = `
+    <div><span class="label">ผู้เบิก:</span> ${document.getElementById('employeeName').value || '-'}</div>
+    <div><span class="label">แผนก/ฝ่าย:</span> ${document.getElementById('department').value || '-'}</div>
+    <div><span class="label">วัตถุประสงค์:</span> ${document.getElementById('purpose').value || '-'}</div>
+    <div><span class="label">ราคาน้ำมันอ้างอิง:</span> ${document.getElementById('fuelPrice').value || '-'} บาท/ลิตร</div>`;
+
+  const wrap = document.getElementById('pDaysWrap');
+  wrap.innerHTML = '';
+
+  function sectionTable(title, segments){
+    let subtotal = 0;
+    let rows = '';
+    segments.forEach((seg,i)=>{
+      subtotal += seg.amount||0;
+      const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
+      const typeLabel = (seg.type==='OTHER' && seg.otherDescription) ? `อื่นๆ (${seg.otherDescription})` : typeCfg.label;
+      const detail = typeCfg.kind==='car'
+        ? `${seg.origin||'-'} → ${seg.destination||'-'} (${seg.distanceKm||0} กม.)`
+        : `${seg.origin||'-'} → ${seg.destination||'-'}`;
+      rows += `<tr><td>${i+1}</td><td>${typeLabel}</td><td>${detail}</td><td class="amt">${(seg.amount||0).toFixed(2)}</td></tr>`;
+    });
+    return {
+      html: `<div class="dir-title">${title}</div>
+        <table><thead><tr><th>#</th><th>ประเภท</th><th>รายละเอียด</th><th class="amt">จำนวนเงิน</th></tr></thead>
+        <tbody>${rows}<tr class="subtotal-row"><td colspan="3">ยอดรวม ${title}</td><td class="amt">${subtotal.toFixed(2)}</td></tr></tbody></table>`,
+      subtotal
+    };
+  }
+
+  state.days.forEach((day,di)=>{
+    const dateLabel = formatThaiDate(day.date);
+    const dayLabel = state.days.length>1 ? `วันที่ ${di+1}${dateLabel ? ' — '+dateLabel : ''}` : (dateLabel || 'รายละเอียดการเดินทาง');
+    const out = sectionTable('ขาไป', day.outboundSegments);
+    const ret = sectionTable('ขากลับ', day.returnSegments);
+    const dayDiv = document.createElement('div');
+    dayDiv.className = 'day-block';
+    dayDiv.dataset.dayIndex = di;
+    dayDiv.innerHTML = `<div class="day-title">${dayLabel}</div>${out.html}${ret.html}`;
+    wrap.appendChild(dayDiv);
+  });
+
+  document.getElementById('pTotal').textContent = fmt(total) + ' บาท';
+}
+
+function waitForImages(container){
+  const imgs = Array.from(container.querySelectorAll('img'));
+  return Promise.all(imgs.map(img=>{
+    if(img.complete && img.naturalWidth > 0) return Promise.resolve();
+    return new Promise(resolve=>{
+      img.addEventListener('load', resolve, { once:true });
+      img.addEventListener('error', resolve, { once:true });
+      setTimeout(resolve, 3000); // safety timeout, don't hang forever
+    });
+  }));
+}
+
+// jsPDF's built-in fonts can't render Thai glyphs, so any Thai caption text
+// has to go through the same html2canvas "render as pixels" approach as the
+// rest of the document. This builds one small temporary label, captures it,
+// and removes it - used for evidence-photo captions below.
+async function captureCaptionLabel(text){
+  const tmp = document.createElement('div');
+  tmp.style.cssText = 'font-family:Sarabun,sans-serif; font-size:12px; color:#555; padding:2px 4px; background:#fff;';
+  tmp.textContent = text;
+  document.getElementById('pDaysWrap').appendChild(tmp);
+  const canvas = await html2canvas(tmp, { scale:2, backgroundColor:'#ffffff', useCORS:true });
+  tmp.remove();
+  return canvas;
+}
+
+function guessImageFormat(mimeType, dataUrl){
+  const src = (mimeType || '').toLowerCase() || (/^data:image\/([a-zA-Z0-9.+-]+);/.exec(dataUrl||'')||[])[1] || '';
+  if(src.includes('png')) return 'PNG';
+  if(src.includes('webp')) return 'WEBP';
+  if(src.includes('jpeg') || src.includes('jpg')) return 'JPEG';
+  return 'JPEG'; // reasonable default guess
+}
+
+function getImageNaturalSize(dataUrl){
+  return new Promise((resolve)=>{
+    const img = new Image();
+    img.onload = ()=>resolve({ width: img.naturalWidth || 800, height: img.naturalHeight || 600 });
+    img.onerror = ()=>resolve({ width: 800, height: 600 });
+    img.src = dataUrl;
+  });
+}
+
+/* PDF built via html2canvas -> canvas -> jsPDF addImage for the TABLE/TEXT
+   portions (needed because jsPDF's fonts can't render Thai glyphs directly),
+   one atomic block at a time so nothing is ever cut mid-table. Evidence
+   PHOTOS are embedded separately at their exact original quality using
+   jsPDF's addImage() directly on the uploaded file bytes - this skips canvas
+   rasterization entirely for photos, so there is no recompression step and
+   no quality loss versus the file the employee actually uploaded. */
+async function generatePdfBlob(){
+  const total = updateTotals();
+  buildPrintArea(total);
+
+  const el = document.getElementById('printArea');
+  await waitForImages(el);
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF('p', 'mm', 'a4');
+  const pageWidth = 210, pageHeight = 297, margin = 10;
+  const contentWidth = pageWidth - margin * 2;
+  const maxBlockHeight = pageHeight - margin * 2;
+  const BLOCK_GAP = 6; // mm of breathing room between blocks/photos
+  let cursorY = margin;
+  let firstBlock = true;
+  let forceNewPage = false;
+
+  // Some browsers render a blank canvas for elements positioned far off-screen
+  // (position:fixed + large negative offset). Briefly bring the whole print
+  // area fully on-screen during capture only - this is imperceptible since
+  // it's synchronous and the element goes back off-screen immediately after.
+  const prevPosition = el.style.position, prevLeft = el.style.left, prevZ = el.style.zIndex;
+  el.style.position = 'fixed';
+  el.style.left = '0';
+  el.style.top = '0';
+  el.style.zIndex = '99999';
+
+  function placeImage(imgData, format, imgHeight){
+    if(imgHeight > maxBlockHeight){
+      // rare case: a single block is taller than one full page on its own -
+      // give it dedicated fresh page(s) and slice only within this block
+      if(!firstBlock) doc.addPage();
+      let heightLeft = imgHeight, sliceOffset = 0;
+      while(heightLeft > 0){
+        if(sliceOffset > 0) doc.addPage();
+        doc.addImage(imgData, format, margin, margin - sliceOffset, contentWidth, imgHeight);
+        const drawn = Math.min(heightLeft, maxBlockHeight);
+        heightLeft -= drawn; sliceOffset += drawn;
+      }
+      firstBlock = false;
+      forceNewPage = true;
+      return;
+    }
+    if(forceNewPage || (!firstBlock && cursorY + imgHeight > pageHeight - margin)){
+      doc.addPage(); cursorY = margin; forceNewPage = false;
+    }
+    doc.addImage(imgData, format, margin, cursorY, contentWidth, imgHeight);
+    cursorY += imgHeight + BLOCK_GAP;
+    firstBlock = false;
+  }
+
+  async function placeCapturedBlock(blockEl, quality){
+    const canvas = await html2canvas(blockEl, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+    placeImage(canvas.toDataURL('image/jpeg', quality), 'JPEG', (canvas.height * contentWidth) / canvas.width);
+  }
+
+  // Optional: resize + re-encode as JPEG when the user opts in via the
+  // "บีบอัดรูปหลักฐาน" checkbox. Default behavior (unchecked) embeds the
+  // exact original file with zero recompression.
+  function compressPhotoForPdf(dataUrl){
+    return new Promise((resolve)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const MAX_DIM = 1400; // resized smaller for a meaningfully lighter file - still very readable for receipts
+        let { width, height } = img;
+        if(width > MAX_DIM || height > MAX_DIM){
+          const scale = MAX_DIM / Math.max(width, height);
+          width = Math.round(width*scale);
+          height = Math.round(height*scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve({ dataUrl: canvas.toDataURL('image/jpeg', 0.95), width, height });
+      };
+      img.onerror = ()=>resolve({ dataUrl, width: 800, height: 600 });
+      img.src = dataUrl;
+    });
+  }
+
+  async function placeOriginalPhoto(att, caption){
+    const labelCanvas = await captureCaptionLabel(caption);
+    placeImage(labelCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (labelCanvas.height * contentWidth) / labelCanvas.width);
+
+    const shouldCompress = document.getElementById('compressImages').checked;
+    let photoData = att.base64;
+    let format = guessImageFormat(att.mimeType, att.base64);
+    let naturalSize;
+
+    if(shouldCompress){
+      const compressed = await compressPhotoForPdf(att.base64);
+      photoData = compressed.dataUrl;
+      format = 'JPEG';
+      naturalSize = { width: compressed.width, height: compressed.height };
+    } else {
+      naturalSize = await getImageNaturalSize(att.base64);
+    }
+
+    let w = contentWidth, h = (naturalSize.height * w) / naturalSize.width;
+    const maxH = maxBlockHeight - BLOCK_GAP;
+    if(h > maxH){ h = maxH; w = (naturalSize.width * h) / naturalSize.height; }
+
+    if(forceNewPage || (!firstBlock && cursorY + h > pageHeight - margin)){
+      doc.addPage(); cursorY = margin; forceNewPage = false;
+    }
+    try{
+      doc.addImage(photoData, format, margin, cursorY, w, h);
+      cursorY += h + BLOCK_GAP;
+    }catch(err){
+      // unsupported format (e.g. HEIC from some iPhones, which browsers don't
+      // decode into <img>/canvas either) - note it rather than silently
+      // dropping the evidence
+      const noteCanvas = await captureCaptionLabel('⚠️ ไม่สามารถแสดงรูปนี้ในเอกสารได้ (ไฟล์ภาพรูปแบบไม่รองรับ เช่น HEIC) - โปรดแนบเป็น JPG/PNG แทน');
+      placeImage(noteCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (noteCanvas.height * contentWidth) / noteCanvas.width);
+    }
+    firstBlock = false;
+  }
+
+  try{
+    await placeCapturedBlock(document.getElementById('pHeaderBlock'), 0.92);
+
+    for(const dayBlockEl of Array.from(document.querySelectorAll('#pDaysWrap > .day-block'))){
+      await placeCapturedBlock(dayBlockEl, 0.92);
+
+      const di = parseInt(dayBlockEl.dataset.dayIndex, 10);
+      const day = state.days[di];
+      const segmentsWithDir = [
+        ...day.outboundSegments.map(seg=>({ seg, dirLabel: 'ขาไป' })),
+        ...day.returnSegments.map(seg=>({ seg, dirLabel: 'ขากลับ' }))
+      ];
+      for(const { seg, dirLabel } of segmentsWithDir){
+        const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
+        const typeLabel = (seg.type==='OTHER' && seg.otherDescription) ? `อื่นๆ (${seg.otherDescription})` : typeCfg.label;
+        for(const att of (seg.attachments||[])){
+          await placeOriginalPhoto(att, `📎 หลักฐาน: ${dirLabel} — ${typeLabel} (${seg.origin||'-'} → ${seg.destination||'-'})`);
+        }
+      }
+    }
+
+    await placeCapturedBlock(document.getElementById('pFooterBlock'), 0.92);
+  } finally {
+    el.style.position = prevPosition;
+    el.style.left = prevLeft;
+    el.style.zIndex = prevZ;
+  }
+
+  return doc;
+}
+
+function pdfFileName(){
+  const emp = (document.getElementById('employeeName').value||'ไม่ระบุ').replace(/[\\/:*?"<>|]/g,'_');
+  const dept = (document.getElementById('department').value||'ไม่ระบุแผนก').replace(/[\\/:*?"<>|]/g,'_');
+  const ev = (eventName||'กิจกรรม').replace(/[\\/:*?"<>|]/g,'_');
+  return `เอกสารเดินทาง${ev} ${emp} - ${dept}.pdf`;
+}
+
+function checkPdfSize(doc){
+  const sizeKB = Math.round(doc.output('blob').size / 1024);
+  if(sizeKB > 400){
+    const compressed = document.getElementById('compressImages').checked;
+    const tip = compressed
+      ? 'ติ๊กบีบอัดไว้แล้วแต่ไฟล์ยังใหญ่ — ลองลดจำนวนรูปที่แนบต่อรายการ'
+      : 'ถ้าต้องการไฟล์เล็กลง ลองติ๊ก "บีบอัดรูปหลักฐาน" ด้านบนแล้วสร้างใหม่อีกครั้ง';
+    showMsg('warn', `ไฟล์ PDF มีขนาด ${sizeKB} KB — ${compressed ? 'บีบอัดรูปแล้ว' : 'ยังไม่ได้บีบอัดรูป (คุณภาพต้นฉบับเต็ม)'} ไม่ใช่ข้อผิดพลาด แต่ ${tip}`);
+  }
+}
+
+async function downloadPdf(){
+  if(!validate()) return;
+  const doc = await generatePdfBlob();
+  checkPdfSize(doc);
+  doc.save(pdfFileName());
+}
+
+/* ---------- SUBMIT ---------- */
+async function submitForm(){
+  if(!validate()) return;
+  showMsg('ok','กำลังส่งเอกสาร กรุณารอสักครู่...');
+
+  const total = updateTotals();
+  const doc = await generatePdfBlob();
+  checkPdfSize(doc);
+  const pdfBase64 = doc.output('datauristring').split(',')[1];
+
+  const payload = {
+    eventId: EVENT_ID,
+    employeeName: document.getElementById('employeeName').value.trim(),
+    department: document.getElementById('department').value.trim(),
+    purpose: document.getElementById('purpose').value,
+    fuelRefPrice: document.getElementById('fuelPrice').value,
+    totalAmount: total,
+    summaryText: buildSummaryText(total),
+    pdfBase64: pdfBase64,
+    pdfFileName: pdfFileName(),
+    tripDetails: daysToTripsArray(state.days)
+  };
+
+  try{
+    const res = await callApi('submitExpense', payload);
+    if(res.ok){
+      showMsg('ok', (res.resubmitted ? 'อัปเดตเอกสารสำเร็จ ' : 'ส่งเอกสารสำเร็จ ') + '— สถานะ: ' + res.status + ' — กำลังดาวน์โหลดสำเนา PDF ลงเครื่องของคุณ...');
+      doc.save(pdfFileName());
+    } else {
+      showMsg('err', 'ส่งเอกสารไม่สำเร็จ: '+res.error);
+    }
+  }catch(err){
+    showMsg('err','เชื่อมต่อระบบหลังบ้านไม่สำเร็จ: '+err);
+  }
+}
+
+/* ---------- API CALL ----------
+   Uses google.script.run when this page is served directly by Apps Script
+   (HtmlService) - this has no CORS/redirect issues at all, unlike fetch().
+   Falls back to fetch() when the file is pasted raw into a Google Sites
+   "Embed code" box, where google.script.run isn't available. */
+const API_ACTION_TO_FUNCTION = {
+  getEventInfo: 'apiGetEventInfo',
+  getFuelPrice: 'apiGetFuelPrice',
+  getMySubmission: 'apiGetMySubmission',
+  submitExpense: 'apiSubmitExpense'
+};
+
+function callApi(action, payload){
+  const fnName = API_ACTION_TO_FUNCTION[action];
+  if(typeof google !== 'undefined' && google.script && google.script.run && fnName){
+    return new Promise((resolve, reject)=>{
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(err=>reject(err))
+        [fnName](payload);
+    });
+  }
+  return fetch(API_URL, {
+    method:'POST',
+    headers: {'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({action, payload})
+  }).then(res=>res.json());
+}
+
+/* ---------- INIT ---------- */
+document.getElementById('fuelPrice').addEventListener('input', ()=>refreshCarFares());
+render();
+loadEventInfo();
+</script>
+</body>
+</html>
