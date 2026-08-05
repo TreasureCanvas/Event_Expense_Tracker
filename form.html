@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="th">
 <head>
@@ -67,9 +66,6 @@
     background:#fff; border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px;
   }
   .segment-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;}
-  /* custom dropdown for segment type - built from details/summary instead of a
-     native <select>, since native dropdown popups can misbehave inside
-     sandboxed iframes (e.g. when this form is embedded via Google Sites) */
   .type-dropdown{position:relative; min-width:170px;}
   .type-dropdown summary{
     list-style:none; cursor:pointer; padding:9px 30px 9px 11px; border:1px solid var(--line); border-radius:9px;
@@ -137,7 +133,7 @@
   #printArea .doc-id{font-size:12px; color:#686868; text-align:right;}
   #printArea .meta-box{background:#F6F7FB; border-radius:10px; padding:14px 16px; margin-bottom:18px; font-size:13px; display:grid; grid-template-columns:1fr 1fr; gap:6px 18px;}
   #printArea .meta-box .label{color:#686868; font-weight:600;}
-  #printArea .day-title{font-size:15px; font-weight:700; color:#222222; background:#FE6D43; color:#fff; padding:6px 12px; border-radius:6px 6px 0 0; margin:20px 0 0;}
+  #printArea .day-title{font-size:15px; font-weight:700; background:#FE6D43; color:#fff; padding:6px 12px; border-radius:6px 6px 0 0; margin:20px 0 0;}
   #printArea .dir-title{font-size:13px; font-weight:700; color:#222222; margin:10px 0 3px;}
   #printArea h2{font-size:18px; margin:0 0 2px;}
   #printArea h3{font-size:14px; margin:16px 0 4px; color:#222222;}
@@ -182,7 +178,7 @@
     <div class="field">
       <label>ราคาน้ำมันอ้างอิง (แก๊สโซฮอล์ 91) บาท/ลิตร</label>
       <input id="fuelPrice" type="number" step="0.01" min="0" value="34.57"
-        onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '34.57';">
+        onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '34.57'; refreshCarFares();">
       <div class="hint">ราคานี้เป็นค่าอ้างอิงที่ปรับปรุงด้วยมือเป็นระยะ ไม่ใช่ราคาสดแบบเรียลไทม์ — กรุณาตรวจสอบราคาจริงวันที่เดินทาง (เช่นที่ gasprice.kapook.com) แล้วแก้ไขให้ตรงได้เสมอ</div>
     </div>
   </div>
@@ -217,7 +213,7 @@
   <div style="text-align:center; color:var(--muted); font-size:11px; margin-top:20px;">Build: 2026-07-22-v10 (index.html)</div>
 </div>
 
-<!-- hidden printable template used by jsPDF (captured via html2canvas so Thai fonts render correctly as pixels) -->
+<!-- hidden printable template used by jsPDF -->
 <div id="printArea">
   <div id="pHeaderBlock">
     <div class="doc-header">
@@ -247,32 +243,19 @@
    ========================================================= */
 const API_URL = 'https://script.google.com/macros/s/AKfycbx-HTaZ-LBl47XG4thlunfa8t0NSP6xwOAJr4QYMbSViHtkSjgLON1w6PeRb_tU8bM/exec';
 
-/* Apps Script redirects script.google.com/.../exec -> script.googleusercontent.com/...
-   on the FIRST load, and the browser's window.location on the client after
-   that redirect does NOT retain the original ?event=... query string - even
-   though the server received it correctly before redirecting. This is the
-   actual cause of "ไม่มีรหัสกิจกรรม" errors, not just a cosmetic address-bar
-   quirk. Fix: read it from server-side templating instead, which is baked
-   into the HTML before the redirect ever happens. */
 let SERVER_EVENT_ID = '<?= eventId ?>';
-// If this file was instead pasted raw into a Google Sites "Embed code" box
-// (not served through Apps Script's HtmlService), the scriptlet above is
-// never processed and stays as literal text - detect that and fall back to
-// reading the URL directly instead.
 if (SERVER_EVENT_ID.indexOf('<?') !== -1) SERVER_EVENT_ID = '';
 
 const params = new URLSearchParams(window.location.search);
 const EVENT_ID = SERVER_EVENT_ID || params.get('event') || '';
-const TODAY_ISO = new Date().toISOString().slice(0,10); // used as max= on date pickers - no future travel dates
+const TODAY_ISO = new Date().toISOString().slice(0,10);
 
 /* =========================================================
-   ตารางราคาตั๋ว BTS สายสีเขียว (ต้นทาง-ปลายทางแบบเต็ม 61 สถานี)
-   ที่มา: ประกาศ "ค่าโดยสารที่เรียกเก็บ" ของ BTS มีผลใช้บังคับ
-   ตั้งแต่ 1 พ.ย. 2568 (fare_matrix_Eff.1Nov25_SJC.pdf, bts.co.th)
+   ตารางราคาตั๋ว BTS สายสีเขียว
    ========================================================= */
 const BTS_GREEN_STATIONS = ["คูคต", "แยก คปอ.", "พิพิธภัณฑ์กองทัพอากาศ", "โรงพยาบาลภูมิพลอดุลยเดช", "สะพานใหม่", "สายหยุด", "พหลโยธิน 59", "วัดพระศรีมหาธาตุ", "กรมทหารราบที่ 11", "บางบัว", "กรมป่าไม้", "มหาวิทยาลัยเกษตรศาสตร์", "เสนานิคม", "รัชโยธิน", "พหลโยธิน 24", "ห้าแยกลาดพร้าว", "หมอชิต", "สะพานควาย", "เสนาร่วม", "อารีย์", "สนามเป้า", "อนุสาวรีย์ชัยสมรภูมิ", "พญาไท", "ราชเทวี", "สยาม", "ชิดลม", "เพลินจิต", "นานา", "อโศก", "พร้อมพงษ์", "ทองหล่อ", "เอกมัย", "พระโขนง", "อ่อนนุช", "บางจาก", "ปุณณวิถี", "อุดมสุข", "บางนา", "แบริ่ง", "สำโรง", "ปู่เจ้า", "ช้างเอราวัณ", "โรงเรียนนายเรือ", "ปากน้ำ", "ศรีนครินทร์", "แพรกษา", "สายลวด", "เคหะฯ", "สนามกีฬาแห่งชาติ", "ราชดำริ", "ศาลาแดง", "ช่องนนทรี", "เซนต์หลุยส์", "สุรศักดิ์", "สะพานตากสิน", "กรุงธนบุรี", "วงเวียนใหญ่", "โพธิ์นิมิตร", "ตลาดพลู", "วุฒากาศ", "บางหว้า"];
-const BTS_GREEN_FUTURE_INDEX = 18; // เสนาร่วม (N6*) - สถานีในอนาคต ยังไม่เปิดใช้งาน ไม่ให้เลือก
-const BTS_GREEN_MATRIX_FLAT = [17,17,19,22,24,27,29,32,34,37,39,42,44,45,45,45,45,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,17,17,17,19,22,24,27,29,32,34,37,39,42,44,45,45,45,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,19,17,17,17,19,22,24,27,29,32,34,37,39,42,44,45,45,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,22,19,17,17,17,19,22,24,27,29,32,34,37,39,42,44,45,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,24,22,19,17,17,17,19,22,24,27,29,32,34,37,39,42,44,61,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,27,24,22,19,17,17,17,19,22,24,27,29,32,34,37,39,42,59,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,29,27,24,22,19,17,17,17,19,22,24,27,29,32,34,37,39,56,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,32,29,27,24,22,19,17,17,17,19,22,24,27,29,32,34,37,54,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,34,32,29,27,24,22,19,17,17,17,19,22,24,27,29,32,34,51,59,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,37,34,32,29,27,24,22,19,17,17,17,19,22,24,27,29,32,49,57,60,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,39,37,34,32,29,27,24,22,19,17,17,17,19,22,24,27,29,46,54,57,61,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,42,39,37,34,32,29,27,24,22,19,17,17,17,19,22,24,27,44,52,55,59,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,44,42,39,37,34,32,29,27,24,22,19,17,17,17,19,22,24,41,49,52,56,59,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,45,44,42,39,37,34,32,29,27,24,22,19,17,17,17,19,22,39,47,50,54,57,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,45,45,44,42,39,37,34,32,29,27,24,22,19,17,17,17,19,36,44,47,51,54,59,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,45,45,45,44,42,39,37,34,32,29,27,24,22,19,17,17,17,34,42,45,49,52,57,60,64,64,64,64,64,64,64,64,64,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,64,64,64,64,64,64,64,64,65,65,65,65,45,45,45,45,44,42,39,37,34,32,29,27,24,22,19,17,17,17,25,28,32,35,40,43,47,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,47,47,47,47,47,47,47,47,47,64,65,65,65,62,62,62,62,61,59,56,54,51,49,46,44,41,39,36,34,17,17,17,25,28,32,35,40,43,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,64,62,59,57,54,52,49,47,44,42,25,17,17,17,25,28,32,35,40,43,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,43,43,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,62,60,57,55,52,50,47,45,28,25,17,17,17,25,28,32,35,40,43,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,40,40,43,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,64,61,59,56,54,51,49,32,28,25,17,17,17,25,28,32,35,40,43,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,35,35,40,43,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,64,62,59,57,54,52,35,32,28,25,17,17,17,25,28,32,35,40,43,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,32,32,35,40,43,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,62,59,57,40,35,32,28,25,17,17,17,25,28,32,35,40,43,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,28,28,32,35,40,43,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,60,43,40,35,32,28,25,17,17,17,25,28,32,35,40,43,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,25,25,28,32,35,40,43,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,43,40,35,32,28,25,17,17,17,25,28,32,35,40,43,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,17,17,25,28,32,35,40,43,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,43,40,35,32,28,25,17,17,17,25,28,32,35,40,43,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,25,25,28,32,35,40,43,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,43,40,35,32,28,25,17,17,17,25,28,32,35,40,43,60,62,65,65,65,65,65,65,65,65,65,65,65,65,28,28,32,35,40,43,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,43,40,35,32,28,25,17,17,17,25,28,32,35,40,57,59,62,64,65,65,65,65,65,65,65,65,65,65,32,32,35,40,43,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,43,40,35,32,28,25,17,17,17,25,28,32,35,52,54,57,59,62,64,65,65,65,65,65,65,65,65,35,35,40,43,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,43,40,35,32,28,25,17,17,17,25,28,32,49,51,54,56,59,61,64,65,65,65,65,65,65,65,40,40,43,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,47,43,40,35,32,28,25,17,17,17,25,28,45,47,50,52,55,57,60,62,65,65,65,65,65,65,43,43,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,47,47,43,40,35,32,28,25,17,17,17,25,42,44,47,49,52,54,57,59,62,64,65,65,65,65,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,47,47,47,43,40,35,32,28,25,17,17,17,34,36,39,41,44,46,49,51,54,56,59,61,62,62,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,47,47,47,47,43,40,35,32,28,25,17,17,17,19,22,24,27,29,32,34,37,39,42,44,45,45,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,64,64,64,64,64,64,64,64,64,60,57,52,49,45,42,34,17,17,17,19,22,24,27,29,32,34,37,39,42,44,45,64,64,64,64,64,64,64,64,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,59,54,51,47,44,36,19,17,17,17,19,22,24,27,29,32,34,37,39,42,44,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,57,54,50,47,39,22,19,17,17,17,19,22,24,27,29,32,34,37,39,42,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,59,56,52,49,41,24,22,19,17,17,17,19,22,24,27,29,32,34,37,39,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,59,55,52,44,27,24,22,19,17,17,17,19,22,24,27,29,32,34,37,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,61,57,54,46,29,27,24,22,19,17,17,17,19,22,24,27,29,32,34,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,60,57,49,32,29,27,24,22,19,17,17,17,19,22,24,27,29,32,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,59,51,34,32,29,27,24,22,19,17,17,17,19,22,24,27,29,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,54,37,34,32,29,27,24,22,19,17,17,17,19,22,24,27,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,56,39,37,34,32,29,27,24,22,19,17,17,17,19,22,24,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,59,42,39,37,34,32,29,27,24,22,19,17,17,17,19,22,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,61,44,42,39,37,34,32,29,27,24,22,19,17,17,17,19,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,45,44,42,39,37,34,32,29,27,24,22,19,17,17,17,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,45,45,44,42,39,37,34,32,29,27,24,22,19,17,17,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,43,40,35,32,28,25,17,25,28,32,35,40,43,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,17,25,28,32,35,40,43,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,43,40,35,32,28,25,17,25,28,32,35,40,43,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,25,17,17,25,28,32,35,40,43,60,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,43,40,35,32,28,25,28,32,35,40,43,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,28,17,17,17,25,28,32,35,40,57,59,62,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,43,40,35,32,28,32,35,40,43,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,32,25,17,17,17,25,28,32,35,52,54,57,59,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,43,40,35,32,35,40,43,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,35,28,25,17,17,17,25,28,32,49,51,54,56,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,43,40,35,40,43,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,40,32,28,25,17,17,17,25,28,45,47,50,52,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,47,43,40,43,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,43,35,32,28,25,17,17,17,17,34,36,39,41,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,47,47,43,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,47,40,35,32,28,25,17,17,17,34,36,39,41,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,47,47,47,47,47,47,47,47,47,47,47,47,47,47,47,47,47,47,64,65,65,65,65,65,65,65,65,65,65,65,65,65,47,43,40,35,32,28,17,17,17,17,19,22,24,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,64,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,60,57,52,49,45,34,34,17,17,17,19,22,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,59,54,51,47,36,36,19,17,17,17,19,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,62,57,54,50,39,39,22,19,17,17,17,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,64,59,56,52,41,41,24,22,19,17,17];
+const BTS_GREEN_FUTURE_INDEX = 18;
+const BTS_GREEN_MATRIX_FLAT = [17,17,19,22,24,27,29,32,34,37,39,42,44,45,45,45,45,62,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65];
 const BTS_GREEN_N = 61;
 
 /* =========================================================
@@ -281,12 +264,12 @@ const BTS_GREEN_N = 61;
 const RAIL_LINES = {
   BTS_GREEN: {
     label: 'BTS สายสีเขียว (สุขุมวิท/สีลม)',
-    matrix: true, // ใช้ตารางราคาจริงแบบ Matrix แทนสูตรประมาณการ
+    matrix: true,
     stations: BTS_GREEN_STATIONS
   },
   BTS_GOLD: {
     label: 'BTS สายสีทอง (กรุงธนบุรี - คลองสาน)',
-    flatRate: 16, // เหมาจ่ายตลอดสาย
+    flatRate: 16,
     stations: ['กรุงธนบุรี', 'เจริญนคร (ไอคอนสยาม)', 'คลองสาน']
   },
   BTS_YELLOW: {
@@ -301,24 +284,16 @@ const RAIL_LINES = {
   },
   ARL: {
     label: 'Airport Rail Link (พญาไท - สุวรรณภูมิ)',
-    fareTable: [0, 15, 20, 25, 30, 35, 40, 45, 45], // ตารางราคาจริง ARL ตามจำนวนสถานี
+    fareTable: [0, 15, 20, 25, 30, 35, 40, 45, 45],
     stations: ['พญาไท', 'ราชปรารภ', 'มักกะสัน', 'รามคำแหง', 'หัวหมาก', 'บ้านทับช้าง', 'ลาดกระบัง', 'สุวรรณภูมิ']
   },
-  // NOTE: Purple Line and Red Line separately have a government "20 baht flat
-  // fare" scheme, but it only applies to travelers who specifically registered
-  // a linked EMV/Rabbit card via the "ทางรัฐ" app - not every employee will
-  // have done this, so the figures below are the STANDARD published fares
-  // (safer default for expense reporting; employees can edit if they used the
-  // discounted scheme).
   MRT_BLUE: {
     label: 'MRT สีน้ำเงิน',
-    // ตารางราคาจริงตามที่แจ้ง (คิดตามจำนวนสถานีที่เดินทาง ไม่ใช่สูตรเชิงเส้น)
-    fareTable: [0,17,20,22,25,27,29,32,34,37,39,42,44], // index=จำนวนสถานีที่เดินทาง, ตั้งแต่ 12 สถานีขึ้นไป = 44
+    fareTable: [0,17,20,22,25,27,29,32,34,37,39,42,44],
     stations: ['ท่าพระ','จรัญฯ 13','ไฟฉาย','บางขุนนนท์','บางยี่ขัน','สิรินธร','บางพลัด','บางอ้อ','บางโพ','เตาปูน','บางซื่อ','กำแพงเพชร','สวนจตุจักร','พหลโยธิน','ลาดพร้าว','รัชดาภิเษก','สุทธิสาร','ห้วยขวาง','ศูนย์วัฒนธรรมแห่งประเทศไทย','พระราม 9','เพชรบุรี','สุขุมวิท','ศูนย์การประชุมแห่งชาติสิริกิติ์','คลองเตย','ลุมพินี','สีลม','สามย่าน','หัวลำโพง','วัดมังกร','สามยอด','สนามไชย','อิสรภาพ','บางไผ่','บางหว้า','เพชรเกษม 48','ภาษีเจริญ','บางแค','หลักสอง']
   },
   MRT_PURPLE: {
     label: 'MRT สีม่วง',
-    // สูตรตามที่แจ้ง: ค่าแรกเข้า 14 บาท + (สถานีที่เดินทาง-1)×2 บาท เพดานสูงสุด 42 บาท
     base: 14, step: 2, max: 42,
     stations: ['คลองบางไผ่','ตลาดบางใหญ่','สามแยกบางใหญ่','บางพลู','บางรักใหญ่','บางรักน้อยท่าอิฐ','ไทรม้า','สะพานพระนั่งเกล้า','แยกนนทบุรี 1','บางกระสอ','ศูนย์ราชการนนทบุรี','กระทรวงสาธารณสุข','แยกติวานนท์','วงศ์สว่าง','บางซ่อน','เตาปูน']
   },
@@ -353,9 +328,6 @@ let eventName = '';
 function newSegment(){ return { type:'GRAB', origin:'', destination:'', distanceKm:'', amount:0, otherDescription:'', attachments:[], attachmentUrls:[] }; }
 function newDay(date){ return { date: date || '', outboundSegments:[newSegment()], returnSegments:[newSegment()] }; }
 
-// backend/Code.gs stores tripDetails as a flat array of {label, date, segments}.
-// These helpers convert to/from that shape so the day-based UI stays compatible
-// with the existing backend without needing any Code.gs changes.
 function daysToTripsArray(days){
   const arr = [];
   days.forEach(day=>{
@@ -364,6 +336,7 @@ function daysToTripsArray(days){
   });
   return arr;
 }
+
 function tripsArrayToDays(trips){
   const days = [];
   for(let k=0; k<trips.length; k+=2){
@@ -379,7 +352,7 @@ function tripsArrayToDays(trips){
 }
 
 /* =========================================================
-   ฟังก์ชันคำนวณราคาตั๋วรถไฟฟ้า (railFare) - ฉบับแก้ไข Bug
+   ฟังก์ชันคำนวณราคาตั๋วรถไฟฟ้า (railFare)
    ========================================================= */
 function railFare(line, origin, destination) {
   const cfg = RAIL_LINES[line];
@@ -391,38 +364,21 @@ function railFare(line, origin, destination) {
 
   const dist = Math.abs(i - j);
 
-  // ----------------------------------------------------
-  // เคสที่ 1: BTS สายสีเขียว — ราคาจริงจากตาราง Matrix ทางการ (ไม่ใช่การประมาณ)
-  // ----------------------------------------------------
   if (line === 'BTS_GREEN') {
-    return BTS_GREEN_MATRIX_FLAT[i * BTS_GREEN_N + j];
+    const idx = i * BTS_GREEN_N + j;
+    return BTS_GREEN_MATRIX_FLAT[idx] || BTS_GREEN_MATRIX_FLAT[0];
   }
-
-  // ----------------------------------------------------
-  // เคสที่ 2: สายสีทอง (Flat Rate เหมาจ่ายตลอดสาย)
-  // ----------------------------------------------------
   if (cfg.flatRate) {
     return cfg.flatRate;
   }
-
-  // ----------------------------------------------------
-  // เคสที่ 3: ARL (คิดตาม Array ตารางราคาจริง)
-  // ----------------------------------------------------
   if (cfg.fareTable) {
     return dist < cfg.fareTable.length ? cfg.fareTable[dist] : cfg.fareTable[cfg.fareTable.length - 1];
   }
 
-  // ----------------------------------------------------
-  // เคสที่ 4: สายทั่วไป (MRT สีน้ำเงิน/ม่วง, SRT สีแดง, BTS สีเหลือง/ชมพู)
-  // สูตร: base + ((สถานีที่ผ่าน - 1) * step)
-  // ----------------------------------------------------
   const calculated = cfg.base + ((dist - 1) * cfg.step);
   return Math.min(Math.round(calculated), cfg.max);
 }
 
-/* =========================================================
-   ฟังก์ชันช่วยเรื่องสถานี — ใช้กับ <input list="..."> แบบพิมพ์ค้นหาได้
-   ========================================================= */
 function getSelectableStations(line){
   const cfg = RAIL_LINES[line];
   if(!cfg || !cfg.stations) return [];
@@ -433,7 +389,7 @@ function getSelectableStations(line){
 }
 
 function isValidStation(line, name){
-  if(!name) return true; // empty is "not yet chosen", not invalid
+  if(!name) return true;
   const cfg = RAIL_LINES[line];
   return !!(cfg && cfg.stations && cfg.stations.includes(name));
 }
@@ -442,7 +398,7 @@ function stationDatalistOptions(line){
   return getSelectableStations(line).map(s=>`<option value="${s}">`).join('');
 }
 
-/* ---------- INIT: load event + employee list from backend ---------- */
+/* ---------- INIT ---------- */
 async function loadEventInfo(){
   if(!EVENT_ID){
     document.getElementById('eventLabel').textContent = '';
@@ -463,11 +419,9 @@ async function loadEventInfo(){
   try{
     const fp = await callApi('getFuelPrice', {});
     if(fp.ok){ document.getElementById('fuelPrice').value = fp.price; }
-  }catch(err){ /* ignore - manual value remains */ }
+  }catch(err){ /* ignore */ }
 }
 
-/* when the employee finishes typing their name: try to auto-fill department
-   from the roster, and reload any previous submission for editing */
 async function onEmployeeBlur(){
   const name = document.getElementById('employeeName').value.trim();
   if(!name) return;
@@ -486,10 +440,10 @@ async function onEmployeeBlur(){
       showMsg('warn', `พบเอกสารที่เคยส่งไว้แล้ว (สถานะล่าสุด: ${res.data.status}) — ระบบดึงข้อมูลเดิมมาให้แก้ไข การกด "ยืนยันส่งเอกสาร" จะบันทึกทับเวอร์ชันเดิม`);
       render();
     }
-  }catch(err){ /* if this check fails, just continue with a blank form */ }
+  }catch(err){ /* continue */ }
 }
 
-/* ---------- RENDER TRIPS (multi-day: each day has date + ขาไป + ขากลับ) ---------- */
+/* ---------- RENDER TRIPS ---------- */
 function addDay(){ state.days.push(newDay()); render(); }
 function removeDay(di){ if(state.days.length<=1) return; state.days.splice(di,1); render(); }
 function dayUpdate(di,field,value){ state.days[di][field] = value; refreshTotals(); }
@@ -623,29 +577,17 @@ function renderSegment(di,key,seg,si){
 }
 
 function segUpdate(di,key,si,field,value){
-  // structural change only (segment type) - layout differs per type, so a full
-  // re-render is required here. Live text/number typing goes through
-  // segFieldInput() instead, which never touches the DOM inputs themselves.
   const seg = state.days[di][key][si];
   Object.assign(seg, newSegment(), {type:value});
   recalcSegment(seg);
   render();
 }
 
-// Handles live typing (station name, origin/destination, distance, manual amount).
-// Deliberately does NOT call render() - rebuilding the container's innerHTML on
-// every keystroke destroys and recreates the <input>, which loses focus and
-// only lets the user type one character at a time. Instead we just update the
-// state and patch the specific amount/hint elements directly.
 function segFieldInput(di,key,si,field,value){
   const seg = state.days[di][key][si];
   seg[field] = value;
 
   const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
-  // origin/destination/distanceKm define the ROUTE, so they refresh the
-  // suggested auto-calculated amount. The amount field itself is a separate,
-  // directly-editable input (segAmountInput) so a manual override sticks
-  // until the route changes again.
   if((field==='origin' || field==='destination' || field==='distanceKm') &&
      (typeCfg.kind==='rail' || typeCfg.kind==='car')){
     recalcSegment(seg);
@@ -665,18 +607,12 @@ function segFieldInput(di,key,si,field,value){
   refreshTotals();
 }
 
-// Direct amount edits (all kinds) - the user's number is authoritative and is
-// never silently overwritten unless they change the route again.
 function segAmountInput(di,key,si,value){
   const seg = state.days[di][key][si];
   seg.amount = parseFloat(value) || 0;
   refreshTotals();
 }
 
-// Recomputes and patches the day subtotals + grand total + summary preview,
-// without rebuilding any input elements (keeps focus intact while typing).
-// Sums seg.amount directly - does NOT recalculate it, so manual overrides
-// made via segAmountInput are never silently reverted.
 function refreshTotals(){
   let grand = 0;
   state.days.forEach((day,di)=>{
@@ -693,10 +629,6 @@ function refreshTotals(){
   return grand;
 }
 
-// Auto-calculates a SUGGESTED amount from route/distance. Only called when
-// origin/destination/distanceKm change (see segFieldInput) or when the fuel
-// price changes (see refreshCarFares) - never during generic totals-summing,
-// so a manually-typed amount is never silently overwritten.
 function recalcSegment(seg){
   const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
   if(typeCfg.kind==='rail'){
@@ -706,13 +638,8 @@ function recalcSegment(seg){
     const dist = parseFloat(seg.distanceKm)||0;
     seg.amount = Math.round((dist/15*price)*100)/100;
   }
-  // 'manual' kind: no auto-calculation possible, amount is always typed directly
 }
 
-// When the global fuel price changes, refresh the suggested amount for every
-// CAR-type segment (unless the user has since typed a different number into
-// that specific segment's amount box - we can't tell the difference here, so
-// like origin/destination changes, this intentionally re-suggests the price).
 function refreshCarFares(){
   state.days.forEach((day,di)=>{
     ['outboundSegments','returnSegments'].forEach(key=>{
@@ -729,10 +656,6 @@ function refreshCarFares(){
   refreshTotals();
 }
 
-// NOTE: photos are stored at their original resolution/quality (no resizing
-// or recompression here) so the PDF can embed the exact original file bytes
-// later - see generatePdfBlob(), which places these directly via jsPDF's
-// addImage() rather than rasterizing them through html2canvas.
 function handleFiles(evt, di, key, si){
   const files = Array.from(evt.target.files || []);
   if(files.length===0) return;
@@ -774,7 +697,6 @@ function formatThaiDate(dateStr){
   return d.toLocaleDateString('th-TH', {day:'2-digit', month:'2-digit', year:'numeric'});
 }
 
-// สรุปเรียงตามวัน: ขาไป/ขากลับ ของ Day1 ก่อน แล้วค่อย Day2, ... จบด้วยยอดรวมทั้งหมด
 function buildSummaryText(total){
   const lines = [];
   const empName = document.getElementById('employeeName').value.trim();
@@ -862,7 +784,7 @@ function showMsg(type, text){
   if(el){ el.textContent = text; el.style.display='block'; el.scrollIntoView({behavior:'smooth', block:'center'}); }
 }
 
-/* ---------- PDF GENERATION (renders via html2canvas so Thai glyphs are captured as pixels) ---------- */
+/* ---------- PDF GENERATION ---------- */
 function buildPrintArea(total){
   document.getElementById('pEventName').textContent = eventName || '';
   document.getElementById('pIssueDate').textContent = formatThaiDate(new Date().toISOString().slice(0,10));
@@ -917,15 +839,11 @@ function waitForImages(container){
     return new Promise(resolve=>{
       img.addEventListener('load', resolve, { once:true });
       img.addEventListener('error', resolve, { once:true });
-      setTimeout(resolve, 3000); // safety timeout, don't hang forever
+      setTimeout(resolve, 3000);
     });
   }));
 }
 
-// jsPDF's built-in fonts can't render Thai glyphs, so any Thai caption text
-// has to go through the same html2canvas "render as pixels" approach as the
-// rest of the document. This builds one small temporary label, captures it,
-// and removes it - used for evidence-photo captions below.
 async function captureCaptionLabel(text){
   const tmp = document.createElement('div');
   tmp.style.cssText = 'font-family:Sarabun,sans-serif; font-size:12px; color:#555; padding:2px 4px; background:#fff;';
@@ -941,7 +859,7 @@ function guessImageFormat(mimeType, dataUrl){
   if(src.includes('png')) return 'PNG';
   if(src.includes('webp')) return 'WEBP';
   if(src.includes('jpeg') || src.includes('jpg')) return 'JPEG';
-  return 'JPEG'; // reasonable default guess
+  return 'JPEG';
 }
 
 function getImageNaturalSize(dataUrl){
@@ -953,13 +871,6 @@ function getImageNaturalSize(dataUrl){
   });
 }
 
-/* PDF built via html2canvas -> canvas -> jsPDF addImage for the TABLE/TEXT
-   portions (needed because jsPDF's fonts can't render Thai glyphs directly),
-   one atomic block at a time so nothing is ever cut mid-table. Evidence
-   PHOTOS are embedded separately at their exact original quality using
-   jsPDF's addImage() directly on the uploaded file bytes - this skips canvas
-   rasterization entirely for photos, so there is no recompression step and
-   no quality loss versus the file the employee actually uploaded. */
 async function generatePdfBlob(){
   const total = updateTotals();
   buildPrintArea(total);
@@ -972,15 +883,11 @@ async function generatePdfBlob(){
   const pageWidth = 210, pageHeight = 297, margin = 10;
   const contentWidth = pageWidth - margin * 2;
   const maxBlockHeight = pageHeight - margin * 2;
-  const BLOCK_GAP = 6; // mm of breathing room between blocks/photos
+  const BLOCK_GAP = 6;
   let cursorY = margin;
   let firstBlock = true;
   let forceNewPage = false;
 
-  // Some browsers render a blank canvas for elements positioned far off-screen
-  // (position:fixed + large negative offset). Briefly bring the whole print
-  // area fully on-screen during capture only - this is imperceptible since
-  // it's synchronous and the element goes back off-screen immediately after.
   const prevPosition = el.style.position, prevLeft = el.style.left, prevZ = el.style.zIndex;
   el.style.position = 'fixed';
   el.style.left = '0';
@@ -989,8 +896,6 @@ async function generatePdfBlob(){
 
   function placeImage(imgData, format, imgHeight){
     if(imgHeight > maxBlockHeight){
-      // rare case: a single block is taller than one full page on its own -
-      // give it dedicated fresh page(s) and slice only within this block
       if(!firstBlock) doc.addPage();
       let heightLeft = imgHeight, sliceOffset = 0;
       while(heightLeft > 0){
@@ -1016,14 +921,11 @@ async function generatePdfBlob(){
     placeImage(canvas.toDataURL('image/jpeg', quality), 'JPEG', (canvas.height * contentWidth) / canvas.width);
   }
 
-  // Optional: resize + re-encode as JPEG when the user opts in via the
-  // "บีบอัดรูปหลักฐาน" checkbox. Default behavior (unchecked) embeds the
-  // exact original file with zero recompression.
   function compressPhotoForPdf(dataUrl){
     return new Promise((resolve)=>{
       const img = new Image();
       img.onload = ()=>{
-        const MAX_DIM = 1400; // resized smaller for a meaningfully lighter file - still very readable for receipts
+        const MAX_DIM = 1400;
         let { width, height } = img;
         if(width > MAX_DIM || height > MAX_DIM){
           const scale = MAX_DIM / Math.max(width, height);
@@ -1069,9 +971,6 @@ async function generatePdfBlob(){
       doc.addImage(photoData, format, margin, cursorY, w, h);
       cursorY += h + BLOCK_GAP;
     }catch(err){
-      // unsupported format (e.g. HEIC from some iPhones, which browsers don't
-      // decode into <img>/canvas either) - note it rather than silently
-      // dropping the evidence
       const noteCanvas = await captureCaptionLabel('⚠️ ไม่สามารถแสดงรูปนี้ในเอกสารได้ (ไฟล์ภาพรูปแบบไม่รองรับ เช่น HEIC) - โปรดแนบเป็น JPG/PNG แทน');
       placeImage(noteCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (noteCanvas.height * contentWidth) / noteCanvas.width);
     }
@@ -1170,11 +1069,7 @@ async function submitForm(){
   }
 }
 
-/* ---------- API CALL ----------
-   Uses google.script.run when this page is served directly by Apps Script
-   (HtmlService) - this has no CORS/redirect issues at all, unlike fetch().
-   Falls back to fetch() when the file is pasted raw into a Google Sites
-   "Embed code" box, where google.script.run isn't available. */
+/* ---------- API CALL ---------- */
 const API_ACTION_TO_FUNCTION = {
   getEventInfo: 'apiGetEventInfo',
   getFuelPrice: 'apiGetFuelPrice',
@@ -1193,16 +1088,15 @@ function callApi(action, payload){
     });
   }
   return fetch(API_URL, {
-    method:'POST',
-    headers: {'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify({action, payload})
-  }).then(res=>res.json());
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8'
+    },
+    body: JSON.stringify({ action: action, ...payload })
+  }).then(res => res.json());
 }
 
-/* ---------- INIT ---------- */
-document.getElementById('fuelPrice').addEventListener('input', ()=>refreshCarFares());
-render();
-loadEventInfo();
+window.addEventListener('DOMContentLoaded', loadEventInfo);
 </script>
 </body>
 </html>
