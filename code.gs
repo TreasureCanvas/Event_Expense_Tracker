@@ -3,16 +3,6 @@
  *  ระบบจัดทำและรวบรวมเอกสารเบิกค่าเดินทางเชื่อมโยงกิจกรรม
  *  (Event Expense Tracker) - Backend (Google Apps Script)
  * ===================================================================
- *  วิธี Deploy:
- *  1. เปิด Google Sheets เปล่า 1 ไฟล์ -> Extensions > Apps Script
- *  2. วางไฟล์นี้ทับ Code.gs ที่มีอยู่
- *  3. รันฟังก์ชัน setupSheets() หนึ่งครั้ง (Run > setupSheets) เพื่อสร้างชีตทั้งหมด
- *  4. Deploy > New deployment > Type: Web app
- *       - Execute as: Me
- *       - Who has access: Anyone
- *     กด Deploy แล้วคัดลอก "Web app URL" (ลงท้ายด้วย /exec)
- *  5. นำ URL ไปวางในตัวแปร API_URL ของฝั่ง Frontend บน Vercel
- * ===================================================================
  */
 
 // ---------- CONFIG ----------
@@ -108,11 +98,13 @@ function doGet(e) {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+// รองรับ CORS Preflight Requests จาก Vercel
+function doOptions(e) {
+  return ContentService.createTextOutput('')
+    .setMimeType(ContentService.MimeType.TEXT);
 }
 
-// doPost ใช้ LockService ป้องกัน Concurrent Request ปัญหาส่งพร้อมกันแล้วข้อมูลทับกัน
+// doPost ใช้ LockService ป้องกัน Concurrent Request
 function doPost(e) {
   const lock = LockService.getScriptLock();
   // รอคิว Lock ไม่เกิน 15 วินาที
@@ -121,11 +113,21 @@ function doPost(e) {
   }
 
   try {
-    let body;
-    try {
-      body = JSON.parse(e.postData.contents);
-    } catch (err) {
-      return jsonOut({ ok: false, error: 'รูปแบบข้อมูล JSON ไม่ถูกต้อง' });
+    let body = {};
+    if (e && e.postData && e.postData.contents) {
+      try {
+        body = JSON.parse(e.postData.contents);
+      } catch (parseErr) {
+        return jsonOut({ ok: false, error: 'รูปแบบข้อมูล JSON ไม่ถูกต้อง' });
+      }
+    } else if (e && e.parameter && e.parameter.payload) {
+      try {
+        body = JSON.parse(e.parameter.payload);
+      } catch (pErr) {
+        body = e.parameter;
+      }
+    } else if (e && e.parameter) {
+      body = e.parameter;
     }
 
     const action = body.action;
@@ -190,6 +192,14 @@ function dateStr(d) {
   if (!d) return '';
   if (typeof d === 'string') return d;
   return Utilities.formatDate(d, 'GMT+7', 'dd/MM/yyyy');
+}
+
+function safeSetPublicSharing(file) {
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (err) {
+    Logger.log('Warning: Cannot set public file sharing policy: ' + err.toString());
+  }
 }
 
 // ---------- API: สร้างกิจกรรมใหม่ ----------
@@ -390,7 +400,7 @@ function apiSubmitExpense(payload) {
         payload.pdfFileName || ('Expense_' + payload.employeeName + '.pdf')
       );
       const file = folder.createFile(blob);
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      safeSetPublicSharing(file);
       pdfUrl = file.getUrl();
     } catch (pdfErr) {
       Logger.log('PDF Save Error: ' + pdfErr.toString());
@@ -416,7 +426,7 @@ function apiSubmitExpense(payload) {
             'slip_' + payload.employeeName + '_trip' + (ti + 1) + '_seg' + (si + 1) + '_' + (ai + 1) + '.' + ext
           );
           const imgFile = folder.createFile(imgBlob);
-          imgFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          safeSetPublicSharing(imgFile);
           keptUrls.push(imgFile.getUrl());
         } catch (imgErr) {
           Logger.log('Image Save Error: ' + imgErr.toString());
