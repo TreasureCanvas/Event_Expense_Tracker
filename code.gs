@@ -87,15 +87,55 @@ function doGet(e) {
   const page = (e && e.parameter && e.parameter.page) || 'home';
   let tmpl;
   if (page === 'form') {
-    tmpl = HtmlService.createTemplateFromFile('index');
+    tmpl = HtmlService.createTemplateFromFile('form'); // แก้จาก 'index' เป็น 'form'
   } else {
-    tmpl = HtmlService.createTemplateFromFile('home');
+    tmpl = HtmlService.createTemplateFromFile('index'); // แก้จาก 'home' เป็น 'index'
   }
   tmpl.eventId = (e && e.parameter && e.parameter.event) || '';
   return tmpl.evaluate()
     .setTitle('Event Expense Tracker')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+// ---------- API: สร้างกิจกรรมใหม่ ----------
+function apiCreateEvent(payload) {
+  if (!payload || !payload.eventName || !payload.ownerName) {
+    return { ok: false, error: 'กรุณากรอกชื่อกิจกรรมและชื่อผู้สร้าง' };
+  }
+
+  const events = getSheet(SHEET_EVENTS);
+  const eventId = 'EV-' + new Date().getFullYear() + '-' + generateId('').replace('-', '');
+  
+  // ✅ แก้ไขลิงก์ให้ชี้ไปที่ Vercel URL
+  const vercelBaseUrl = 'https://event-expense-tracker-chi.vercel.app';
+  const formLink = vercelBaseUrl + '/form.html?event=' + eventId;
+
+  events.appendRow([
+    eventId, 
+    String(payload.eventName).trim(), 
+    String(payload.ownerName).trim(), 
+    String(payload.venue || '').trim(),
+    payload.startDate || '', 
+    payload.endDate || payload.startDate || '',
+    formLink, 
+    '', 
+    nowStr()
+  ]);
+
+  const empSheet = getSheet(SHEET_EVENT_EMPLOYEES);
+  if (Array.isArray(payload.employees)) {
+    payload.employees.forEach(emp => {
+      if (!emp || !emp.name) return;
+      empSheet.appendRow([eventId, String(emp.name).trim(), String(emp.department || '').trim()]);
+    });
+  }
+
+  return {
+    ok: true,
+    eventId: eventId,
+    formLink: formLink
+  };
 }
 
 // รองรับ CORS Preflight Requests จาก Vercel
