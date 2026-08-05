@@ -5,10 +5,7 @@
   ==========================================================================
   ⚠️ ไฟล์นี้ต้องถูกวางไว้ 2 ที่ ให้เนื้อหาตรงกันเป๊ะเสมอ:
   1. Apps Script Editor > ไฟล์ HTML ชื่อ "home" (ไม่ต้องมี .html ต่อท้ายตอนตั้งชื่อ)
-     - นี่คือไฟล์แดชบอร์ดหลักที่ระบบใช้จริงตอนเปิด .../exec โดยตรง
-  2. วางในกล่อง "Embed code" ของ Google Sites เพื่อฝังแดชบอร์ดนี้เป็นหน้าเว็บจริง
-
-  🎨 แก้สี/ธีมของหน้านี้: ดูตัวแปร CSS ในบล็อก :root{...} บรรทัดถัดไปเลย
+  2. วางในระบบ Frontend / Vercel ( home.html )
   ==========================================================================
 -->
 <meta charset="UTF-8">
@@ -18,7 +15,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-  /* ===== 🎨 ธีมสีหลักของทั้งหน้า - แก้ตรงนี้ที่เดียว ===== */
+  /* ===== 🎨 ธีมสีหลักของทั้งหน้า ===== */
   :root{ --brand:#FE6D43; --brand-dark:#222222; --accent:#e8a33d; --bg:#F6F7FB; --card:#ffffff; --line:#e2e5e1;
     --text:#20281f; --muted:#686868; --ok:#1f7a4d; --warn:#b9770e; --danger:#c0392b; --pending:#8b8f89; --radius:14px; }
   *{box-sizing:border-box;}
@@ -202,18 +199,13 @@
     </div>
   </div>
 
-  <div style="text-align:center; color:var(--muted); font-size:11px; margin-top:20px;">Build: 2026-07-22-v10 (home.html)</div>
+  <div style="text-align:center; color:var(--muted); font-size:11px; margin-top:20px;">Build: 2026-08-05-v11 (home.html)</div>
 </div>
 
 <script>
-const BUILD_VERSION = '2026-07-22-v10';
+const BUILD_VERSION = '2026-08-05-v11';
 const API_URL = 'https://script.google.com/macros/s/AKfycbx-HTaZ-LBl47XG4thlunfa8t0NSP6xwOAJr4QYMbSViHtkSjgLON1w6PeRb_tU8bM/exec';
 
-/* Uses google.script.run when this page is served directly by Apps Script
-   (HtmlService) - no CORS/redirect issues at all, unlike fetch(). Falls back
-   to fetch() when pasted raw into a Google Sites "Embed code" box, where
-   google.script.run isn't available. This fixes "Failed to fetch" /
-   "Unexpected token '<'" errors that can happen with plain fetch(). */
 const API_ACTION_TO_FUNCTION = {
   listAllEvents: 'apiListAllEvents',
   createEvent: 'apiCreateEvent',
@@ -232,16 +224,26 @@ function callApi(action, payload){
     });
   }
   return fetch(API_URL, {
-    method:'POST',
-    headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify({action, payload})
-  }).then(res=>res.json());
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action, payload })
+  }).then(res => res.json());
 }
 
+// สร้าง Form Link ให้สอดคล้องกับ Domain ปัจจุบัน (Vercel หรือ GAS Direct)
 function formLinkFor(eventId){
-  const ev = allEvents.find(e=>e.eventId===eventId);
+  const origin = window.location.origin;
+  const pathname = window.location.pathname;
+  
+  // หากรันอยู่บน Vercel หรือเว็บภายนอก
+  if(!origin.includes('script.google.com')) {
+    return `${origin}${pathname}?page=form&event=${eventId}`;
+  }
+  
+  // หากรันบน Apps Script โดยตรง
+  const ev = allEvents.find(e => e.eventId === eventId);
   if(ev && ev.formLink) return ev.formLink;
-  return API_URL + '?page=form&event=' + eventId; // fallback for events created before form_link was stored
+  return API_URL + '?page=form&event=' + eventId;
 }
 
 /* ================= VIEW SWITCHING ================= */
@@ -264,10 +266,10 @@ function showEditViewEl(){
 function showExportView(){
   document.getElementById('exportMsgErr').style.display = 'none';
   const list = document.getElementById('exportEventList');
-  if(allEvents.length===0){
+  if(allEvents.length === 0){
     list.innerHTML = '<div class="hint">ยังไม่มีกิจกรรมในระบบ</div>';
   } else {
-    list.innerHTML = allEvents.map(e=>`
+    list.innerHTML = allEvents.map(e => `
       <label style="display:flex; align-items:center; gap:8px; padding:6px 0; font-size:13.5px; cursor:pointer;">
         <input type="checkbox" class="export-check" value="${e.eventId}" style="width:auto;">
         ${e.eventName} <span class="hint" style="margin:0;">(${e.startDate}${e.endDate && e.endDate!==e.startDate ? ' – '+e.endDate : ''})</span>
@@ -279,7 +281,7 @@ function showExportView(){
 
 /* ================= EVENT LIST ================= */
 let allEvents = [];
-let rosterCache = {}; // eventId -> roster response, loaded on demand
+let rosterCache = {}; 
 
 async function loadEvents(){
   const container = document.getElementById('eventListContainer');
@@ -305,10 +307,10 @@ function renderEventList(){
   const container = document.getElementById('eventListContainer');
   const emptyMsg = document.getElementById('listEmptyMsg');
 
-  if(filtered.length===0){
+  if(filtered.length === 0){
     container.innerHTML = '';
     emptyMsg.style.display = 'block';
-    emptyMsg.textContent = allEvents.length===0 ? 'ยังไม่มีกิจกรรมในระบบ — กด "➕ สร้าง Event" เพื่อเริ่มต้น' : 'ไม่พบกิจกรรมที่ตรงกับคำค้นหา';
+    emptyMsg.textContent = allEvents.length === 0 ? 'ยังไม่มีกิจกรรมในระบบ — กด "➕ สร้าง Event" เพื่อเริ่มต้น' : 'ไม่พบกิจกรรมที่ตรงกับคำค้นหา';
     return;
   }
   emptyMsg.style.display = 'none';
@@ -342,14 +344,10 @@ function copyLink(eventId, btnEl){
   };
 
   copyTextRobust(link).then(showCopied).catch(()=>{
-    // last resort: show the link so the user can copy it manually
     window.prompt('คัดลอกลิงก์นี้ด้วยตนเอง (Ctrl+C / Cmd+C แล้วกด Enter):', link);
   });
 }
 
-// navigator.clipboard silently fails in many contexts (non-HTTPS, sandboxed
-// iframes like Google Sites' Embed Code box, missing permissions policy).
-// Try it first, then fall back to the legacy execCommand('copy') trick.
 function copyTextRobust(text){
   if(navigator.clipboard && navigator.clipboard.writeText){
     return navigator.clipboard.writeText(text).catch(()=>execCommandCopy(text));
@@ -377,7 +375,6 @@ function execCommandCopy(text){
 async function toggleRoster(eventId, i){
   const panel = document.getElementById('roster-'+i);
   const isOpen = panel.style.display === 'block';
-  // close any other open panels for a tidier list
   document.querySelectorAll('.roster-panel').forEach(p=>p.style.display='none');
   if(isOpen) return;
 
@@ -396,7 +393,7 @@ async function toggleRoster(eventId, i){
   }
   if(!data.ok){ panel.innerHTML = `<div class="hint">เกิดข้อผิดพลาด: ${data.error}</div>`; return; }
 
-  if(data.roster.length===0){
+  if(data.roster.length === 0){
     panel.innerHTML = '<div class="hint">ยังไม่มีรายชื่อพนักงานผูกกับกิจกรรมนี้</div>';
     return;
   }
@@ -435,29 +432,6 @@ async function toggleRoster(eventId, i){
       <thead><tr><th>สถานะ</th><th>พนักงาน</th><th>แผนก</th><th>ยอดเงิน</th><th>PDF File</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>`;
-
-  panel.dataset.sorted = JSON.stringify(sorted);
-  panel._sortedData = sorted;
-  panel._rowIndex = i;
-  window['_rosterRows_'+i] = sorted;
-}
-
-function copyRosterSummary(eventId, ri, i){
-  const data = rosterCache[eventId];
-  if(!data) return;
-  const sorted = [...data.roster].sort((a,b)=>{
-    const rank = r => r.status && r.status.startsWith('มีการแก้ไข') ? 0 : (r.submitted ? 1 : 2);
-    return rank(a)-rank(b);
-  });
-  const r = sorted[ri];
-  if(!r || !r.summaryText) return;
-
-  copyTextRobust(r.summaryText).then(()=>{
-    const el = document.getElementById(`copyok-${i}-${ri}`);
-    if(el){ el.style.display='inline'; setTimeout(()=>el.style.display='none', 2000); }
-  }).catch(()=>{
-    window.prompt('คัดลอกข้อความนี้ด้วยตนเอง (Ctrl+C / Cmd+C แล้วกด Enter):', r.summaryText);
-  });
 }
 
 /* ================= CREATE EVENT ================= */
@@ -486,12 +460,6 @@ async function createNewEvent(){
     return;
   }
 
-  if(API_URL.includes('PASTE_YOUR_DEPLOYMENT_ID')){
-    msg.textContent = 'ยังไม่ได้ตั้งค่า API_URL ในไฟล์นี้ — แก้บรรทัด const API_URL ให้เป็น Web app URL ที่ได้จากการ Deploy Google Apps Script ก่อน (ดูขั้นตอนใน README)';
-    msg.style.display = 'block';
-    return;
-  }
-
   btn.disabled = true;
   btn.textContent = 'กำลังสร้าง...';
 
@@ -499,7 +467,6 @@ async function createNewEvent(){
     const res = await callApi('createEvent', {eventName, ownerName, venue, startDate, endDate, employees});
     if(!res.ok){ msg.textContent = res.error; msg.style.display='block'; return; }
 
-    // reset the form for next time
     document.getElementById('eventName').value = '';
     document.getElementById('ownerName').value = '';
     document.getElementById('venue').value = '';
@@ -507,7 +474,6 @@ async function createNewEvent(){
     document.getElementById('endDate').value = '';
     document.getElementById('employeeList').value = '';
 
-    // go back to the home list, refresh it, and surface a quick copy-link banner
     await loadEvents();
     showListView();
     const okMsg = document.getElementById('listMsgOk');
@@ -516,7 +482,7 @@ async function createNewEvent(){
     okMsg.style.display = 'block';
     setTimeout(()=>{ okMsg.style.display='none'; }, 15000);
   }catch(err){
-    msg.textContent = 'เชื่อมต่อระบบหลังบ้านไม่สำเร็จ: ' + err + ' — ตรวจสอบว่า API_URL ถูกต้อง และตั้งค่า Deploy เป็น "Anyone" แล้ว';
+    msg.textContent = 'เชื่อมต่อระบบหลังบ้านไม่สำเร็จ: ' + err;
     msg.style.display = 'block';
   }finally{
     btn.disabled = false;
@@ -527,7 +493,6 @@ async function createNewEvent(){
 /* ================= EDIT EVENT ================= */
 let editingEventId = null;
 
-// Events sheet stores dates as dd/MM/yyyy text; <input type="date"> needs yyyy-MM-dd
 function toDateInputValue(ddmmyyyy){
   if(!ddmmyyyy) return '';
   const parts = ddmmyyyy.split('/');
@@ -549,7 +514,6 @@ function editEvent(eventId){
 
   showEditViewEl();
 
-  // pre-fill the staff textarea from the current roster (name + department only)
   callApi('getEventRoster', {eventId}).then(res=>{
     if(res.ok){
       const lines = res.roster.map(r => r.department ? `${r.employeeName} - ${r.department}` : r.employeeName);
@@ -592,7 +556,7 @@ async function saveEditEvent(){
     });
     if(!res.ok){ msg.textContent = res.error; msg.style.display = 'block'; return; }
 
-    delete rosterCache[editingEventId]; // force a fresh roster load next time it's opened
+    delete rosterCache[editingEventId];
     await loadEvents();
     showListView();
     const okMsg = document.getElementById('listMsgOk');
@@ -608,13 +572,7 @@ async function saveEditEvent(){
   }
 }
 
-/* ================= EXPORT EXCEL =================
-   หัวตาราง (column headers) ของไฟล์ Excel ที่ export ออกมา ถูกกำหนดเป็น "key" ของ
-   object ในบรรทัด rows.push({...}) ด้านล่างนี้ (ประมาณ 15 บรรทัดถัดจากนี้)
-   ถ้าต้องการเปลี่ยนชื่อหัวตาราง/เพิ่ม-ลบคอลัมน์ แก้ตรงนั้นได้เลย โดย key ของ object
-   จะกลายเป็นหัวตารางแถวแรกของ Excel โดยอัตโนมัติ (ผ่าน XLSX.utils.json_to_sheet)
-   ปัจจุบันมี 6 คอลัมน์: ชื่องาน, ลำดับสตาฟ, ชื่อสตาฟ, แผนก, ยอดเงิน, link pdf
-   ดูรายละเอียดเพิ่มเติมใน README หัวข้อ "Export Excel" */
+/* ================= EXPORT EXCEL ================= */
 async function exportEventsToExcel(){
   const checked = Array.from(document.querySelectorAll('.export-check:checked')).map(c=>c.value);
   const msg = document.getElementById('exportMsgErr');
