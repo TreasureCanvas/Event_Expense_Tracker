@@ -3,56 +3,69 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Event Expense Tracker</title>
+  <title>Event Expense Tracker - หน้าแรก</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      margin: 20px;
-      background-color: #f4f6f9;
-    }
-    .container {
-      max-width: 800px;
-      margin: auto;
-      background: white;
-      padding: 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    .hidden {
-      display: none;
-    }
+    :root { --brand: #FE6D43; --brand-dark: #222222; --bg: #F6F7FB; --card: #ffffff; --line: #e2e5e1; }
+    body { font-family: 'Sarabun', sans-serif; margin: 0; padding: 20px; background: var(--bg); color: #20281f; }
+    .container { max-width: 800px; margin: auto; background: var(--card); padding: 24px; border-radius: 14px; border: 1px solid var(--line); }
+    h1 { font-size: 22px; color: var(--brand-dark); margin-top: 0; }
+    .event-card { border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 12px; background: #fff; display: flex; justify-content: space-between; align-items: center; }
+    .event-info h3 { margin: 0 0 6px 0; font-size: 16px; color: var(--brand-dark); }
+    .event-info p { margin: 0; font-size: 13px; color: #686868; }
+    .btn { background: var(--brand); color: #fff; text-decoration: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; display: inline-block; }
+    .btn:hover { background: var(--brand-dark); }
+    .loading-text { color: #686868; font-size: 14px; }
   </style>
-  <script>
-    // System Router: ตรวจสอบ URL Parameter ทันทีที่โหลดหน้าเว็บ
-    (function routeCheck() {
-      const urlParams = new URLSearchParams(window.location.search);
-      const page = urlParams.get('page');
-      const eventId = urlParams.get('event');
-
-      // ถ้า URL มีการระบุ page=form ให้ Redirect ไปหน้า form.html พร้อมส่งค่า event ไปด้วย
-      if (page === 'form') {
-        const targetUrl = eventId ? `form.html?event=${encodeURIComponent(eventId)}` : 'form.html';
-        window.location.replace(targetUrl);
-      }
-    })();
-  </script>
 </head>
 <body>
   <div class="container">
     <h1>ระบบจัดการค่าใช้จ่ายอีเวนต์ (Event Expense Tracker)</h1>
-    <p>ยินดีต้อนรับสู่หน้าหลัก คุณสามารถเลือกรายการอีเวนต์เพื่อดูรายละเอียดหรือบันทึกค่าใช้จ่ายได้จากที่นี่</p>
+    <p style="color:#686868; font-size:14px; margin-bottom: 20px;">เลือกรายการกิจกรรมเพื่อเข้าสู่หน้ากรอกใบเบิกค่าเดินทาง</p>
     
-    <!-- รายการตัวอย่าง หรือเนื้อหาหน้า Index เดิมของคุณ -->
     <div id="event-list">
-      <p>กำลังโหลดข้อมูลอีเวนต์...</p>
+      <p class="loading-text" id="loading">กำลังโหลดข้อมูลอีเวนต์...</p>
     </div>
   </div>
 
   <script>
-    // โค้ด JavaScript สำหรับดึงรายการอีเวนต์มาแสดงในหน้า Index (ใช้ยิง API ไปยัง code.gs)
-    document.addEventListener("DOMContentLoaded", function() {
-      // สามารถใส่ฟังก์ชันโหลดข้อมูลหน้า Index ของคุณต่อตรงนี้ได้เลยครับ
-    });
+    const API_URL = 'https://script.google.com/macros/s/AKfycbx-HTaZ-LBl47XG4thlunfa8t0NSP6xwOAJr4QYMbSViHtkSjgLON1w6PeRb_tU8bM/exec';
+
+    async function fetchEvents() {
+      const container = document.getElementById('event-list');
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'listAllEvents' })
+        });
+        const res = await response.json();
+
+        if (res.ok && Array.isArray(res.events) && res.events.length > 0) {
+          container.innerHTML = res.events.map(ev => `
+            <div class="event-card">
+              <div class="event-info">
+                <h3>${ev.eventName || 'ไม่มีชื่อกิจกรรม'}</h3>
+                <p>📍 สถานที่: ${ev.venue || '-'}</p>
+                <p>📅 วันที่: ${ev.startDate || '-'} ${ev.endDate ? 'ถึง ' + ev.endDate : ''}</p>
+                <p>👤 ผู้สร้าง: ${ev.ownerName || '-'}</p>
+              </div>
+              <div>
+                <a href="/form.html?event=${encodeURIComponent(ev.eventId)}" class="btn">กรอกใบเบิกค่าเดินทาง</a>
+              </div>
+            </div>
+          `).join('');
+        } else {
+          container.innerHTML = '<p class="loading-text">ไม่พบรายการอีเวนต์ในระบบ</p>';
+        }
+      } catch (err) {
+        console.error('Error:', err);
+        container.innerHTML = '<p class="loading-text" style="color:red;">เกิดข้อผิดพลาดในการโหลดข้อมูล กรุณาลองใหม่อีกครั้ง</p>';
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", fetchEvents);
   </script>
 </body>
 </html>
