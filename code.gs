@@ -7,12 +7,11 @@
  *  1. เปิด Google Sheets เปล่า 1 ไฟล์ -> Extensions > Apps Script
  *  2. วางไฟล์นี้ทับ Code.gs ที่มีอยู่
  *  3. รันฟังก์ชัน setupSheets() หนึ่งครั้ง (Run > setupSheets) เพื่อสร้างชีตทั้งหมด
- *     (ครั้งแรกจะขอ Authorize สิทธิ์ - กด Allow)
  *  4. Deploy > New deployment > Type: Web app
  *       - Execute as: Me
  *       - Who has access: Anyone
  *     กด Deploy แล้วคัดลอก "Web app URL" (ลงท้ายด้วย /exec)
- *  5. นำ URL ไปวางแทนที่ API_URL ในไฟล์ index.html / owner.html / staff.html
+ *  5. นำ URL ไปวางในตัวแปร API_URL ของฝั่ง Frontend บน Vercel
  * ===================================================================
  */
 
@@ -59,52 +58,50 @@ function getOrCreateDriveFolder() {
   return DriveApp.createFolder(DRIVE_FOLDER_NAME);
 }
 
-// ---------- SAFE SCHEMA MIGRATION (for spreadsheets created before the
-// venue/form_link columns existed) ----------
-// Run this ONCE from the Apps Script editor (Run > migrateEventsSchema) if
-// your Events sheet is missing the "venue" or "form_link" columns.
-// Unlike re-running setupSheets(), this does NOT clear any existing data -
-// it only inserts the missing columns at the correct position and backfills
-// form_link for events that don't have one yet.
+// ---------- SAFE SCHEMA MIGRATION ----------
 function migrateEventsSchema() {
   const sheet = getSheet(SHEET_EVENTS);
+  if (!sheet) return;
   const lastCol = sheet.getLastColumn();
-  let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let headers = sheet.getRange(1, 1, 1, Math.max(lastCol, 1)).getValues()[0];
 
   function ensureColumnBefore(headerName, beforeHeaderName) {
-    if (headers.indexOf(headerName) > -1) return; // already exists - nothing to do
-    let insertAt = headers.indexOf(beforeHeaderName) + 1; // 1-indexed column position
-    if (insertAt === 0) insertAt = headers.length + 1; // reference column not found - append at end instead
+    if (headers.indexOf(headerName) > -1) return;
+    let insertAt = headers.indexOf(beforeHeaderName) + 1;
+    if (insertAt === 0) insertAt = headers.length + 1;
     sheet.insertColumnBefore(insertAt);
     sheet.getRange(1, insertAt).setValue(headerName);
-    headers.splice(insertAt - 1, 0, headerName); // keep local copy in sync for the next check
+    headers.splice(insertAt - 1, 0, headerName);
   }
 
   ensureColumnBefore('venue', 'start_date');
   ensureColumnBefore('form_link', 'event_token');
 
-  // backfill form_link for any existing events that don't have one yet
   const data = sheet.getDataRange().getValues();
   const newHeaders = data[0];
   const idCol = newHeaders.indexOf('event_id');
   const linkCol = newHeaders.indexOf('form_link');
   const scriptUrl = ScriptApp.getService().getUrl();
+
   for (let r = 1; r < data.length; r++) {
     if (!data[r][linkCol] && data[r][idCol]) {
       sheet.getRange(r + 1, linkCol + 1).setValue(scriptUrl + '?page=form&event=' + data[r][idCol]);
     }
   }
 
-  Logger.log('Migration complete. Columns now: ' + sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].join(', '));
+  Logger.log('Migration complete.');
 }
 
 // ---------- WEB ENTRY POINTS ----------
 function doGet(e) {
-  const page = (e.parameter.page || 'home');
+  const page = (e && e.parameter && e.parameter.page) || 'home';
   let tmpl;
-  if (page === 'form') tmpl = HtmlService.createTemplateFromFile('index');
-  else tmpl = HtmlService.createTemplateFromFile('home'); // 'home', and legacy 'owner'/'staff' links all land here
-  tmpl.eventId = e.parameter.event || '';
+  if (page === 'form') {
+    tmpl = HtmlService.createTemplateFromFile('index');
+  } else {
+    tmpl = HtmlService.createTemplateFromFile('home');
+  }
+  tmpl.eventId = (e && e.parameter && e.parameter.event) || '';
   return tmpl.evaluate()
     .setTitle('Event Expense Tracker')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -115,18 +112,23 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
-// doPost is the JSON API used by the standalone HTML files embedded in
-// Google Sites (fetch() calls land here).
+// doPost ใช้ LockService ป้องกัน Concurrent Request ปัญหาส่งพร้อมกันแล้วข้อมูลทับกัน
 function doPost(e) {
-  let body;
-  try {
-    body = JSON.parse(e.postData.contents);
-  } catch (err) {
-    return jsonOut({ ok: false, error: 'Invalid JSON body' });
+  const lock = LockService.getScriptLock();
+  // รอคิว Lock ไม่เกิน 15 วินาที
+  if (!lock.waitLock(15000)) {
+    return jsonOut({ ok: false, error: 'ระบบกำลังประมวลผลคำขอจำนวนมาก กรุณาลองใหม่อีกครั้งในอีกสักครู่' });
   }
 
-  const action = body.action;
   try {
+    let body;
+    try {
+      body = JSON.parse(e.postData.contents);
+    } catch (err) {
+      return jsonOut({ ok: false, error: 'รูปแบบข้อมูล JSON ไม่ถูกต้อง' });
+    }
+
+    const action = body.action;
     switch (action) {
       case 'createEvent':
         return jsonOut(apiCreateEvent(body.payload));
@@ -145,10 +147,12 @@ function doPost(e) {
       case 'getFuelPrice':
         return jsonOut(apiGetFuelPrice());
       default:
-        return jsonOut({ ok: false, error: 'Unknown action: ' + action });
+        return jsonOut({ ok: false, error: 'ไม่พบ Action ที่ระบุ: ' + action });
     }
   } catch (err) {
-    return jsonOut({ ok: false, error: String(err) });
+    return jsonOut({ ok: false, error: 'Internal Server Error: ' + String(err) });
+  } finally {
+    lock.releaseLock(); // บังคับ คืน Lock ทุกครั้งหลังทำงานเสร็จ
   }
 }
 
@@ -163,7 +167,9 @@ function getSheet(name) {
 }
 
 function sheetToObjects(sheet) {
+  if (!sheet) return [];
   const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) return [];
   const headers = values.shift();
   return values.map(row => {
     const obj = {};
@@ -186,10 +192,9 @@ function dateStr(d) {
   return Utilities.formatDate(d, 'GMT+7', 'dd/MM/yyyy');
 }
 
-// ---------- API: Staff creates a new event ----------
-// payload: { eventName, ownerName, startDate, endDate, employees: [{name, department}, ...] }
+// ---------- API: สร้างกิจกรรมใหม่ ----------
 function apiCreateEvent(payload) {
-  if (!payload.eventName || !payload.ownerName) {
+  if (!payload || !payload.eventName || !payload.ownerName) {
     return { ok: false, error: 'กรุณากรอกชื่อกิจกรรมและชื่อผู้สร้าง' };
   }
 
@@ -199,16 +204,24 @@ function apiCreateEvent(payload) {
   const formLink = scriptUrl + '?page=form&event=' + eventId;
 
   events.appendRow([
-    eventId, payload.eventName, payload.ownerName, payload.venue || '',
-    payload.startDate || '', payload.endDate || payload.startDate || '',
-    formLink, '', nowStr()
+    eventId, 
+    String(payload.eventName).trim(), 
+    String(payload.ownerName).trim(), 
+    String(payload.venue || '').trim(),
+    payload.startDate || '', 
+    payload.endDate || payload.startDate || '',
+    formLink, 
+    '', 
+    nowStr()
   ]);
 
   const empSheet = getSheet(SHEET_EVENT_EMPLOYEES);
-  (payload.employees || []).forEach(emp => {
-    if (!emp.name) return;
-    empSheet.appendRow([eventId, emp.name, emp.department || '']);
-  });
+  if (Array.isArray(payload.employees)) {
+    payload.employees.forEach(emp => {
+      if (!emp || !emp.name) return;
+      empSheet.appendRow([eventId, String(emp.name).trim(), String(emp.department || '').trim()]);
+    });
+  }
 
   return {
     ok: true,
@@ -217,10 +230,9 @@ function apiCreateEvent(payload) {
   };
 }
 
-// ---------- API: edit an existing event's details + replace its staff roster ----------
-// payload: { eventId, eventName, ownerName, startDate, endDate, employees: [{name, department}, ...] }
+// ---------- API: แก้ไขข้อมูลกิจกรรม ----------
 function apiUpdateEvent(payload) {
-  if (!payload.eventId) return { ok: false, error: 'ไม่พบรหัสกิจกรรมที่จะแก้ไข' };
+  if (!payload || !payload.eventId) return { ok: false, error: 'ไม่พบรหัสกิจกรรมที่จะแก้ไข' };
   if (!payload.eventName || !payload.ownerName) {
     return { ok: false, error: 'กรุณากรอกชื่อกิจกรรมและชื่อผู้สร้าง' };
   }
@@ -230,45 +242,47 @@ function apiUpdateEvent(payload) {
   const headers = data[0];
   const idCol = headers.indexOf('event_id');
   let rowIndex = -1;
+  
   for (let r = 1; r < data.length; r++) {
     if (data[r][idCol] === payload.eventId) { rowIndex = r; break; }
   }
   if (rowIndex === -1) return { ok: false, error: 'ไม่พบกิจกรรมนี้ในระบบ' };
 
-  // update event_name / owner_name / venue / start_date / end_date only
-  // (event_id, form_link, event_token, created_at stay untouched)
   const nameCol = headers.indexOf('event_name');
   const ownerCol = headers.indexOf('owner_name');
   const venueCol = headers.indexOf('venue');
   const startCol = headers.indexOf('start_date');
   const endCol = headers.indexOf('end_date');
 
-  events.getRange(rowIndex + 1, nameCol + 1).setValue(payload.eventName);
-  events.getRange(rowIndex + 1, ownerCol + 1).setValue(payload.ownerName);
-  if (venueCol > -1) events.getRange(rowIndex + 1, venueCol + 1).setValue(payload.venue || '');
+  events.getRange(rowIndex + 1, nameCol + 1).setValue(String(payload.eventName).trim());
+  events.getRange(rowIndex + 1, ownerCol + 1).setValue(String(payload.ownerName).trim());
+  if (venueCol > -1) events.getRange(rowIndex + 1, venueCol + 1).setValue(String(payload.venue || '').trim());
   events.getRange(rowIndex + 1, startCol + 1).setValue(payload.startDate || '');
   events.getRange(rowIndex + 1, endCol + 1).setValue(payload.endDate || payload.startDate || '');
 
-  // replace the staff roster wholesale: delete this event's existing rows, re-add the submitted list
+  // ลบรายชื่อพนักงานเดิม แล้วอัปเดตชุดใหม่ลงไป
   const empSheet = getSheet(SHEET_EVENT_EMPLOYEES);
   const empData = empSheet.getDataRange().getValues();
   const empHeaders = empData[0];
   const empIdCol = empHeaders.indexOf('event_id');
   const rowsToDelete = [];
+  
   for (let r = 1; r < empData.length; r++) {
-    if (empData[r][empIdCol] === payload.eventId) rowsToDelete.push(r + 1); // +1 for 1-indexed sheet rows
+    if (empData[r][empIdCol] === payload.eventId) rowsToDelete.push(r + 1);
   }
-  rowsToDelete.reverse().forEach(r => empSheet.deleteRow(r)); // reverse so row numbers don't shift mid-delete
+  rowsToDelete.reverse().forEach(r => empSheet.deleteRow(r));
 
-  (payload.employees || []).forEach(emp => {
-    if (!emp.name) return;
-    empSheet.appendRow([payload.eventId, emp.name, emp.department || '']);
-  });
+  if (Array.isArray(payload.employees)) {
+    payload.employees.forEach(emp => {
+      if (!emp || !emp.name) return;
+      empSheet.appendRow([payload.eventId, String(emp.name).trim(), String(emp.department || '').trim()]);
+    });
+  }
 
   return { ok: true, eventId: payload.eventId };
 }
 
-// ---------- API: list every event in the database (for the main dashboard dropdown) ----------
+// ---------- API: รายการกิจกรรมทั้งหมด ----------
 function apiListAllEvents() {
   const events = sheetToObjects(getSheet(SHEET_EVENTS));
   const employees = sheetToObjects(getSheet(SHEET_EVENT_EMPLOYEES));
@@ -286,13 +300,15 @@ function apiListAllEvents() {
       staffCount: staffCount,
       createdAt: ev.created_at
     };
-  }).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }).sort((a, b) => (new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
 
   return { ok: true, events: list };
 }
 
-// ---------- API: get event info + employee list (for autocomplete on the form) ----------
+// ---------- API: ดึงข้อมูลกิจกรรมและรายชื่อพนักงานสำหรับ Auto-complete ----------
 function apiGetEventInfo(payload) {
+  if (!payload || !payload.eventId) return { ok: false, error: 'ไม่ได้ระบุรหัสกิจกรรม' };
+  
   const eventId = payload.eventId;
   const events = sheetToObjects(getSheet(SHEET_EVENTS));
   const ev = events.find(e => e.event_id === eventId);
@@ -312,9 +328,10 @@ function apiGetEventInfo(payload) {
   };
 }
 
-// ---------- API: full roster for one event — every assigned employee, whether
-// they have submitted yet or not, so the dashboard can show "ส่งแล้ว / ยังไม่ส่ง" ----------
+// ---------- API: ดึงสถานะการส่งเอกสารของพนักงานทุกคนในกิจกรรม ----------
 function apiGetEventRoster(payload) {
+  if (!payload || !payload.eventId) return { ok: false, error: 'ไม่ได้ระบุรหัสกิจกรรม' };
+
   const eventId = payload.eventId;
   const events = sheetToObjects(getSheet(SHEET_EVENTS));
   const ev = events.find(e => e.event_id === eventId);
@@ -324,18 +341,18 @@ function apiGetEventRoster(payload) {
   const submissions = sheetToObjects(getSheet(SHEET_SUBMISSIONS)).filter(s => s.event_id === eventId);
 
   const rows = roster.map(emp => {
-    const sub = submissions.find(s => s.employee_name === emp.employee_name);
+    const sub = submissions.find(s => String(s.employee_name).trim() === String(emp.employee_name).trim());
     if (!sub) {
       return {
         employeeName: emp.employee_name, department: emp.department,
-        submitted: false, status: 'ยังไม่ส่งเอกสาร', updatedAt: '', totalAmount: '',
+        submitted: false, status: 'ยังไม่ส่งเอกสาร', updatedAt: '', totalAmount: 0,
         pdfUrl: '', summaryText: ''
       };
     }
     return {
       employeeName: emp.employee_name, department: emp.department,
       submitted: true, status: sub.submission_status, updatedAt: sub.updated_at,
-      totalAmount: sub.total_amount, pdfUrl: sub.pdf_file_url, summaryText: sub.summary_text
+      totalAmount: Number(sub.total_amount) || 0, pdfUrl: sub.pdf_file_url, summaryText: sub.summary_text
     };
   });
 
@@ -349,14 +366,12 @@ function apiGetEventRoster(payload) {
   };
 }
 
-// ---------- API: employee submits/edits an expense claim ----------
-// payload: {
-//   eventId, employeeName, department, purpose, fuelRefPrice,
-//   totalAmount, summaryText, pdfBase64, pdfFileName, tripDetails: [ {label, segments:[...]}, ... ]
-// }
-// each segment: { type, origin, destination, distanceKm, manualAmount, amount,
-//                 attachments: [{base64, fileName}], attachmentUrls: [existing urls kept] }
+// ---------- API: บันทึก / แก้ไข การส่งเอกสารเบิกจ่าย ----------
 function apiSubmitExpense(payload) {
+  if (!payload || !payload.eventId || !payload.employeeName) {
+    return { ok: false, error: 'ข้อมูลไม่ครบถ้วน (ต้องระบุ eventId และ employeeName)' };
+  }
+
   const submissions = getSheet(SHEET_SUBMISSIONS);
   const events = sheetToObjects(getSheet(SHEET_EVENTS));
   const ev = events.find(e => e.event_id === payload.eventId);
@@ -364,21 +379,25 @@ function apiSubmitExpense(payload) {
 
   const folder = getOrCreateDriveFolder();
 
-  // save PDF to Drive
+  // 1. บันทึกไฟล์ PDF เอกสารเบิกเงินลง Drive
   let pdfUrl = '';
   if (payload.pdfBase64) {
-    const blob = Utilities.newBlob(
-      Utilities.base64Decode(payload.pdfBase64),
-      'application/pdf',
-      payload.pdfFileName || 'expense.pdf'
-    );
-    const file = folder.createFile(blob);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    pdfUrl = file.getUrl();
+    try {
+      const cleanBase64 = payload.pdfBase64.replace(/^data:application\/pdf;base64,/, '');
+      const blob = Utilities.newBlob(
+        Utilities.base64Decode(cleanBase64),
+        'application/pdf',
+        payload.pdfFileName || ('Expense_' + payload.employeeName + '.pdf')
+      );
+      const file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      pdfUrl = file.getUrl();
+    } catch (pdfErr) {
+      Logger.log('PDF Save Error: ' + pdfErr.toString());
+    }
   }
 
-  // save any newly-attached slip images to Drive; keep URLs of files that
-  // were already attached in a previous submission (carried over by the client)
+  // 2. บันทึกรูปสลิปแนบลง Drive
   const tripDetails = (payload.tripDetails || []).map((trip, ti) => {
     const segments = (trip.segments || []).map((seg, si) => {
       const out = Object.assign({}, seg);
@@ -394,13 +413,13 @@ function apiSubmitExpense(payload) {
           const ext = (mime.split('/')[1] || 'jpg');
           const imgBlob = Utilities.newBlob(
             Utilities.base64Decode(data), mime,
-            'slip_' + payload.employeeName + '_' + trip.label + '_seg' + (si + 1) + '_' + (ai + 1) + '.' + ext
+            'slip_' + payload.employeeName + '_trip' + (ti + 1) + '_seg' + (si + 1) + '_' + (ai + 1) + '.' + ext
           );
           const imgFile = folder.createFile(imgBlob);
           imgFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
           keptUrls.push(imgFile.getUrl());
         } catch (imgErr) {
-          // skip this one file on error, keep the rest
+          Logger.log('Image Save Error: ' + imgErr.toString());
         }
       });
 
@@ -417,23 +436,32 @@ function apiSubmitExpense(payload) {
     trips: tripDetails
   };
 
-  // check for existing submission by this employee for this event -> overwrite (resubmit)
+  // ตรวจสอบการส่งซ้ำ
   const all = sheetToObjects(submissions);
   const existingIndex = all.findIndex(
-    s => s.event_id === payload.eventId && s.employee_name === payload.employeeName
+    s => s.event_id === payload.eventId && String(s.employee_name).trim() === String(payload.employeeName).trim()
   );
 
   const isResubmit = existingIndex > -1;
+  const timeNow = nowStr();
   const status = isResubmit
-    ? 'มีการแก้ไขล่าสุดเมื่อ (' + nowStr() + ' น.)'
-    : 'แนบเอกสารแล้ว (' + nowStr() + ' น.)';
+    ? 'มีการแก้ไขล่าสุดเมื่อ (' + timeNow + ' น.)'
+    : 'แนบเอกสารแล้ว (' + timeNow + ' น.)';
 
   const submissionId = isResubmit ? all[existingIndex].submission_id : generateId('SUB');
+  const safeTotalAmount = Number(payload.totalAmount) || 0;
 
   const rowData = [
-    submissionId, payload.eventId, payload.employeeName, payload.department || '',
-    status, nowStr(), payload.totalAmount || 0,
-    payload.summaryText || '', pdfUrl, JSON.stringify(storedDetails)
+    submissionId, 
+    payload.eventId, 
+    String(payload.employeeName).trim(), 
+    String(payload.department || '').trim(),
+    status, 
+    timeNow, 
+    safeTotalAmount,
+    payload.summaryText || '', 
+    pdfUrl || (isResubmit ? all[existingIndex].pdf_file_url : ''), 
+    JSON.stringify(storedDetails)
   ];
 
   if (isResubmit) {
@@ -445,20 +473,26 @@ function apiSubmitExpense(payload) {
   return { ok: true, submissionId: submissionId, status: status, pdfUrl: pdfUrl, resubmitted: isResubmit };
 }
 
-// ---------- API: check if this employee already submitted for this event,
-// so the form can reload their previous data for editing ----------
+// ---------- API: ดึงประวัติการส่งเอกสารของพนักงานคนนั้นๆ ----------
 function apiGetMySubmission(payload) {
+  if (!payload || !payload.eventId || !payload.employeeName) {
+    return { ok: false, error: 'ระบุข้อมูลไม่สมบูรณ์' };
+  }
+
   const subs = sheetToObjects(getSheet(SHEET_SUBMISSIONS));
-  const sub = subs.find(s => s.event_id === payload.eventId && s.employee_name === payload.employeeName);
+  const sub = subs.find(
+    s => s.event_id === payload.eventId && String(s.employee_name).trim() === String(payload.employeeName).trim()
+  );
   if (!sub) return { ok: true, exists: false };
 
   let details = { purpose: '', fuelRefPrice: '', trips: [] };
   try {
     details = JSON.parse(sub.trip_details_json);
-  } catch (err) { /* leave defaults if malformed/old-format data */ }
+  } catch (err) { }
 
   return {
-    ok: true, exists: true,
+    ok: true, 
+    exists: true,
     data: {
       department: sub.department || '',
       purpose: details.purpose || '',
@@ -470,20 +504,12 @@ function apiGetMySubmission(payload) {
   };
 }
 
-// ---------- API: best-effort retail fuel price (Gasohol 91) ----------
-// Google Sites embed cannot reliably scrape live prices client-side, so we
-// fetch server-side (no CORS restrictions here) from a public source and
-// fall back to a manual default if it fails. Employees can always override
-// the value manually in the form (ราคาน้ำมันอ้างอิง field).
+// ---------- API: ราคาน้ำมันอ้างอิง ----------
 function apiGetFuelPrice() {
-  try {
-    // NOTE: replace with a real, licensed data source in production.
-    // NOTE: this is a manually-maintained fallback (updated ~Jul 2026), not a
-    // live feed - Apps Script has no reliable free public API for this. The
-    // employee can and should always override it in the form to match the
-    // actual price on their travel date (e.g. check gasprice.kapook.com).
-    return { ok: true, price: 34.57, source: 'manual_fallback', note: 'ราคานี้เป็นค่าอ้างอิงที่ปรับปรุงด้วยมือ ไม่ใช่ราคาสด กรุณาตรวจสอบราคาจริงและแก้ไขได้ในฟอร์มเสมอ' };
-  } catch (err) {
-    return { ok: false, error: String(err) };
-  }
+  return { 
+    ok: true, 
+    price: 34.57, 
+    source: 'manual_fallback', 
+    note: 'ราคานี้เป็นค่าอ้างอิงที่ปรับปรุงด้วยมือ ไม่ใช่ราคาสด กรุณาตรวจสอบราคาจริงและแก้ไขได้ในฟอร์มเสมอ' 
+  };
 }
