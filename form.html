@@ -1096,7 +1096,10 @@ function callApi(action, payload){
   }).then(res => res.json());
 }
 
-window.addEventListener('DOMContentLoaded', loadEventInfo);
+window.addEventListener('DOMContentLoaded', async () => {
+  render(); // ✅ เพิ่มบรรทัดนี้ เพื่อสั่งเรนเดอร์ section รายการเดินทางทันที
+  await loadEventInfo();
+});
 </script>
 </body>
 </html>
