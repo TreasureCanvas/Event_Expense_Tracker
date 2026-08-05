@@ -1,71 +1,473 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Event Expense Tracker - หน้าแรก</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    :root { --brand: #FE6D43; --brand-dark: #222222; --bg: #F6F7FB; --card: #ffffff; --line: #e2e5e1; }
-    body { font-family: 'Sarabun', sans-serif; margin: 0; padding: 20px; background: var(--bg); color: #20281f; }
-    .container { max-width: 800px; margin: auto; background: var(--card); padding: 24px; border-radius: 14px; border: 1px solid var(--line); }
-    h1 { font-size: 22px; color: var(--brand-dark); margin-top: 0; }
-    .event-card { border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 12px; background: #fff; display: flex; justify-content: space-between; align-items: center; }
-    .event-info h3 { margin: 0 0 6px 0; font-size: 16px; color: var(--brand-dark); }
-    .event-info p { margin: 0; font-size: 13px; color: #686868; }
-    .btn { background: var(--brand); color: #fff; text-decoration: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; display: inline-block; }
-    .btn:hover { background: var(--brand-dark); }
-    .loading-text { color: #686868; font-size: 14px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ระบบเบิกค่าเดินทาง — หน้าหลัก</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{ --brand:#FE6D43; --brand-dark:#222222; --accent:#e8a33d; --bg:#F6F7FB; --card:#ffffff; --line:#e2e5e1;
+    --text:#20281f; --muted:#686868; --ok:#1f7a4d; --warn:#b9770e; --danger:#c0392b; --pending:#8b8f89; --radius:14px; }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--text); font-family:'Sarabun',sans-serif; padding:18px;}
+  .wrap{max-width:980px; margin:0 auto;}
+  h1{font-size:20px; color:var(--brand-dark); margin:0 0 14px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px; margin-bottom:14px;}
+  label{display:block; font-size:13px; color:var(--muted); margin-bottom:5px; font-weight:600;}
+  input, select, textarea{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:9px; font-family:inherit; font-size:14.5px;}
+  textarea{min-height:120px; font-family:monospace; font-size:12.5px;}
+  .req{color:#c0392b;}
+  .hint{font-size:12px; color:var(--muted); margin-top:4px;}
+  .btn{border:none; border-radius:9px; padding:9px 15px; font-family:inherit; font-weight:600; font-size:13.5px; cursor:pointer; background:var(--brand); color:#fff; white-space:nowrap;}
+  .btn-outline{background:#fff; color:var(--brand-dark); border:1px solid var(--line);}
+  .btn-small{padding:6px 11px; font-size:12.5px; background:#fff; color:var(--brand-dark); border:1px solid var(--line);}
+  .btn-ghost{background:transparent; color:var(--muted); padding:6px 8px; font-size:12.5px;}
+
+  .toolbar{display:flex; gap:10px; align-items:center;}
+  .toolbar .search{flex:1; position:relative;}
+  .toolbar .search input{padding-left:34px;}
+  .toolbar .search::before{content:'🔎'; position:absolute; left:11px; top:50%; transform:translateY(-50%); font-size:13px; opacity:.6;}
+
+  .event-card{border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; background:#fff;}
+  .event-card-head{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;}
+  .event-name{font-size:15.5px; font-weight:700; color:var(--brand-dark); cursor:pointer;}
+  .event-name:hover{text-decoration:underline;}
+  .event-meta{font-size:12.5px; color:var(--muted); margin-top:4px;}
+  .event-actions{display:flex; gap:8px; flex-shrink:0;}
+  .empty{color:var(--muted); padding:26px 0; text-align:center;}
+
+  .roster-panel{margin-top:12px; padding-top:12px; border-top:1px dashed var(--line); display:none;}
+  .summary-bar{display:flex; gap:14px; margin-bottom:10px; font-size:13px; flex-wrap:wrap;}
+  .summary-bar span{background:#f1f4f0; border-radius:20px; padding:4px 11px;}
+  table{width:100%; border-collapse:collapse; font-size:13.5px;}
+  th, td{border-bottom:1px solid var(--line); padding:8px 7px; text-align:left; vertical-align:top;}
+  th{color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase;}
+  .status-new{color:var(--ok); font-weight:600;}
+  .status-edit{color:var(--warn); font-weight:600;}
+  .status-pending{color:var(--pending); font-weight:600;}
+  .dot{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px;}
+  .dot-green{background:var(--ok);} .dot-orange{background:var(--warn);} .dot-grey{background:var(--pending);}
+  a.pdf-link{color:var(--brand-dark); font-weight:600; text-decoration:none;}
+
+  #createView, #editView, #exportView{display:none;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .field{margin-bottom:14px;}
+  .msg{padding:11px 13px; border-radius:9px; font-size:13.5px; margin-bottom:14px; display:none;}
+  .msg.err{background:#fdeceb; color:#c0392b; border:1px solid #f3c6c1;}
+  .msg.ok{background:#eaf6ef; color:var(--ok); border:1px solid #bfe5cd;}
+  .back-row{display:flex; align-items:center; gap:10px; margin-bottom:14px;}
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>ระบบจัดการค่าใช้จ่ายอีเวนต์ (Event Expense Tracker)</h1>
-    <p style="color:#686868; font-size:14px; margin-bottom: 20px;">เลือกรายการกิจกรรมเพื่อเข้าสู่หน้ากรอกใบเบิกค่าเดินทาง</p>
-    
-    <div id="event-list">
-      <p class="loading-text" id="loading">กำลังโหลดข้อมูลอีเวนต์...</p>
+<div class="wrap">
+
+  <div id="listView">
+    <h1>📋 ระบบเบิกค่าเดินทาง — กิจกรรมทั้งหมด</h1>
+
+    <div class="card">
+      <div class="toolbar">
+        <div class="search"><input id="searchBox" placeholder="ค้นหาชื่อกิจกรรม..." oninput="renderEventList()"></div>
+        <button class="btn" onclick="showCreateView()">➕ สร้าง Event</button>
+        <button class="btn btn-outline" onclick="showExportView()">📥 Export Excel</button>
+        <button class="btn btn-outline" onclick="loadEvents()">🔄 รีเฟรช</button>
+      </div>
+    </div>
+
+    <div class="msg ok" id="listMsgOk"></div>
+    <div id="eventListContainer"></div>
+    <div class="empty" id="listEmptyMsg" style="display:none;"></div>
+  </div>
+
+  <div id="createView">
+    <div class="back-row">
+      <button class="btn btn-outline" onclick="showListView()">← กลับหน้าหลัก</button>
+      <h1 style="margin:0;">🛠️ สร้างกิจกรรมใหม่</h1>
+    </div>
+    <div class="msg err" id="createMsgErr"></div>
+
+    <div class="card">
+      <div class="field">
+        <label>ชื่อ Event <span class="req">*</span></label>
+        <input id="eventName" placeholder="เช่น อบรมการตลาดประจำปี 2569">
+      </div>
+      <div class="field">
+        <label>ชื่อผู้สร้าง Event <span class="req">*</span></label>
+        <input id="ownerName" placeholder="เช่น สมหญิง มีสุข">
+      </div>
+      <div class="field">
+        <label>สถานที่จัดงาน</label>
+        <input id="venue" placeholder="เช่น โรงแรม ABC, ห้องประชุมชั้น 5">
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>วันที่เริ่ม Event <span class="req">*</span></label>
+          <input id="startDate" type="date">
+        </div>
+        <div class="field">
+          <label>วันที่สิ้นสุด Event</label>
+          <input id="endDate" type="date">
+          <div class="hint">ถ้าเป็นกิจกรรมวันเดียว เว้นว่างไว้ได้</div>
+        </div>
+      </div>
+      <div class="field">
+        <label>รายชื่อ Staff ที่เกี่ยวข้องกับกิจกรรมนี้ <span class="req">*</span></label>
+        <textarea id="employeeList" placeholder="พิมพ์ 1 คนต่อบรรทัด รูปแบบ: ชื่อ นามสกุล - แผนก"></textarea>
+        <div class="hint">พิมพ์ "ชื่อ นามสกุล - แผนก" แล้วกด Enter ขึ้นบรรทัดใหม่ทีละคน</div>
+      </div>
+      <button class="btn" id="createBtn" onclick="createNewEvent()">✅ สร้างกิจกรรมและลิงก์</button>
     </div>
   </div>
 
-  <script>
-    const API_URL = 'https://script.google.com/macros/s/AKfycbx-HTaZ-LBl47XG4thlunfa8t0NSP6xwOAJr4QYMbSViHtkSjgLON1w6PeRb_tU8bM/exec';
+  <div id="editView">
+    <div class="back-row">
+      <button class="btn btn-outline" onclick="showListView()">← กลับหน้าหลัก</button>
+      <h1 style="margin:0;">✏️ แก้ไขรายละเอียดกิจกรรม</h1>
+    </div>
+    <div class="msg err" id="editMsgErr"></div>
 
-    async function fetchEvents() {
-      const container = document.getElementById('event-list');
-      try {
-        const response = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'listAllEvents' })
-        });
-        const res = await response.json();
+    <div class="card">
+      <div class="field">
+        <label>ชื่อ Event <span class="req">*</span></label>
+        <input id="editEventName">
+      </div>
+      <div class="field">
+        <label>ชื่อผู้สร้าง Event <span class="req">*</span></label>
+        <input id="editOwnerName">
+      </div>
+      <div class="field">
+        <label>สถานที่จัดงาน</label>
+        <input id="editVenue">
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>วันที่เริ่ม Event <span class="req">*</span></label>
+          <input id="editStartDate" type="date">
+        </div>
+        <div class="field">
+          <label>วันที่สิ้นสุด Event</label>
+          <input id="editEndDate" type="date">
+        </div>
+      </div>
+      <div class="field">
+        <label>รายชื่อ Staff ที่เกี่ยวข้องกับกิจกรรมนี้ <span class="req">*</span></label>
+        <textarea id="editEmployeeList"></textarea>
+      </div>
+      <button class="btn" id="editSaveBtn" onclick="saveEditEvent()">💾 บันทึกการแก้ไข</button>
+    </div>
+  </div>
 
-        if (res.ok && Array.isArray(res.events) && res.events.length > 0) {
-          container.innerHTML = res.events.map(ev => `
-            <div class="event-card">
-              <div class="event-info">
-                <h3>${ev.eventName || 'ไม่มีชื่อกิจกรรม'}</h3>
-                <p>📍 สถานที่: ${ev.venue || '-'}</p>
-                <p>📅 วันที่: ${ev.startDate || '-'} ${ev.endDate ? 'ถึง ' + ev.endDate : ''}</p>
-                <p>👤 ผู้สร้าง: ${ev.ownerName || '-'}</p>
-              </div>
-              <div>
-                <a href="/form.html?event=${encodeURIComponent(ev.eventId)}" class="btn">กรอกใบเบิกค่าเดินทาง</a>
-              </div>
-            </div>
-          `).join('');
-        } else {
-          container.innerHTML = '<p class="loading-text">ไม่พบรายการอีเวนต์ในระบบ</p>';
-        }
-      } catch (err) {
-        console.error('Error:', err);
-        container.innerHTML = '<p class="loading-text" style="color:red;">เกิดข้อผิดพลาดในการโหลดข้อมูล กรุณาลองใหม่อีกครั้ง</p>';
-      }
+  <div id="exportView">
+    <div class="back-row">
+      <button class="btn btn-outline" onclick="showListView()">← กลับหน้าหลัก</button>
+      <h1 style="margin:0;">📥 Export ข้อมูลเป็น Excel</h1>
+    </div>
+    <div class="msg err" id="exportMsgErr"></div>
+
+    <div class="card">
+      <div class="field">
+        <label>เลือกกิจกรรมที่ต้องการ Export</label>
+        <div id="exportEventList" style="max-height:280px; overflow-y:auto; border:1px solid var(--line); border-radius:9px; padding:8px 12px;"></div>
+      </div>
+      <button class="btn" id="exportBtn" onclick="exportEventsToExcel()">📥 ดาวน์โหลด Excel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ⚠️ ใส่ Web App URL ที่ได้จาก Google Apps Script ของคุณ
+const API_URL = 'https://script.google.com/macros/s/AKfycbx-HTaZ-LBl47XG4thlunfa8t0NSP6xwOAJr4QYMbSViHtkSjgLON1w6PeRb_tU8bM/exec';
+
+function callApi(action, payload){
+  return fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action, payload })
+  }).then(res => res.json());
+}
+
+function formLinkFor(eventId){
+  // ชี้ไปยัง Vercel Domain ของคุณเสมอ
+  return window.location.origin + '/form.html?event=' + encodeURIComponent(eventId);
+}
+
+function showListView(){
+  document.getElementById('createView').style.display = 'none';
+  document.getElementById('editView').style.display = 'none';
+  document.getElementById('exportView').style.display = 'none';
+  document.getElementById('listView').style.display = 'block';
+}
+function showCreateView(){
+  document.getElementById('createMsgErr').style.display = 'none';
+  document.getElementById('listView').style.display = 'none';
+  document.getElementById('createView').style.display = 'block';
+}
+function showEditViewEl(){
+  document.getElementById('editMsgErr').style.display = 'none';
+  document.getElementById('listView').style.display = 'none';
+  document.getElementById('editView').style.display = 'block';
+}
+function showExportView(){
+  document.getElementById('exportMsgErr').style.display = 'none';
+  const list = document.getElementById('exportEventList');
+  if(allEvents.length===0){
+    list.innerHTML = '<div class="hint">ยังไม่มีกิจกรรมในระบบ</div>';
+  } else {
+    list.innerHTML = allEvents.map(e=>`
+      <label style="display:flex; align-items:center; gap:8px; padding:6px 0; font-size:13.5px; cursor:pointer;">
+        <input type="checkbox" class="export-check" value="${e.eventId}" style="width:auto;">
+        ${e.eventName} <span class="hint" style="margin:0;">(${e.startDate}${e.endDate && e.endDate!==e.startDate ? ' – '+e.endDate : ''})</span>
+      </label>`).join('');
+  }
+  document.getElementById('listView').style.display = 'none';
+  document.getElementById('exportView').style.display = 'block';
+}
+
+let allEvents = [];
+let rosterCache = {};
+
+async function loadEvents(){
+  const container = document.getElementById('eventListContainer');
+  const emptyMsg = document.getElementById('listEmptyMsg');
+  container.innerHTML = '';
+  emptyMsg.style.display = 'block';
+  emptyMsg.textContent = 'กำลังโหลด...';
+
+  try{
+    const res = await callApi('listAllEvents', {});
+    if(!res.ok){ emptyMsg.textContent = 'เกิดข้อผิดพลาด: ' + res.error; return; }
+    allEvents = res.events || [];
+    rosterCache = {};
+    renderEventList();
+  }catch(err){
+    emptyMsg.textContent = 'เชื่อมต่อระบบหลังบ้านไม่สำเร็จ: ' + err;
+  }
+}
+
+function renderEventList(){
+  const q = document.getElementById('searchBox').value.trim().toLowerCase();
+  const filtered = allEvents.filter(e => (e.eventName||'').toLowerCase().includes(q));
+  const container = document.getElementById('eventListContainer');
+  const emptyMsg = document.getElementById('listEmptyMsg');
+
+  if(filtered.length===0){
+    container.innerHTML = '';
+    emptyMsg.style.display = 'block';
+    emptyMsg.textContent = allEvents.length===0 ? 'ยังไม่มีกิจกรรมในระบบ — กด "➕ สร้าง Event" เพื่อเริ่มต้น' : 'ไม่พบกิจกรรมที่ตรงกับคำค้นหา';
+    return;
+  }
+  emptyMsg.style.display = 'none';
+
+  container.innerHTML = filtered.map((e,i)=>{
+    const dates = (!e.endDate || e.startDate===e.endDate) ? (e.startDate||'-') : `${e.startDate} – ${e.endDate}`;
+    return `
+    <div class="event-card">
+      <div class="event-card-head">
+        <div>
+          <div class="event-name" onclick="toggleRoster('${e.eventId}', ${i})">📌 ${e.eventName}</div>
+          <div class="event-meta">🗓️ ${dates} &nbsp;•&nbsp; 📍 ${e.venue || '-'} &nbsp;•&nbsp; 👤 ผู้สร้าง: ${e.ownerName||'-'} &nbsp;•&nbsp; 👥 Staff: ${e.staffCount||0} คน</div>
+        </div>
+        <div class="event-actions">
+          <button class="btn btn-small" onclick="copyLink('${e.eventId}', this)">🔗 คัดลอกลิงก์</button>
+          <button class="btn btn-small" onclick="editEvent('${e.eventId}')">✏️ แก้ไข</button>
+          <button class="btn btn-small" onclick="toggleRoster('${e.eventId}', ${i})">รายละเอียด ▾</button>
+        </div>
+      </div>
+      <div class="roster-panel" id="roster-${i}"></div>
+    </div>`;
+  }).join('');
+}
+
+function copyLink(eventId, btnEl){
+  const link = formLinkFor(eventId);
+  navigator.clipboard.writeText(link).then(()=>{
+    const original = btnEl.textContent;
+    btnEl.textContent = 'คัดลอกแล้ว ✓';
+    setTimeout(()=>{ btnEl.textContent = original; }, 1800);
+  }).catch(()=>{
+    window.prompt('คัดลอกลิงก์นี้:', link);
+  });
+}
+
+async function toggleRoster(eventId, i){
+  const panel = document.getElementById('roster-'+i);
+  const isOpen = panel.style.display === 'block';
+  document.querySelectorAll('.roster-panel').forEach(p=>p.style.display='none');
+  if(isOpen) return;
+
+  panel.style.display = 'block';
+  panel.innerHTML = '<div class="hint">กำลังโหลดรายละเอียด...</div>';
+
+  let data = rosterCache[eventId];
+  if(!data){
+    try{
+      data = await callApi('getEventRoster', {eventId});
+      rosterCache[eventId] = data;
+    }catch(err){
+      panel.innerHTML = `<div class="hint">โหลดไม่สำเร็จ: ${err}</div>`;
+      return;
     }
+  }
+  if(!data.ok){ panel.innerHTML = `<div class="hint">เกิดข้อผิดพลาด: ${data.error}</div>`; return; }
 
-    document.addEventListener("DOMContentLoaded", fetchEvents);
-  </script>
+  if(!data.roster || data.roster.length===0){
+    panel.innerHTML = '<div class="hint">ยังไม่มีรายชื่อพนักงานผูกกับกิจกรรมนี้</div>';
+    return;
+  }
+
+  const submittedCount = data.roster.filter(r=>r.submitted).length;
+  const editedCount = data.roster.filter(r=>r.status && r.status.startsWith('มีการแก้ไข')).length;
+  const pendingCount = data.roster.length - submittedCount;
+
+  const rowsHtml = data.roster.map(r=>{
+    const isEdit = r.status && r.status.startsWith('มีการแก้ไข');
+    const dot = !r.submitted ? 'dot-grey' : (isEdit ? 'dot-orange' : 'dot-green');
+    const cls = !r.submitted ? 'status-pending' : (isEdit ? 'status-edit' : 'status-new');
+    return `
+    <tr>
+      <td><span class="dot ${dot}"></span><span class="${cls}">${r.status || 'รอส่งเอกสาร'}</span></td>
+      <td>${r.employeeName}</td>
+      <td>${r.department||'-'}</td>
+      <td>${r.submitted ? Number(r.totalAmount).toLocaleString('th-TH',{minimumFractionDigits:2})+' บาท' : '-'}</td>
+      <td>${r.submitted && r.pdfUrl ? `<a class="pdf-link" href="${r.pdfUrl}" target="_blank">เปิดเอกสาร ↗</a>` : '-'}</td>
+    </tr>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="summary-bar">
+      <span>ทั้งหมด ${data.roster.length} คน</span>
+      <span>🟢 ส่งแล้ว ${submittedCount}</span>
+      <span>🟡 มีการแก้ไข ${editedCount}</span>
+      <span>⚪ ยังไม่ส่ง ${pendingCount}</span>
+    </div>
+    <table>
+      <thead><tr><th>สถานะ</th><th>พนักงาน</th><th>แผนก</th><th>ยอดเงิน</th><th>PDF File</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
+}
+
+function parseEmployees(text){
+  return text.split('\n').map(l=>l.trim()).filter(Boolean).map(line=>{
+    const idx = line.lastIndexOf('-');
+    if(idx === -1) return { name: line, department: '' };
+    return { name: line.slice(0, idx).trim(), department: line.slice(idx+1).trim() };
+  });
+}
+
+async function createNewEvent(){
+  const eventName = document.getElementById('eventName').value.trim();
+  const ownerName = document.getElementById('ownerName').value.trim();
+  const venue = document.getElementById('venue').value.trim();
+  const startDate = document.getElementById('startDate').value;
+  const endDate = document.getElementById('endDate').value || startDate;
+  const employees = parseEmployees(document.getElementById('employeeList').value);
+  const msg = document.getElementById('createMsgErr');
+  const btn = document.getElementById('createBtn');
+  msg.style.display = 'none';
+
+  if(!eventName || !ownerName || !startDate || employees.length===0){
+    msg.textContent = 'กรุณากรอกข้อมูลให้ครบถ้วน';
+    msg.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'กำลังสร้าง...';
+
+  try{
+    const res = await callApi('createEvent', {eventName, ownerName, venue, startDate, endDate, employees});
+    if(!res.ok){ msg.textContent = res.error; msg.style.display='block'; return; }
+
+    document.getElementById('eventName').value = '';
+    document.getElementById('ownerName').value = '';
+    document.getElementById('venue').value = '';
+    document.getElementById('startDate').value = '';
+    document.getElementById('endDate').value = '';
+    document.getElementById('employeeList').value = '';
+
+    await loadEvents();
+    showListView();
+  }catch(err){
+    msg.textContent = 'เกิดข้อผิดพลาด: ' + err;
+    msg.style.display = 'block';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = '✅ สร้างกิจกรรมและลิงก์';
+  }
+}
+
+let editingEventId = null;
+
+function editEvent(eventId){
+  const ev = allEvents.find(e=>e.eventId===eventId);
+  if(!ev) return;
+  editingEventId = eventId;
+
+  document.getElementById('editEventName').value = ev.eventName;
+  document.getElementById('editOwnerName').value = ev.ownerName;
+  document.getElementById('editVenue').value = ev.venue || '';
+  document.getElementById('editStartDate').value = ev.startDate || '';
+  document.getElementById('editEndDate').value = ev.endDate || '';
+
+  showEditViewEl();
+
+  callApi('getEventRoster', {eventId}).then(res=>{
+    if(res.ok && res.roster){
+      const lines = res.roster.map(r => r.department ? `${r.employeeName} - ${r.department}` : r.employeeName);
+      document.getElementById('editEmployeeList').value = lines.join('\n');
+    }
+  });
+}
+
+async function saveEditEvent(){
+  const eventName = document.getElementById('editEventName').value.trim();
+  const ownerName = document.getElementById('editOwnerName').value.trim();
+  const venue = document.getElementById('editVenue').value.trim();
+  const startDate = document.getElementById('editStartDate').value;
+  const endDate = document.getElementById('editEndDate').value || startDate;
+  const employees = parseEmployees(document.getElementById('editEmployeeList').value);
+
+  const res = await callApi('updateEvent', {
+    eventId: editingEventId, eventName, ownerName, venue, startDate, endDate, employees
+  });
+
+  if(res.ok){
+    delete rosterCache[editingEventId];
+    await loadEvents();
+    showListView();
+  }
+}
+
+async function exportEventsToExcel(){
+  const checked = Array.from(document.querySelectorAll('.export-check:checked')).map(c=>c.value);
+  if(checked.length===0) return;
+
+  const rows = [];
+  for(const eventId of checked){
+    const ev = allEvents.find(e=>e.eventId===eventId);
+    const res = await callApi('getEventRoster', {eventId});
+    if(res.ok && res.roster){
+      res.roster.forEach((r,idx)=>{
+        rows.push({
+          'ชื่องาน': ev ? ev.eventName : eventId,
+          'ลำดับสตาฟ': idx + 1,
+          'ชื่อสตาฟ': r.employeeName,
+          'แผนก': r.department || '',
+          'ยอดเงิน': r.submitted ? Number(r.totalAmount) : 0,
+          'link pdf': r.pdfUrl || ''
+        });
+      });
+    }
+  }
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'รายงานเบิกค่าเดินทาง');
+  XLSX.writeFile(wb, `รายงานเบิกค่าเดินทาง.xlsx`);
+}
+
+document.addEventListener('DOMContentLoaded', loadEvents);
+</script>
 </body>
 </html>
