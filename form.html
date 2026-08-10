@@ -1092,7 +1092,7 @@ function callApi(action, payload){
     headers: {
       'Content-Type': 'text/plain;charset=utf-8'
     },
-    body: JSON.stringify({ action: action, ...payload })
+    bbody: JSON.stringify({ action: action, payload: payload })
   }).then(res => res.json());
 }
 
