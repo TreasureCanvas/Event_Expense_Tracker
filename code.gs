@@ -144,57 +144,67 @@ function doOptions(e) {
     .setMimeType(ContentService.MimeType.TEXT);
 }
 
-// doPost ใช้ LockService ป้องกัน Concurrent Request
+// doPost — Lock เฉพาะ action ที่เขียนข้อมูล (กัน race condition) ส่วน action อ่านอย่างเดียวไม่ต้อง Lock
 function doPost(e) {
+  let body = {};
+  if (e && e.postData && e.postData.contents) {
+    try {
+      body = JSON.parse(e.postData.contents);
+    } catch (parseErr) {
+      return jsonOut({ ok: false, error: 'รูปแบบข้อมูล JSON ไม่ถูกต้อง' });
+    }
+  } else if (e && e.parameter && e.parameter.payload) {
+    try {
+      body = JSON.parse(e.parameter.payload);
+    } catch (pErr) {
+      body = e.parameter;
+    }
+  } else if (e && e.parameter) {
+    body = e.parameter;
+  }
+
+  const action = body.action;
+  const WRITE_ACTIONS = ['createEvent', 'updateEvent', 'submitExpense'];
+
+  if (WRITE_ACTIONS.indexOf(action) === -1) {
+    // Read-only actions: no lock needed
+    return jsonOut(routeAction(action, body.payload));
+  }
+
+  // Write actions: use lock to prevent concurrent sheet writes
   const lock = LockService.getScriptLock();
-  // รอคิว Lock ไม่เกิน 15 วินาที
   if (!lock.waitLock(15000)) {
     return jsonOut({ ok: false, error: 'ระบบกำลังประมวลผลคำขอจำนวนมาก กรุณาลองใหม่อีกครั้งในอีกสักครู่' });
   }
-
   try {
-    let body = {};
-    if (e && e.postData && e.postData.contents) {
-      try {
-        body = JSON.parse(e.postData.contents);
-      } catch (parseErr) {
-        return jsonOut({ ok: false, error: 'รูปแบบข้อมูล JSON ไม่ถูกต้อง' });
-      }
-    } else if (e && e.parameter && e.parameter.payload) {
-      try {
-        body = JSON.parse(e.parameter.payload);
-      } catch (pErr) {
-        body = e.parameter;
-      }
-    } else if (e && e.parameter) {
-      body = e.parameter;
-    }
-
-    const action = body.action;
-    switch (action) {
-      case 'createEvent':
-        return jsonOut(apiCreateEvent(body.payload));
-      case 'updateEvent':
-        return jsonOut(apiUpdateEvent(body.payload));
-      case 'listAllEvents':
-        return jsonOut(apiListAllEvents());
-      case 'getEventInfo':
-        return jsonOut(apiGetEventInfo(body.payload));
-      case 'getEventRoster':
-        return jsonOut(apiGetEventRoster(body.payload));
-      case 'submitExpense':
-        return jsonOut(apiSubmitExpense(body.payload));
-      case 'getMySubmission':
-        return jsonOut(apiGetMySubmission(body.payload));
-      case 'getFuelPrice':
-        return jsonOut(apiGetFuelPrice());
-      default:
-        return jsonOut({ ok: false, error: 'ไม่พบ Action ที่ระบุ: ' + action });
-    }
+    return jsonOut(routeAction(action, body.payload));
   } catch (err) {
     return jsonOut({ ok: false, error: 'Internal Server Error: ' + String(err) });
   } finally {
-    lock.releaseLock(); // บังคับ คืน Lock ทุกครั้งหลังทำงานเสร็จ
+    lock.releaseLock();
+  }
+}
+
+function routeAction(action, payload) {
+  switch (action) {
+    case 'createEvent':
+      return apiCreateEvent(payload);
+    case 'updateEvent':
+      return apiUpdateEvent(payload);
+    case 'listAllEvents':
+      return apiListAllEvents();
+    case 'getEventInfo':
+      return apiGetEventInfo(payload);
+    case 'getEventRoster':
+      return apiGetEventRoster(payload);
+    case 'submitExpense':
+      return apiSubmitExpense(payload);
+    case 'getMySubmission':
+      return apiGetMySubmission(payload);
+    case 'getFuelPrice':
+      return apiGetFuelPrice();
+    default:
+      return { ok: false, error: 'ไม่พบ Action ที่ระบุ: ' + action };
   }
 }
 
