@@ -112,7 +112,7 @@ function doPost(e) {
     try {
       body = JSON.parse(e.postData.contents);
     } catch (parseErr) {
-      return jsonOut({ ok: false, error: 'รูปแบบข้อมูล JSON ไม่ถูกต้อง' });
+      return jsonOut({ ok: false, error: 'TEST-MODE: JSON parse failed' });
     }
   } else if (e && e.parameter && e.parameter.payload) {
     try {
@@ -125,23 +125,27 @@ function doPost(e) {
   }
 
   const action = body.action;
-  const WRITE_ACTIONS = ['createEvent', 'updateEvent'];
+  Logger.log('TEST-MODE doPost hit. action=%s', action);
 
-  if (WRITE_ACTIONS.indexOf(action) === -1) {
-    // Read-only actions (and submitExpense, which locks itself internally): no outer lock needed
-    return jsonOut(routeAction(action, body.payload));
-  }
-
-  const lock = LockService.getScriptLock();
-  if (!lock.waitLock(15000)) {
-    return jsonOut({ ok: false, error: 'ระบบกำลังประมวลผลคำขอจำนวนมาก กรุณาลองใหม่อีกครั้งในอีกสักครู่' });
-  }
-  try {
-    return jsonOut(routeAction(action, body.payload));
-  } catch (err) {
-    return jsonOut({ ok: false, error: 'Internal Server Error: ' + String(err) });
-  } finally {
-    lock.releaseLock();
+  switch (action) {
+    case 'createEvent':
+      return jsonOut(apiCreateEvent(body.payload));
+    case 'updateEvent':
+      return jsonOut(apiUpdateEvent(body.payload));
+    case 'listAllEvents':
+      return jsonOut(apiListAllEvents());
+    case 'getEventInfo':
+      return jsonOut(apiGetEventInfo(body.payload));
+    case 'getEventRoster':
+      return jsonOut(apiGetEventRoster(body.payload));
+    case 'submitExpense':
+      return jsonOut(apiSubmitExpense(body.payload));
+    case 'getMySubmission':
+      return jsonOut(apiGetMySubmission(body.payload));
+    case 'getFuelPrice':
+      return jsonOut(apiGetFuelPrice());
+    default:
+      return jsonOut({ ok: false, error: 'TEST-MODE: ไม่พบ Action ที่ระบุ: ' + action });
   }
 }
 
@@ -264,7 +268,7 @@ function apiUpdateEvent(payload) {
   const headers = data[0];
   const idCol = headers.indexOf('event_id');
   let rowIndex = -1;
-  
+
   for (let r = 1; r < data.length; r++) {
     if (data[r][idCol] === payload.eventId) { rowIndex = r; break; }
   }
@@ -282,23 +286,33 @@ function apiUpdateEvent(payload) {
   events.getRange(rowIndex + 1, startCol + 1).setValue(payload.startDate || '');
   events.getRange(rowIndex + 1, endCol + 1).setValue(payload.endDate || payload.startDate || '');
 
-  // ลบรายชื่อพนักงานเดิม แล้วอัปเดตชุดใหม่ลงไป
+  // ---- Batched rewrite of EventEmployees: keep other events' rows, replace this event's rows in ONE write ----
   const empSheet = getSheet(SHEET_EVENT_EMPLOYEES);
   const empData = empSheet.getDataRange().getValues();
   const empHeaders = empData[0];
   const empIdCol = empHeaders.indexOf('event_id');
-  const rowsToDelete = [];
-  
-  for (let r = 1; r < empData.length; r++) {
-    if (empData[r][empIdCol] === payload.eventId) rowsToDelete.push(r + 1);
-  }
-  rowsToDelete.reverse().forEach(r => empSheet.deleteRow(r));
 
+  // เก็บบรรทัดที่เป็นของกิจกรรม "อื่นๆ" เอาไว้ทั้งหมด
+  const otherRows = empData.slice(1).filter(row => row[empIdCol] !== payload.eventId);
+
+  // สร้างบรรทัดใหม่สำหรับกิจกรรม "นี้" จากข้อมูลที่ส่งมา
+  const newRows = [];
   if (Array.isArray(payload.employees)) {
     payload.employees.forEach(emp => {
       if (!emp || !emp.name) return;
-      empSheet.appendRow([payload.eventId, String(emp.name).trim(), String(emp.department || '').trim()]);
+      newRows.push([payload.eventId, String(emp.name).trim(), String(emp.department || '').trim()]);
     });
+  }
+
+  const finalRows = otherRows.concat(newRows);
+
+  // ล้างข้อมูลเดิมทั้งหมดที่อยู่ใต้ Header แล้วเขียนแถวข้อมูลทั้งหมดกลับเข้าไปใหม่ในครั้งเดียว
+  const lastRow = empSheet.getLastRow();
+  if (lastRow > 1) {
+    empSheet.getRange(2, 1, lastRow - 1, empHeaders.length).clearContent();
+  }
+  if (finalRows.length > 0) {
+    empSheet.getRange(2, 1, finalRows.length, empHeaders.length).setValues(finalRows);
   }
 
   return { ok: true, eventId: payload.eventId };
