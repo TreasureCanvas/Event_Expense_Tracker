@@ -98,53 +98,14 @@ function doGet(e) {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-// ---------- API: สร้างกิจกรรมใหม่ ----------
-function apiCreateEvent(payload) {
-  if (!payload || !payload.eventName || !payload.ownerName) {
-    return { ok: false, error: 'กรุณากรอกชื่อกิจกรรมและชื่อผู้สร้าง' };
-  }
-
-  const events = getSheet(SHEET_EVENTS);
-  const eventId = 'EV-' + new Date().getFullYear() + '-' + generateId('').replace('-', '');
-  
-  // ✅ แก้ไขลิงก์ให้ชี้ไปที่ Vercel URL
-  const vercelBaseUrl = 'https://event-expense-tracker-chi.vercel.app';
-  const formLink = vercelBaseUrl + '/form.html?event=' + eventId;
-
-  events.appendRow([
-    eventId, 
-    String(payload.eventName).trim(), 
-    String(payload.ownerName).trim(), 
-    String(payload.venue || '').trim(),
-    payload.startDate || '', 
-    payload.endDate || payload.startDate || '',
-    formLink, 
-    '', 
-    nowStr()
-  ]);
-
-  const empSheet = getSheet(SHEET_EVENT_EMPLOYEES);
-  if (Array.isArray(payload.employees)) {
-    payload.employees.forEach(emp => {
-      if (!emp || !emp.name) return;
-      empSheet.appendRow([eventId, String(emp.name).trim(), String(emp.department || '').trim()]);
-    });
-  }
-
-  return {
-    ok: true,
-    eventId: eventId,
-    formLink: formLink
-  };
-}
-
 // รองรับ CORS Preflight Requests จาก Vercel
 function doOptions(e) {
   return ContentService.createTextOutput('')
     .setMimeType(ContentService.MimeType.TEXT);
 }
 
-// doPost — Lock เฉพาะ action ที่เขียนข้อมูล (กัน race condition) ส่วน action อ่านอย่างเดียวไม่ต้อง Lock
+// doPost — Lock เฉพาะ action ที่เขียนข้อมูลลง Sheet โดยตรง (createEvent, updateEvent)
+// submitExpense ล็อกตัวเองภายในฟังก์ชัน (ดู apiSubmitExpense) เพราะมีขั้นตอนอัปโหลดไฟล์ที่ใช้เวลานาน
 function doPost(e) {
   let body = {};
   if (e && e.postData && e.postData.contents) {
@@ -164,14 +125,13 @@ function doPost(e) {
   }
 
   const action = body.action;
-  const WRITE_ACTIONS = ['createEvent', 'updateEvent', 'submitExpense'];
+  const WRITE_ACTIONS = ['createEvent', 'updateEvent'];
 
   if (WRITE_ACTIONS.indexOf(action) === -1) {
-    // Read-only actions: no lock needed
+    // Read-only actions (and submitExpense, which locks itself internally): no outer lock needed
     return jsonOut(routeAction(action, body.payload));
   }
 
-  // Write actions: use lock to prevent concurrent sheet writes
   const lock = LockService.getScriptLock();
   if (!lock.waitLock(15000)) {
     return jsonOut({ ok: false, error: 'ระบบกำลังประมวลผลคำขอจำนวนมาก กรุณาลองใหม่อีกครั้งในอีกสักครู่' });
@@ -260,8 +220,10 @@ function apiCreateEvent(payload) {
 
   const events = getSheet(SHEET_EVENTS);
   const eventId = 'EV-' + new Date().getFullYear() + '-' + generateId('').replace('-', '');
-  const scriptUrl = ScriptApp.getService().getUrl();
-  const formLink = scriptUrl + '?page=form&event=' + eventId;
+
+  // ✅ แก้ไขลิงก์ให้ชี้ไปที่ Vercel URL
+  const vercelBaseUrl = 'https://event-expense-tracker-chi.vercel.app';
+  const formLink = vercelBaseUrl + '/form.html?event=' + eventId;
 
   events.appendRow([
     eventId, 
@@ -439,7 +401,7 @@ function apiSubmitExpense(payload) {
 
   const folder = getOrCreateDriveFolder();
 
-  // 1. บันทึกไฟล์ PDF เอกสารเบิกเงินลง Drive
+  // 1. บันทึกไฟล์ PDF เอกสารเบิกเงินลง Drive (ทำก่อนล็อก เพราะ Drive I/O ใช้เวลานาน)
   let pdfUrl = '';
   if (payload.pdfBase64) {
     try {
@@ -496,41 +458,49 @@ function apiSubmitExpense(payload) {
     trips: tripDetails
   };
 
-  // ตรวจสอบการส่งซ้ำ
-  const all = sheetToObjects(submissions);
-  const existingIndex = all.findIndex(
-    s => s.event_id === payload.eventId && String(s.employee_name).trim() === String(payload.employeeName).trim()
-  );
-
-  const isResubmit = existingIndex > -1;
-  const timeNow = nowStr();
-  const status = isResubmit
-    ? 'มีการแก้ไขล่าสุดเมื่อ (' + timeNow + ' น.)'
-    : 'แนบเอกสารแล้ว (' + timeNow + ' น.)';
-
-  const submissionId = isResubmit ? all[existingIndex].submission_id : generateId('SUB');
-  const safeTotalAmount = Number(payload.totalAmount) || 0;
-
-  const rowData = [
-    submissionId, 
-    payload.eventId, 
-    String(payload.employeeName).trim(), 
-    String(payload.department || '').trim(),
-    status, 
-    timeNow, 
-    safeTotalAmount,
-    payload.summaryText || '', 
-    pdfUrl || (isResubmit ? all[existingIndex].pdf_file_url : ''), 
-    JSON.stringify(storedDetails)
-  ];
-
-  if (isResubmit) {
-    submissions.getRange(existingIndex + 2, 1, 1, rowData.length).setValues([rowData]);
-  } else {
-    submissions.appendRow(rowData);
+  // ตรวจสอบการส่งซ้ำ + เขียนแถวลง Sheet — ล็อกเฉพาะช่วงนี้เท่านั้น (เร็ว ไม่รวม Drive I/O)
+  const lock = LockService.getScriptLock();
+  if (!lock.waitLock(15000)) {
+    return { ok: false, error: 'ระบบกำลังประมวลผลคำขอจำนวนมาก กรุณาลองใหม่อีกครั้งในอีกสักครู่' };
   }
+  try {
+    const all = sheetToObjects(submissions);
+    const existingIndex = all.findIndex(
+      s => s.event_id === payload.eventId && String(s.employee_name).trim() === String(payload.employeeName).trim()
+    );
 
-  return { ok: true, submissionId: submissionId, status: status, pdfUrl: pdfUrl, resubmitted: isResubmit };
+    const isResubmit = existingIndex > -1;
+    const timeNow = nowStr();
+    const status = isResubmit
+      ? 'มีการแก้ไขล่าสุดเมื่อ (' + timeNow + ' น.)'
+      : 'แนบเอกสารแล้ว (' + timeNow + ' น.)';
+
+    const submissionId = isResubmit ? all[existingIndex].submission_id : generateId('SUB');
+    const safeTotalAmount = Number(payload.totalAmount) || 0;
+
+    const rowData = [
+      submissionId,
+      payload.eventId,
+      String(payload.employeeName).trim(),
+      String(payload.department || '').trim(),
+      status,
+      timeNow,
+      safeTotalAmount,
+      payload.summaryText || '',
+      pdfUrl || (isResubmit ? all[existingIndex].pdf_file_url : ''),
+      JSON.stringify(storedDetails)
+    ];
+
+    if (isResubmit) {
+      submissions.getRange(existingIndex + 2, 1, 1, rowData.length).setValues([rowData]);
+    } else {
+      submissions.appendRow(rowData);
+    }
+
+    return { ok: true, submissionId: submissionId, status: status, pdfUrl: pdfUrl, resubmitted: isResubmit };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ---------- API: ดึงประวัติการส่งเอกสารของพนักงานคนนั้นๆ ----------
