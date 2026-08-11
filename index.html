@@ -355,6 +355,24 @@ function parseEmployees(text){
   });
 }
 
+function showToast(message, type){
+  let toast = document.getElementById('appToast');
+  if(!toast){
+    toast = document.createElement('div');
+    toast.id = 'appToast';
+    toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);' +
+      'padding:12px 20px;border-radius:8px;font-size:14px;font-weight:600;z-index:9999;' +
+      'box-shadow:0 4px 12px rgba(0,0,0,0.15);transition:opacity .3s;color:#fff;';
+    document.body.appendChild(toast);
+  }
+  toast.style.background = type === 'err' ? '#dc2626' : '#16a34a';
+  toast.textContent = message;
+  toast.style.opacity = '1';
+  toast.style.display = 'block';
+  clearTimeout(toast._hideTimer);
+  toast._hideTimer = setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.style.display='none', 300); }, 3000);
+}
+
 async function createNewEvent(){
   const eventName = document.getElementById('eventName').value.trim();
   const ownerName = document.getElementById('ownerName').value.trim();
@@ -388,6 +406,7 @@ async function createNewEvent(){
 
     await loadEvents();
     showListView();
+    showToast('✅ สร้างกิจกรรมสำเร็จ: ' + eventName, 'ok');
   }catch(err){
     msg.textContent = 'เกิดข้อผิดพลาด: ' + err;
     msg.style.display = 'block';
