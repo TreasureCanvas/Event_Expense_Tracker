@@ -548,9 +548,9 @@ function renderSegment(di,key,seg,si){
   } else if(seg.type==='TOLL'){
     body = `
       <div class="grid2">
-        <div class="field"><label>จาก (ต้นทาง) <span style="color:var(--muted); font-weight:400;">(ไม่บังคับ)</span></label>
+        <div class="field"><label>จาก (ต้นทาง) <span style="color:var(--muted); font-weight:400;"></span></label>
           <input value="${seg.origin}" oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)" placeholder="ไม่บังคับ"></div>
-        <div class="field"><label>ไป (ปลายทาง) <span style="color:var(--muted); font-weight:400;">(ไม่บังคับ)</span></label>
+        <div class="field"><label>ไป (ปลายทาง) <span style="color:var(--muted); font-weight:400;"></span></label>
           <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder="ไม่บังคับ"></div>
       </div>
       <div class="field"><label>จำนวนเงิน (บาท) <span class="req">*</span></label>
