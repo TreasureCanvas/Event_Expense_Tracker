@@ -429,13 +429,23 @@ function editEvent(eventId){
   document.getElementById('editStartDate').value = ev.startDate || '';
   document.getElementById('editEndDate').value = ev.endDate || '';
 
+  const empListEl = document.getElementById('editEmployeeList');
+  empListEl.value = '';
+  empListEl.disabled = true;
+  empListEl.placeholder = 'กำลังโหลดรายชื่อ...';
+
   showEditViewEl();
 
   callApi('getEventRoster', {eventId}).then(res=>{
     if(res.ok && res.roster){
       const lines = res.roster.map(r => r.department ? `${r.employeeName} - ${r.department}` : r.employeeName);
-      document.getElementById('editEmployeeList').value = lines.join('\n');
+      empListEl.value = lines.join('\n');
     }
+  }).catch(err=>{
+    showToast('❌ โหลดรายชื่อสตาฟไม่สำเร็จ: ' + err, 'err');
+  }).finally(()=>{
+    empListEl.disabled = false;
+    empListEl.placeholder = '';
   });
 }
 
@@ -446,15 +456,33 @@ async function saveEditEvent(){
   const startDate = document.getElementById('editStartDate').value;
   const endDate = document.getElementById('editEndDate').value || startDate;
   const employees = parseEmployees(document.getElementById('editEmployeeList').value);
+  const msg = document.getElementById('editMsgErr');
+  const btn = document.getElementById('editSaveBtn');
+  const originalText = btn.textContent;
 
-  const res = await callApi('updateEvent', {
-    eventId: editingEventId, eventName, ownerName, venue, startDate, endDate, employees
-  });
+  if(msg) msg.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = '⏳ กำลังบันทึก...';
 
-  if(res.ok){
-    delete rosterCache[editingEventId];
-    await loadEvents();
-    showListView();
+  try{
+    const res = await callApi('updateEvent', {
+      eventId: editingEventId, eventName, ownerName, venue, startDate, endDate, employees
+    });
+
+    if(res.ok){
+      delete rosterCache[editingEventId];
+      await loadEvents();
+      showListView();
+      showToast('✅ บันทึกการแก้ไขสำเร็จ', 'ok');
+    } else if(msg){
+      msg.textContent = res.error;
+      msg.style.display = 'block';
+    }
+  }catch(err){
+    if(msg){ msg.textContent = 'เกิดข้อผิดพลาด: ' + err; msg.style.display = 'block'; }
+  }finally{
+    btn.disabled = false;
+    btn.textContent = originalText;
   }
 }
 
@@ -462,28 +490,41 @@ async function exportEventsToExcel(){
   const checked = Array.from(document.querySelectorAll('.export-check:checked')).map(c=>c.value);
   if(checked.length===0) return;
 
-  const rows = [];
-  for(const eventId of checked){
-    const ev = allEvents.find(e=>e.eventId===eventId);
-    const res = await callApi('getEventRoster', {eventId});
-    if(res.ok && res.roster){
-      res.roster.forEach((r,idx)=>{
-        rows.push({
-          'ชื่องาน': ev ? ev.eventName : eventId,
-          'ลำดับสตาฟ': idx + 1,
-          'ชื่อสตาฟ': r.employeeName,
-          'แผนก': r.department || '',
-          'ยอดเงิน': r.submitted ? Number(r.totalAmount) : 0,
-          'link pdf': r.pdfUrl || ''
-        });
-      });
-    }
-  }
+  const btn = document.getElementById('exportBtn');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ กำลังดาวน์โหลด...';
 
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'รายงานเบิกค่าเดินทาง');
-  XLSX.writeFile(wb, `รายงานเบิกค่าเดินทาง.xlsx`);
+  try{
+    const rows = [];
+    for(const eventId of checked){
+      const ev = allEvents.find(e=>e.eventId===eventId);
+      const res = await callApi('getEventRoster', {eventId});
+      if(res.ok && res.roster){
+        res.roster.forEach((r,idx)=>{
+          rows.push({
+            'ชื่องาน': ev ? ev.eventName : eventId,
+            'ลำดับสตาฟ': idx + 1,
+            'ชื่อสตาฟ': r.employeeName,
+            'แผนก': r.department || '',
+            'ยอดเงิน': r.submitted ? Number(r.totalAmount) : 0,
+            'link pdf': r.pdfUrl || ''
+          });
+        });
+      }
+    }
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'รายงานเบิกค่าเดินทาง');
+    XLSX.writeFile(wb, `รายงานเบิกค่าเดินทาง.xlsx`);
+    showToast('✅ ดาวน์โหลด Excel สำเร็จ', 'ok');
+  }catch(err){
+    showToast('❌ ดาวน์โหลดไม่สำเร็จ: ' + err, 'err');
+  }finally{
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 }
 
 document.addEventListener('DOMContentLoaded', loadEvents);
