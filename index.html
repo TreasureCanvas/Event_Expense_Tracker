@@ -227,6 +227,54 @@ function showExportView(){
 let allEvents = [];
 let rosterCache = {};
 
+// ---------- Date helper: normalize any date value coming back from the
+// backend (ISO string, dd/MM/yyyy, dd/MM/yyyy in Buddhist Era, or a raw
+// Date-like value) into the strict YYYY-MM-DD format required by
+// <input type="date">. Without this, dates simply fail to bind and the
+// field renders blank when opening the edit form. ----------
+function toISODate(value){
+  if(value === null || value === undefined) return '';
+  if(value instanceof Date){
+    if(isNaN(value)) return '';
+    const y = value.getFullYear(), m = value.getMonth()+1, d = value.getDate();
+    return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+
+  const str = String(value).trim();
+  if(!str) return '';
+
+  // Already ISO (YYYY-MM-DD, optionally with a time component)
+  let m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+
+  // dd/MM/yyyy (what the backend's dateStr() produces, possibly in the
+  // Buddhist Era if the Sheet/script locale is set to Thai)
+  m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(m){
+    const day = parseInt(m[1], 10);
+    const month = parseInt(m[2], 10);
+    let year = parseInt(m[3], 10);
+    // Buddhist Era years run ~543 years ahead of Gregorian; normalize back
+    if(year > 2400) year -= 543;
+    return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  }
+
+  // Fallback: let the Date constructor try, then re-format safely
+  const parsed = new Date(str);
+  if(!isNaN(parsed)){
+    const y = parsed.getFullYear(), mo = parsed.getMonth()+1, d = parsed.getDate();
+    return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+
+  return '';
+}
+
+// Guards against a race condition where a user opens "edit" on one event,
+// then quickly opens "edit" on another before the first event's roster
+// fetch resolves — without this, the slower response could stomp the
+// currently-open form with the wrong event's staff list.
+let editRequestToken = 0;
+
 async function loadEvents(){
   const container = document.getElementById('eventListContainer');
   const emptyMsg = document.getElementById('listEmptyMsg');
@@ -423,11 +471,18 @@ function editEvent(eventId){
   if(!ev) return;
   editingEventId = eventId;
 
+  // Bump the token so a slow response for a previously-opened event can't
+  // clobber this (possibly different) event's form once it resolves late.
+  const myRequestToken = ++editRequestToken;
+
   document.getElementById('editEventName').value = ev.eventName;
   document.getElementById('editOwnerName').value = ev.ownerName;
   document.getElementById('editVenue').value = ev.venue || '';
-  document.getElementById('editStartDate').value = ev.startDate || '';
-  document.getElementById('editEndDate').value = ev.endDate || '';
+  // Backend dates arrive as dd/MM/yyyy (sometimes Buddhist Era) or other
+  // non-ISO formats — normalize before binding or the <input type="date">
+  // silently rejects the value and shows blank.
+  document.getElementById('editStartDate').value = toISODate(ev.startDate);
+  document.getElementById('editEndDate').value = toISODate(ev.endDate);
 
   const empListEl = document.getElementById('editEmployeeList');
   empListEl.value = '';
@@ -437,13 +492,29 @@ function editEvent(eventId){
   showEditViewEl();
 
   callApi('getEventRoster', {eventId}).then(res=>{
-    if(res.ok && res.roster){
-      const lines = res.roster.map(r => r.department ? `${r.employeeName} - ${r.department}` : r.employeeName);
+    // A newer edit request has since started — discard this stale result.
+    if(myRequestToken !== editRequestToken) return;
+
+    if(res.ok && Array.isArray(res.roster)){
+      const lines = res.roster
+        .filter(r => r && r.employeeName)
+        .map(r => {
+          const name = String(r.employeeName).trim();
+          const dept = String(r.department || '').trim();
+          return dept ? `${name} - ${dept}` : name;
+        });
       empListEl.value = lines.join('\n');
+      if(lines.length === 0){
+        showToast('⚠️ ไม่พบรายชื่อสตาฟสำหรับกิจกรรมนี้', 'err');
+      }
+    } else if(!res.ok){
+      showToast('❌ โหลดรายชื่อสตาฟไม่สำเร็จ: ' + (res.error || 'unknown error'), 'err');
     }
   }).catch(err=>{
+    if(myRequestToken !== editRequestToken) return;
     showToast('❌ โหลดรายชื่อสตาฟไม่สำเร็จ: ' + err, 'err');
   }).finally(()=>{
+    if(myRequestToken !== editRequestToken) return;
     empListEl.disabled = false;
     empListEl.placeholder = '';
   });
