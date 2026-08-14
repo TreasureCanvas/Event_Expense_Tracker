@@ -163,7 +163,7 @@
     <div class="grid2">
       <div class="field">
         <label>ชื่อผู้เบิก (ชื่อ-นามสกุล) <span class="req">*</span></label>
-        <input id="employeeName" list="employeeSuggestions" placeholder="เช่น สมชาย ใจดี" onblur="onEmployeeBlur()">
+        <input id="employeeName" list="employeeSuggestions" placeholder="เช่น สมชาย ใจดี" onchange="onEmployeeChange()">
         <datalist id="employeeSuggestions"></datalist>
       </div>
       <div class="field">
@@ -312,14 +312,20 @@ const SRT_RED_MATRIX_FLAT = [12,18,29,35,38,41,42,42,42,42,42,42,42,18,12,23,29,
 
 const SEGMENT_TYPES = [
   { value:'', label:'เลือกวิธีการเดินทาง', kind:'placeholder' },
+  // BTS
   { value:'BTS_GREEN', label:'BTS สายสีเขียว', kind:'rail' },
   { value:'BTS_GOLD', label:'BTS สายสีทอง', kind:'rail' },
+  // MRT (note: BTS_YELLOW/BTS_PINK are legacy internal key names for the
+  // MRT Yellow/Pink lines — kept as-is since existing submitted data and
+  // the fare-lookup code elsewhere already reference these exact values)
   { value:'BTS_YELLOW', label:'MRT สายสีเหลือง', kind:'rail' },
   { value:'BTS_PINK', label:'MRT สายสีชมพู', kind:'rail' },
-  { value:'ARL', label:'Airport Rail Link', kind:'rail' },
   { value:'MRT_BLUE', label:'MRT สีน้ำเงิน', kind:'rail' },
   { value:'MRT_PURPLE', label:'MRT สีม่วง', kind:'rail' },
+  // SRT
   { value:'SRT_RED', label:'SRT สีแดง', kind:'rail' },
+  // Airport Rail Link
+  { value:'ARL', label:'Airport Rail Link', kind:'rail' },
   { value:'CAR', label:'รถยนต์ส่วนบุคคล', kind:'car' },
   { value:'TAXI', label:'แท็กซี่', kind:'manual' },
   { value:'GRAB', label:'รถโดยสารรับจ้างผ่านแอปพลิเคชัน', kind:'manual' },
@@ -332,6 +338,11 @@ const SEGMENT_TYPES = [
 let state = { days: [ newDay() ] };
 let employeeList = [];
 let eventName = '';
+// Tracks which member's data is currently loaded, so we only reset/reload
+// when the person actually switches to a *different* member (not on every
+// blur), and lets us restore a clean default when they clear the field.
+let lastLoadedEmployeeName = '';
+let defaultFuelPrice = 34.57;
 
 function newSegment(){ return { type:'', origin:'', destination:'', distanceKm:'', amount:0, otherDescription:'', attachments:[], attachmentUrls:[] }; }
 function newDay(date){ return { date: date || '', outboundSegments:[newSegment()], returnSegments:[newSegment()] }; }
@@ -430,15 +441,40 @@ async function loadEventInfo(){
   }
   try{
     const fp = await callApi('getFuelPrice', {});
-    if(fp.ok){ document.getElementById('fuelPrice').value = fp.price; }
+    if(fp.ok){ defaultFuelPrice = fp.price; document.getElementById('fuelPrice').value = fp.price; }
   }catch(err){ /* ignore */ }
 }
 
-async function onEmployeeBlur(){
+function resetFormForNewEmployee(){
+  document.getElementById('department').value = '';
+  document.getElementById('purpose').value = '';
+  document.getElementById('fuelPrice').value = defaultFuelPrice;
+  state.days = [ newDay() ];
+  ['Err','Ok','Warn'].forEach(t=>{ const el=document.getElementById('msg'+t); if(el) el.style.display='none'; });
+}
+
+async function onEmployeeChange(){
   const name = document.getElementById('employeeName').value.trim();
-  if(!name) return;
+
+  if(!name){
+    lastLoadedEmployeeName = '';
+    resetFormForNewEmployee();
+    render();
+    return;
+  }
+
+  // Same member as already loaded — nothing to reset, avoid clobbering
+  // in-progress edits just because the field was re-blurred.
+  if(name === lastLoadedEmployeeName) return;
+  lastLoadedEmployeeName = name;
+
+  // Always start from a completely clean form before loading data for the
+  // newly selected member, so leftover fields/segments from whoever was
+  // previously selected never bleed into this member's submission.
+  resetFormForNewEmployee();
+
   const match = employeeList.find(e=>e.name===name);
-  if(match && match.department && !document.getElementById('department').value){
+  if(match && match.department){
     document.getElementById('department').value = match.department;
   }
 
@@ -447,12 +483,14 @@ async function onEmployeeBlur(){
     if(res.ok && res.exists){
       document.getElementById('department').value = res.data.department || document.getElementById('department').value;
       document.getElementById('purpose').value = res.data.purpose || '';
-      if(res.data.fuelRefPrice) document.getElementById('fuelPrice').value = res.data.fuelRefPrice;
-      if(res.data.trips && res.data.trips.length){ state.days = tripsArrayToDays(res.data.trips); }
+      document.getElementById('fuelPrice').value = res.data.fuelRefPrice || defaultFuelPrice;
+      state.days = (res.data.trips && res.data.trips.length) ? tripsArrayToDays(res.data.trips) : [ newDay() ];
       showMsg('warn', `พบเอกสารที่เคยส่งไว้แล้ว (สถานะล่าสุด: ${res.data.status}) — ระบบดึงข้อมูลเดิมมาให้แก้ไข การกด "ยืนยันส่งเอกสาร" จะบันทึกทับเวอร์ชันเดิม`);
-      render();
     }
-  }catch(err){ /* continue */ }
+    // If no existing submission was found, the form is already reset to a
+    // clean, blank state above — nothing further to do.
+  }catch(err){ /* keep the clean, reset form shown so far */ }
+  render();
 }
 
 /* ---------- RENDER TRIPS ---------- */
