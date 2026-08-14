@@ -311,6 +311,7 @@ const SRT_RED_N = 13;
 const SRT_RED_MATRIX_FLAT = [12,18,29,35,38,41,42,42,42,42,42,42,42,18,12,23,29,32,35,37,39,42,42,42,42,42,29,23,12,18,22,25,26,29,33,36,39,42,42,35,29,18,12,16,19,20,23,27,30,33,42,42,38,32,22,16,12,15,17,19,23,26,29,38,42,41,35,25,19,15,12,14,16,20,23,26,35,40,42,37,26,20,17,14,12,14,19,22,25,34,38,42,39,29,23,19,16,14,12,17,20,23,32,36,42,42,33,27,23,20,19,17,12,15,18,27,32,42,42,36,30,26,23,22,20,15,12,15,24,29,42,42,39,33,29,26,25,23,18,15,12,21,26,42,42,42,42,38,35,34,32,27,24,21,12,17,42,42,42,42,42,40,38,36,32,29,26,17,12];
 
 const SEGMENT_TYPES = [
+  { value:'', label:'เลือกวิธีการเดินทาง', kind:'placeholder' },
   { value:'BTS_GREEN', label:'BTS สายสีเขียว', kind:'rail' },
   { value:'BTS_GOLD', label:'BTS สายสีทอง', kind:'rail' },
   { value:'BTS_YELLOW', label:'MRT สายสีเหลือง', kind:'rail' },
@@ -332,7 +333,7 @@ let state = { days: [ newDay() ] };
 let employeeList = [];
 let eventName = '';
 
-function newSegment(){ return { type:'GRAB', origin:'', destination:'', distanceKm:'', amount:0, otherDescription:'', attachments:[], attachmentUrls:[] }; }
+function newSegment(){ return { type:'', origin:'', destination:'', distanceKm:'', amount:0, otherDescription:'', attachments:[], attachmentUrls:[] }; }
 function newDay(date){ return { date: date || '', outboundSegments:[newSegment()], returnSegments:[newSegment()] }; }
 
 function daysToTripsArray(days){
@@ -496,7 +497,9 @@ function render(){
 function renderSegment(di,key,seg,si){
   const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
   let body = '';
-  if(typeCfg.kind==='rail'){
+  if(typeCfg.kind==='placeholder'){
+    body = `<div class="hint">กรุณาเลือกวิธีการเดินทางด้านบนก่อนกรอกรายละเอียด</div>`;
+  } else if(typeCfg.kind==='rail'){
     const originInvalid = seg.origin && !isValidStation(seg.type, seg.origin);
     const destInvalid = seg.destination && !isValidStation(seg.type, seg.destination);
     const dlId = `dl-${di}-${key}-${si}-${seg.type}`;
@@ -814,6 +817,12 @@ function validate(){
       segments.forEach((seg,si)=>{
         const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
         const tag = `วันที่ ${di+1} (${label}) รายการที่ ${si+1}`;
+
+        if(!seg.type || typeCfg.kind==='placeholder'){
+          errors.push(`${tag}: กรุณาเลือกวิธีการเดินทาง`); ok=false;
+          return;
+        }
+
         const needsRoute = (typeCfg.kind==='rail' || typeCfg.kind==='manual' || typeCfg.kind==='car') && seg.type!=='PARKING' && seg.type!=='TOLL';
 
         if(needsRoute){
