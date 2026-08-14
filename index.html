@@ -368,6 +368,10 @@ async function toggleRoster(eventId, i){
   const editedCount = data.roster.filter(r=>r.status && r.status.startsWith('มีการแก้ไข')).length;
   const pendingCount = data.roster.length - submittedCount;
 
+  // Dynamic grand total — recomputed fresh every time this panel renders,
+  // so it always reflects the latest submitted/edited expense amounts.
+  const grandTotal = data.roster.reduce((sum, r) => sum + (r.submitted ? (Number(r.totalAmount) || 0) : 0), 0);
+
   const rowsHtml = data.roster.map(r=>{
     const isEdit = r.status && r.status.startsWith('มีการแก้ไข');
     const dot = !r.submitted ? 'dot-grey' : (isEdit ? 'dot-orange' : 'dot-green');
@@ -392,6 +396,13 @@ async function toggleRoster(eventId, i){
     <table>
       <thead><tr><th>สถานะ</th><th>ชื่อ-นามสกุล</th><th>แผนก</th><th>ยอดเงิน</th><th>PDF File</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
+      <tfoot>
+        <tr class="roster-total-row" style="font-weight:700; border-top:2px solid var(--line);">
+          <td colspan="3" style="text-align:right;">ยอดรวมทั้งสิ้น (Grand Total)</td>
+          <td>${grandTotal.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท</td>
+          <td></td>
+        </tr>
+      </tfoot>
     </table>`;
 }
 
@@ -570,17 +581,32 @@ async function exportEventsToExcel(){
     const rows = [];
     for(const eventId of checked){
       const ev = allEvents.find(e=>e.eventId===eventId);
+      const eventName = ev ? ev.eventName : eventId;
       const res = await callApi('getEventRoster', {eventId});
       if(res.ok && res.roster){
+        let eventTotal = 0;
         res.roster.forEach((r,idx)=>{
+          const amount = r.submitted ? Number(r.totalAmount) : 0;
+          eventTotal += amount;
           rows.push({
-            'ชื่องาน': ev ? ev.eventName : eventId,
+            'ชื่องาน': eventName,
             'ลำดับสตาฟ': idx + 1,
             'ชื่อสตาฟ': r.employeeName,
             'แผนก': r.department || '',
-            'ยอดเงิน': r.submitted ? Number(r.totalAmount) : 0,
+            'ยอดเงิน': amount,
             'link pdf': r.pdfUrl || ''
           });
+        });
+
+        // Append a grand-total summary row at the bottom of this event's
+        // block of data before moving on to the next selected event.
+        rows.push({
+          'ชื่องาน': eventName,
+          'ลำดับสตาฟ': '',
+          'ชื่อสตาฟ': 'ยอดรวมทั้งสิ้น (Grand Total)',
+          'แผนก': '',
+          'ยอดเงิน': eventTotal,
+          'link pdf': ''
         });
       }
     }
