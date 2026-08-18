@@ -274,6 +274,22 @@ function renderExportEventList(){
     </label>`).join('');
 }
 
+// ---------- Date range overlap rule (inclusive) ----------
+// An event is visible if its own [evStart, evEnd] range overlaps the
+// user-chosen [filterStart, filterEnd] range:
+//   - if filterStart is set: evEnd   >= filterStart
+//   - if filterEnd   is set: evStart <= filterEnd
+//   - if both are set, BOTH conditions must hold
+// An empty filter bound means "no limit" on that side. Dates are plain
+// YYYY-MM-DD strings, which compare correctly lexicographically.
+function eventOverlapsDateFilter(evStart, evEnd, filterStart, filterEnd){
+  const start = evStart || '';
+  const end = evEnd || start; // no end date recorded -> treat as a single-day event
+  if(filterStart && (!end || end < filterStart)) return false;
+  if(filterEnd && (!start || start > filterEnd)) return false;
+  return true;
+}
+
 // ---------- Client-side filtering for the Export event list ----------
 // Filters entirely in the browser (no extra backend calls): matches the
 // search box against the event title, checks whether the event's own date
@@ -298,12 +314,7 @@ function filterExportEvents(){
     const creator = (row.dataset.creator || '').toLowerCase();
 
     const matchesSearch = !term || name.includes(term);
-    // Overlap test: event's [evStart, evEnd] range intersects the
-    // user-chosen [filterStart, filterEnd] range. An empty filter bound
-    // means "no limit" on that side.
-    const matchesDate =
-      (!filterStart || !evEnd || evEnd >= filterStart) &&
-      (!filterEnd || !evStart || evStart <= filterEnd);
+    const matchesDate = eventOverlapsDateFilter(evStart, evEnd, filterStart, filterEnd);
     const matchesCreator = !creatorTerm || creator.includes(creatorTerm);
 
     const visible = matchesSearch && matchesDate && matchesCreator;
