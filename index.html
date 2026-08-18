@@ -53,7 +53,20 @@
 
   #createView, #editView, #exportView{display:none;}
   .grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .grid3{display:grid; grid-template-columns:1fr auto auto; gap:12px; align-items:end;}
   .field{margin-bottom:14px;}
+  .export-filter-box{border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:12px; background:#fbfbfa;}
+  .export-filter-header{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:12px;}
+  .export-filter-title{font-size:13.5px; font-weight:700; color:var(--brand-dark);}
+  .btn-danger{background:var(--danger); color:#fff;}
+  .export-filter-daterow{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .export-filter-box .field{margin-bottom:12px;}
+  .export-filter-box .field:last-child{margin-bottom:0;}
+  .export-select-all{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); font-weight:600; padding:8px 0 4px; border-top:1px dashed var(--line); margin-top:2px;}
+  .export-select-all input{width:auto;}
+  .export-event-row{display:flex; align-items:center; gap:8px; padding:6px 0; font-size:13.5px; cursor:pointer;}
+  .export-event-row input{width:auto;}
+  .export-empty-filtered{color:var(--muted); padding:14px 4px; font-size:13px; text-align:center;}
   .msg{padding:11px 13px; border-radius:9px; font-size:13.5px; margin-bottom:14px; display:none;}
   .msg.err{background:#fdeceb; color:#c0392b; border:1px solid #f3c6c1;}
   .msg.ok{background:#eaf6ef; color:var(--ok); border:1px solid #bfe5cd;}
@@ -168,7 +181,35 @@
     <div class="card">
       <div class="field">
         <label>เลือกกิจกรรมที่ต้องการ Export</label>
-        <div id="exportEventList" style="max-height:280px; overflow-y:auto; border:1px solid var(--line); border-radius:9px; padding:8px 12px;"></div>
+        <div class="export-filter-box">
+          <div class="export-filter-header">
+            <span class="export-filter-title">🔎 ตัวกรองกิจกรรม</span>
+            <button class="btn btn-danger" type="button" onclick="resetExportFilters()">✕ ล้างตัวกรอง</button>
+          </div>
+          <div class="field">
+            <label style="margin-bottom:3px;">ค้นหาชื่อกิจกรรม</label>
+            <input type="text" id="exportSearch" placeholder="พิมพ์ชื่อกิจกรรม..." oninput="filterExportEvents()">
+          </div>
+          <div class="export-filter-daterow">
+            <div class="field">
+              <label style="margin-bottom:3px;">ตั้งแต่วันที่</label>
+              <input type="date" id="exportStartDate" onchange="filterExportEvents()">
+            </div>
+            <div class="field">
+              <label style="margin-bottom:3px;">ถึงวันที่</label>
+              <input type="date" id="exportEndDate" onchange="filterExportEvents()">
+            </div>
+          </div>
+          <div class="field">
+            <label style="margin-bottom:3px;">ชื่อผู้สร้างกิจกรรม</label>
+            <input type="text" id="exportCreator" placeholder="พิมพ์ชื่อผู้สร้างกิจกรรม..." oninput="filterExportEvents()">
+          </div>
+        </div>
+        <label class="export-select-all">
+          <input type="checkbox" id="exportSelectAllFiltered" onchange="toggleSelectAllFiltered(this.checked)">
+          เลือกทั้งหมดที่กรองไว้ (Select All Filtered)
+        </label>
+        <div id="exportEventList" style="max-height:280px; overflow-y:auto; border:1px solid var(--line); border-radius:9px; padding:8px 12px; margin-top:8px;"></div>
       </div>
       <button class="btn" id="exportBtn" onclick="exportEventsToExcel()">📥 ดาวน์โหลด Excel</button>
     </div>
@@ -210,18 +251,103 @@ function showEditViewEl(){
 }
 function showExportView(){
   document.getElementById('exportMsgErr').style.display = 'none';
+  document.getElementById('exportSearch').value = '';
+  document.getElementById('exportStartDate').value = '';
+  document.getElementById('exportEndDate').value = '';
+  document.getElementById('exportCreator').value = '';
+  document.getElementById('exportSelectAllFiltered').checked = false;
+  renderExportEventList();
+  document.getElementById('listView').style.display = 'none';
+  document.getElementById('exportView').style.display = 'block';
+}
+
+function renderExportEventList(){
   const list = document.getElementById('exportEventList');
   if(allEvents.length===0){
     list.innerHTML = '<div class="hint">ยังไม่มีกิจกรรมในระบบ</div>';
-  } else {
-    list.innerHTML = allEvents.map(e=>`
-      <label style="display:flex; align-items:center; gap:8px; padding:6px 0; font-size:13.5px; cursor:pointer;">
-        <input type="checkbox" class="export-check" value="${e.eventId}" style="width:auto;">
-        ${e.eventName} <span class="hint" style="margin:0;">(${e.startDate}${e.endDate && e.endDate!==e.startDate ? ' – '+e.endDate : ''})</span>
-      </label>`).join('');
+    return;
   }
-  document.getElementById('listView').style.display = 'none';
-  document.getElementById('exportView').style.display = 'block';
+  list.innerHTML = allEvents.map(e=>`
+    <label class="export-event-row" data-event-name="${(e.eventName||'').replace(/"/g,'&quot;')}" data-start-date="${e.startDate||''}" data-end-date="${e.endDate||e.startDate||''}" data-creator="${(e.ownerName||'').replace(/"/g,'&quot;')}">
+      <input type="checkbox" class="export-check" value="${e.eventId}">
+      ${e.eventName} <span class="hint" style="margin:0;">(${e.startDate}${e.endDate && e.endDate!==e.startDate ? ' – '+e.endDate : ''} • ผู้สร้าง: ${e.ownerName||'-'})</span>
+    </label>`).join('');
+}
+
+// ---------- Client-side filtering for the Export event list ----------
+// Filters entirely in the browser (no extra backend calls): matches the
+// search box against the event title, checks whether the event's own date
+// range (startDate..endDate) overlaps the chosen Start/End filter range,
+// and matches the creator name — ALL active filters must match at once.
+// Rows that don't match are hidden (kept in the DOM so checked state
+// survives toggling filters back and forth), and the "select all filtered"
+// checkbox is reset since what counts as "filtered" just changed.
+function filterExportEvents(){
+  const term = (document.getElementById('exportSearch').value || '').trim().toLowerCase();
+  const filterStart = document.getElementById('exportStartDate').value || '';
+  const filterEnd = document.getElementById('exportEndDate').value || '';
+  const creatorTerm = (document.getElementById('exportCreator').value || '').trim().toLowerCase();
+
+  const rows = document.querySelectorAll('#exportEventList .export-event-row');
+  let visibleCount = 0;
+
+  rows.forEach(row=>{
+    const name = (row.dataset.eventName || '').toLowerCase();
+    const evStart = row.dataset.startDate || '';
+    const evEnd = row.dataset.endDate || evStart;
+    const creator = (row.dataset.creator || '').toLowerCase();
+
+    const matchesSearch = !term || name.includes(term);
+    // Overlap test: event's [evStart, evEnd] range intersects the
+    // user-chosen [filterStart, filterEnd] range. An empty filter bound
+    // means "no limit" on that side.
+    const matchesDate =
+      (!filterStart || !evEnd || evEnd >= filterStart) &&
+      (!filterEnd || !evStart || evStart <= filterEnd);
+    const matchesCreator = !creatorTerm || creator.includes(creatorTerm);
+
+    const visible = matchesSearch && matchesDate && matchesCreator;
+    row.style.display = visible ? 'flex' : 'none';
+    if(visible) visibleCount++;
+  });
+
+  const emptyNoticeId = 'exportFilterEmptyNotice';
+  let notice = document.getElementById(emptyNoticeId);
+  if(visibleCount===0 && allEvents.length>0){
+    if(!notice){
+      notice = document.createElement('div');
+      notice.id = emptyNoticeId;
+      notice.className = 'export-empty-filtered';
+      notice.textContent = 'ไม่พบกิจกรรมที่ตรงกับตัวกรอง';
+      document.getElementById('exportEventList').appendChild(notice);
+    }
+  } else if(notice){
+    notice.remove();
+  }
+
+  // What's "select all" even means just changed (different set of rows is
+  // now visible) — uncheck it rather than leave a stale, possibly-wrong
+  // checked state.
+  document.getElementById('exportSelectAllFiltered').checked = false;
+}
+
+function resetExportFilters(){
+  document.getElementById('exportSearch').value = '';
+  document.getElementById('exportStartDate').value = '';
+  document.getElementById('exportEndDate').value = '';
+  document.getElementById('exportCreator').value = '';
+  filterExportEvents();
+}
+
+// Checks (or unchecks) only the checkboxes belonging to currently VISIBLE
+// (i.e. not filtered-out) rows — rows hidden by the current search/date
+// filter are left exactly as they were.
+function toggleSelectAllFiltered(checked){
+  document.querySelectorAll('#exportEventList .export-event-row').forEach(row=>{
+    if(row.style.display === 'none') return;
+    const cb = row.querySelector('.export-check');
+    if(cb) cb.checked = checked;
+  });
 }
 
 let allEvents = [];
@@ -569,7 +695,12 @@ async function saveEditEvent(){
 }
 
 async function exportEventsToExcel(){
-  const checked = Array.from(document.querySelectorAll('.export-check:checked')).map(c=>c.value);
+  // Only count a checkbox if its row is both CHECKED and currently VISIBLE
+  // — a box that was checked before a filter hid its row should not sneak
+  // into the export.
+  const checked = Array.from(document.querySelectorAll('#exportEventList .export-event-row .export-check:checked'))
+    .filter(c => c.closest('.export-event-row').style.display !== 'none')
+    .map(c => c.value);
   if(checked.length===0) return;
 
   const btn = document.getElementById('exportBtn');
