@@ -198,6 +198,43 @@ function safeSetPublicSharing(file) {
   }
 }
 
+// ---------- Drive file <-> Base64 helpers (for edit-mode receipt preview) ----------
+// Extracts the Drive file ID out of whatever URL shape we stored
+// (file.getUrl() typically returns .../file/d/<ID>/view?usp=drivesdk).
+function driveFileIdFromUrl_(url) {
+  if (!url) return null;
+  const m = /\/file\/d\/([a-zA-Z0-9_-]+)/.exec(url) || /[?&]id=([a-zA-Z0-9_-]+)/.exec(url);
+  return m ? m[1] : null;
+}
+
+// Reads a previously-saved receipt image straight out of Drive on the
+// server side (no CORS, no client-side fetch of a Google login-gated page)
+// and returns it as a ready-to-embed Base64 data URL, in the exact same
+// shape the client uses for freshly-picked files ({ base64, fileName,
+// mimeType }). Returns null if the file can't be read (deleted, no access,
+// bad URL, etc.) so the caller can skip it gracefully instead of failing
+// the whole request.
+function driveFileToBase64Attachment_(url) {
+  const fileId = driveFileIdFromUrl_(url);
+  if (!fileId) return null;
+  try {
+    const file = DriveApp.getFileById(fileId);
+    const blob = file.getBlob();
+    const mimeType = blob.getContentType() || 'image/jpeg';
+    const base64 = 'data:' + mimeType + ';base64,' + Utilities.base64Encode(blob.getBytes());
+    return {
+      base64: base64,
+      fileName: file.getName(),
+      mimeType: mimeType,
+      isExisting: true,   // flags this as an already-uploaded receipt (see apiSubmitExpense)
+      existingUrl: url     // keeps the original Drive URL so we can skip re-uploading it
+    };
+  } catch (err) {
+    Logger.log('Existing receipt fetch error for ' + url + ': ' + err.toString());
+    return null;
+  }
+}
+
 // ---------- API: สร้างกิจกรรมใหม่ ----------
 function apiCreateEvent(payload) {
   if (!payload || !payload.eventName || !payload.ownerName) {
@@ -406,14 +443,31 @@ function apiSubmitExpense(payload) {
   }
 
   // 2. บันทึกรูปสลิปแนบลง Drive
+  //    seg.attachments now carries BOTH freshly-picked files AND previously
+  //    submitted receipts that were converted back to Base64 for preview
+  //    (flagged isExisting + existingUrl by apiGetMySubmission /
+  //    driveFileToBase64Attachment_). We only need to actually re-upload the
+  //    genuinely new ones — existing receipts just get their original URL
+  //    kept as-is, so editing/resubmitting a report doesn't create
+  //    duplicate copies of the same image in Drive every time.
   const tripDetails = (payload.tripDetails || []).map((trip, ti) => {
     const segments = (trip.segments || []).map((seg, si) => {
       const out = Object.assign({}, seg);
       const keptUrls = Array.isArray(seg.attachmentUrls) ? seg.attachmentUrls.slice() : [];
-      const newAttachments = Array.isArray(seg.attachments) ? seg.attachments : [];
+      const allAttachments = Array.isArray(seg.attachments) ? seg.attachments : [];
 
-      newAttachments.forEach((att, ai) => {
-        if (!att || !att.base64) return;
+      allAttachments.forEach((att, ai) => {
+        if (!att) return;
+
+        // Already-uploaded receipt (came back from apiGetMySubmission as
+        // Base64 purely for preview/PDF purposes) — reuse its Drive URL
+        // instead of re-encoding and re-uploading the same image.
+        if (att.isExisting && att.existingUrl) {
+          keptUrls.push(att.existingUrl);
+          return;
+        }
+
+        if (!att.base64) return;
         try {
           const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/.exec(att.base64);
           const mime = match ? match[1] : 'image/jpeg';
@@ -433,6 +487,7 @@ function apiSubmitExpense(payload) {
 
       out.attachmentUrls = keptUrls;
       delete out.attachments;
+      delete out.existingAttachments; // preview-only field, never persisted
       return out;
     });
     return Object.assign({}, trip, { segments: segments });
@@ -498,6 +553,22 @@ function apiGetMySubmission(payload) {
     details = JSON.parse(sub.trip_details_json);
   } catch (err) { }
 
+  // Pull previously-uploaded receipt images back down from Drive as Base64
+  // so the edit form can (a) show a real <img> preview of what was already
+  // submitted, and (b) feed them straight into the same seg.attachments
+  // array the PDF generator already knows how to render — no client-side
+  // Drive fetch, no CORS, no broken thumbnails.
+  const trips = (details.trips || []).map(trip => {
+    const segments = (trip.segments || []).map(seg => {
+      const urls = Array.isArray(seg.attachmentUrls) ? seg.attachmentUrls : [];
+      const existingAttachments = urls
+        .map(url => driveFileToBase64Attachment_(url))
+        .filter(att => att !== null);
+      return Object.assign({}, seg, { existingAttachments: existingAttachments });
+    });
+    return Object.assign({}, trip, { segments: segments });
+  });
+
   return {
     ok: true, 
     exists: true,
@@ -505,7 +576,7 @@ function apiGetMySubmission(payload) {
       department: sub.department || '',
       purpose: details.purpose || '',
       fuelRefPrice: details.fuelRefPrice || '',
-      trips: details.trips || [],
+      trips: trips,
       status: sub.submission_status,
       updatedAt: sub.updated_at
     }
