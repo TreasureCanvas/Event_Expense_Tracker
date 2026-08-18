@@ -97,6 +97,7 @@
   .attach-thumb img{height:38px; width:38px; object-fit:cover; border-radius:6px;}
   .attach-thumb a{font-size:12px; color:var(--brand-dark);}
   .attach-thumb .rm{cursor:pointer; color:var(--danger); font-weight:700; font-size:13px; padding:0 3px;}
+  .existing-badge{font-size:10px; color:#6b7a63; background:#e2ebdd; border-radius:5px; padding:1px 5px; white-space:nowrap;}
   .attach-warn{color:var(--danger); font-size:12.5px; margin-top:5px; display:none;}
   .btn{
     border:none; border-radius:9px; padding:9px 15px; font-family:inherit; font-weight:600;
@@ -405,18 +406,24 @@ function tripsArrayToDays(trips){
 }
 
 // Ensures every segment coming back from a previously submitted report has
-// the full set of fields the form/PDF generator expect. In particular this
-// guarantees `attachmentUrls` (receipt images already uploaded to Drive in
-// an earlier submission) is always present as an array on the form state —
-// e.g. `state.days[di][key][si].attachmentUrls` — instead of being missing
-// or undefined, which is what silently dropped existing receipt images the
-// moment an event was reopened for editing.
+// the full set of fields the form/PDF generator expect. Existing receipts
+// arrive from the server (apiGetMySubmission) already converted to Base64
+// as `seg.existingAttachments` — we fold those straight into the normal
+// `attachments` array (tagged isExisting/existingUrl) so both the preview
+// thumbnails and the PDF generator can treat "old" and "newly-picked"
+// receipts identically, through a single code path.
 function normalizeLoadedSegments(segments){
   if(!segments || !segments.length) return [newSegment()];
-  return segments.map(seg => Object.assign(newSegment(), seg, {
-    attachments: [], // new files the user picks in THIS editing session only
-    attachmentUrls: Array.isArray(seg.attachmentUrls) ? seg.attachmentUrls.slice() : []
-  }));
+  return segments.map(seg => {
+    const existing = Array.isArray(seg.existingAttachments) ? seg.existingAttachments : [];
+    return Object.assign(newSegment(), seg, {
+      attachments: existing.slice(), // previously submitted receipts, shown as normal previews
+      // Superseded by `attachments` above — each existing receipt now
+      // carries its own `existingUrl`, so we don't also keep the raw URL
+      // list here (that would make the backend see it twice on resubmit).
+      attachmentUrls: []
+    });
+  });
 }
 
 /* =========================================================
@@ -682,10 +689,12 @@ function renderSegment(di,key,seg,si){
           onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>`;
   }
 
+  // All receipts — whether just picked in this session or pulled back from
+  // a previous submission as Base64 — now live in seg.attachments, so they
+  // all get a real <img> thumbnail preview here. Existing ones get a small
+  // "เดิม" badge so employees can tell what was already submitted.
   const thumbs = (seg.attachments||[]).map((a,ai)=>`
-      <span class="attach-thumb"><img src="${a.base64}"><span class="rm" onclick="removeNewAttachment(${di},'${key}',${si},${ai})">✕</span></span>`).join('')
-    + (seg.attachmentUrls||[]).map((u,ui)=>`
-      <span class="attach-thumb"><a href="${u}" target="_blank">📎 ไฟล์เดิม ${ui+1}</a><span class="rm" onclick="removeExistingAttachment(${di},'${key}',${si},${ui})">✕</span></span>`).join('');
+      <span class="attach-thumb">${a.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${a.base64}"><span class="rm" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</span></span>`).join('');
 
   const attachHtml = `
     <div class="attach-box">
@@ -808,8 +817,7 @@ function handleFiles(evt, di, key, si){
   });
 }
 
-function removeNewAttachment(di,key,si,ai){ state.days[di][key][si].attachments.splice(ai,1); render(); }
-function removeExistingAttachment(di,key,si,ui){ state.days[di][key][si].attachmentUrls.splice(ui,1); render(); }
+function removeAttachment(di,key,si,ai){ state.days[di][key][si].attachments.splice(ai,1); render(); }
 
 function updateTotals(){
   return refreshTotals();
@@ -1052,38 +1060,13 @@ function getImageNaturalSize(dataUrl){
   });
 }
 
-// ---- Existing (already-uploaded) receipt image support ----
-// Attachments saved from a PREVIOUS submission are stored as Drive URLs
-// (seg.attachmentUrls), not base64. To embed them again when regenerating
-// the PDF during an edit, we need to pull the actual image bytes back down
-// and turn them into a data URL, same shape as a freshly-picked file.
-function driveFileIdFromUrl(url){
-  if(!url) return null;
-  const m = /\/file\/d\/([a-zA-Z0-9_-]+)/.exec(url) || /[?&]id=([a-zA-Z0-9_-]+)/.exec(url);
-  return m ? m[1] : null;
-}
-
-function driveDirectContentUrl(url){
-  const id = driveFileIdFromUrl(url);
-  return id ? `https://drive.google.com/uc?export=view&id=${id}` : url;
-}
-
-async function fetchExistingImageAsAttachment(url){
-  try{
-    const res = await fetch(driveDirectContentUrl(url));
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    const blob = await res.blob();
-    const base64 = await new Promise((resolve, reject)=>{
-      const reader = new FileReader();
-      reader.onload = ()=>resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-    return { base64, mimeType: blob.type || 'image/jpeg', fileName: 'existing-receipt' };
-  }catch(err){
-    return null; // caller falls back to an in-PDF warning note instead of failing the whole export
-  }
-}
+// ---- Existing (already-uploaded) receipt images ----
+// These no longer need a client-side fetch: apiGetMySubmission already
+// returns them pre-converted to Base64 in seg.existingAttachments, which
+// normalizeLoadedSegments() folds straight into seg.attachments. That means
+// the PDF generator (and the preview thumbnails) can treat "existing" and
+// "newly-picked" receipts through the exact same code path below, with no
+// CORS/Drive-fetch step and nothing that can fail at PDF-export time.
 
 async function generatePdfBlob(){
   const total = updateTotals();
@@ -1209,26 +1192,14 @@ async function generatePdfBlob(){
         const tollEmpty = seg.type==='TOLL' && !seg.origin && !seg.destination;
         const routeSuffix = (seg.type==='PARKING' || tollEmpty) ? '' : ` (${seg.origin||'-'} → ${seg.destination||'-'})`;
 
-        // Newly-picked files in this editing session.
+        // seg.attachments now uniformly holds every receipt for this
+        // segment — files picked in this session AND receipts pulled back
+        // from a previous submission (already Base64, tagged isExisting by
+        // normalizeLoadedSegments/driveFileToBase64Attachment_). One loop,
+        // one render path, no Drive fetch at export time.
         for(const att of (seg.attachments||[])){
-          const caption = `📎 หลักฐาน: ${dirLabel} — ${typeLabel}${routeSuffix}`;
+          const caption = `📎 หลักฐาน${att.isExisting ? ' (ไฟล์เดิม)' : ''}: ${dirLabel} — ${typeLabel}${routeSuffix}`;
           await placeOriginalPhoto(att, caption);
-        }
-
-        // Receipts already uploaded in a PREVIOUS submission (edit mode).
-        // These only exist as Drive URLs on the form state, so fetch them
-        // back down and embed the same way — this is the fallback that
-        // keeps old receipts in the PDF when the user edits a report
-        // without picking any new image file for that segment.
-        for(const url of (seg.attachmentUrls||[])){
-          const caption = `📎 หลักฐาน (ไฟล์เดิม): ${dirLabel} — ${typeLabel}${routeSuffix}`;
-          const existingAtt = await fetchExistingImageAsAttachment(url);
-          if(existingAtt){
-            await placeOriginalPhoto(existingAtt, caption);
-          } else {
-            const noteCanvas = await captureCaptionLabel(`⚠️ ไม่สามารถโหลดรูปหลักฐานเดิมจาก Drive ได้ — ${caption}`);
-            placeImage(noteCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (noteCanvas.height * contentWidth) / noteCanvas.width);
-          }
         }
       }
     }
