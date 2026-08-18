@@ -275,18 +275,32 @@ function renderExportEventList(){
 }
 
 // ---------- Date range overlap rule (inclusive) ----------
+// parseToIsoDateString: normalizes ANY date string this app might be
+// comparing — the backend's dd/MM/yyyy (dateStr() in code.gs), a possible
+// Buddhist-Era dd/MM/yyyy, or the browser's own YYYY-MM-DD from
+// <input type="date"> — into a single canonical YYYY-MM-DD string so plain
+// lexicographic <= / >= comparisons are actually correct. Without this, an
+// event stored as "09/08/2026" was being compared directly against a
+// filter value of "2026-08-01" and always losing, silently hiding real
+// August events. Reuses the same normalization already trusted for
+// pre-filling the edit form's <input type="date"> fields.
+const parseToIsoDateString = toISODate;
+
 // An event is visible if its own [evStart, evEnd] range overlaps the
 // user-chosen [filterStart, filterEnd] range:
 //   - if filterStart is set: evEnd   >= filterStart
 //   - if filterEnd   is set: evStart <= filterEnd
 //   - if both are set, BOTH conditions must hold
-// An empty filter bound means "no limit" on that side. Dates are plain
-// YYYY-MM-DD strings, which compare correctly lexicographically.
+// An empty filter bound means "no limit" on that side. Both the event
+// dates and the filter values are normalized to YYYY-MM-DD first, since
+// they can arrive in different formats (see parseToIsoDateString above).
 function eventOverlapsDateFilter(evStart, evEnd, filterStart, filterEnd){
-  const start = evStart || '';
-  const end = evEnd || start; // no end date recorded -> treat as a single-day event
-  if(filterStart && (!end || end < filterStart)) return false;
-  if(filterEnd && (!start || start > filterEnd)) return false;
+  const normFilterStart = parseToIsoDateString(filterStart);
+  const normFilterEnd = parseToIsoDateString(filterEnd);
+  const start = parseToIsoDateString(evStart) || '';
+  const end = parseToIsoDateString(evEnd) || start; // no end date recorded -> treat as a single-day event
+  if(normFilterStart && (!end || end < normFilterStart)) return false;
+  if(normFilterEnd && (!start || start > normFilterEnd)) return false;
   return true;
 }
 
