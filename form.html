@@ -397,11 +397,26 @@ function tripsArrayToDays(trips){
     const returnTrip = trips[k+1] || {};
     days.push({
       date: outboundTrip.date || returnTrip.date || '',
-      outboundSegments: (outboundTrip.segments && outboundTrip.segments.length) ? outboundTrip.segments : [newSegment()],
-      returnSegments: (returnTrip.segments && returnTrip.segments.length) ? returnTrip.segments : [newSegment()]
+      outboundSegments: normalizeLoadedSegments(outboundTrip.segments),
+      returnSegments: normalizeLoadedSegments(returnTrip.segments)
     });
   }
   return days.length ? days : [newDay()];
+}
+
+// Ensures every segment coming back from a previously submitted report has
+// the full set of fields the form/PDF generator expect. In particular this
+// guarantees `attachmentUrls` (receipt images already uploaded to Drive in
+// an earlier submission) is always present as an array on the form state —
+// e.g. `state.days[di][key][si].attachmentUrls` — instead of being missing
+// or undefined, which is what silently dropped existing receipt images the
+// moment an event was reopened for editing.
+function normalizeLoadedSegments(segments){
+  if(!segments || !segments.length) return [newSegment()];
+  return segments.map(seg => Object.assign(newSegment(), seg, {
+    attachments: [], // new files the user picks in THIS editing session only
+    attachmentUrls: Array.isArray(seg.attachmentUrls) ? seg.attachmentUrls.slice() : []
+  }));
 }
 
 /* =========================================================
@@ -1037,6 +1052,39 @@ function getImageNaturalSize(dataUrl){
   });
 }
 
+// ---- Existing (already-uploaded) receipt image support ----
+// Attachments saved from a PREVIOUS submission are stored as Drive URLs
+// (seg.attachmentUrls), not base64. To embed them again when regenerating
+// the PDF during an edit, we need to pull the actual image bytes back down
+// and turn them into a data URL, same shape as a freshly-picked file.
+function driveFileIdFromUrl(url){
+  if(!url) return null;
+  const m = /\/file\/d\/([a-zA-Z0-9_-]+)/.exec(url) || /[?&]id=([a-zA-Z0-9_-]+)/.exec(url);
+  return m ? m[1] : null;
+}
+
+function driveDirectContentUrl(url){
+  const id = driveFileIdFromUrl(url);
+  return id ? `https://drive.google.com/uc?export=view&id=${id}` : url;
+}
+
+async function fetchExistingImageAsAttachment(url){
+  try{
+    const res = await fetch(driveDirectContentUrl(url));
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    const base64 = await new Promise((resolve, reject)=>{
+      const reader = new FileReader();
+      reader.onload = ()=>resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+    return { base64, mimeType: blob.type || 'image/jpeg', fileName: 'existing-receipt' };
+  }catch(err){
+    return null; // caller falls back to an in-PDF warning note instead of failing the whole export
+  }
+}
+
 async function generatePdfBlob(){
   const total = updateTotals();
   buildPrintArea(total);
@@ -1159,11 +1207,28 @@ async function generatePdfBlob(){
         const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
         const typeLabel = (seg.type==='OTHER' && seg.otherDescription) ? `อื่นๆ (${seg.otherDescription})` : typeCfg.label;
         const tollEmpty = seg.type==='TOLL' && !seg.origin && !seg.destination;
+        const routeSuffix = (seg.type==='PARKING' || tollEmpty) ? '' : ` (${seg.origin||'-'} → ${seg.destination||'-'})`;
+
+        // Newly-picked files in this editing session.
         for(const att of (seg.attachments||[])){
-          const caption = (seg.type==='PARKING' || tollEmpty)
-            ? `📎 หลักฐาน: ${dirLabel} — ${typeLabel}`
-            : `📎 หลักฐาน: ${dirLabel} — ${typeLabel} (${seg.origin||'-'} → ${seg.destination||'-'})`;
+          const caption = `📎 หลักฐาน: ${dirLabel} — ${typeLabel}${routeSuffix}`;
           await placeOriginalPhoto(att, caption);
+        }
+
+        // Receipts already uploaded in a PREVIOUS submission (edit mode).
+        // These only exist as Drive URLs on the form state, so fetch them
+        // back down and embed the same way — this is the fallback that
+        // keeps old receipts in the PDF when the user edits a report
+        // without picking any new image file for that segment.
+        for(const url of (seg.attachmentUrls||[])){
+          const caption = `📎 หลักฐาน (ไฟล์เดิม): ${dirLabel} — ${typeLabel}${routeSuffix}`;
+          const existingAtt = await fetchExistingImageAsAttachment(url);
+          if(existingAtt){
+            await placeOriginalPhoto(existingAtt, caption);
+          } else {
+            const noteCanvas = await captureCaptionLabel(`⚠️ ไม่สามารถโหลดรูปหลักฐานเดิมจาก Drive ได้ — ${caption}`);
+            placeImage(noteCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (noteCanvas.height * contentWidth) / noteCanvas.width);
+          }
         }
       }
     }
