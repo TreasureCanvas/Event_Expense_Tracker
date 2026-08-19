@@ -71,6 +71,51 @@
   .msg.err{background:#fdeceb; color:#c0392b; border:1px solid #f3c6c1;}
   .msg.ok{background:#eaf6ef; color:var(--ok); border:1px solid #bfe5cd;}
   .back-row{display:flex; align-items:center; gap:10px; margin-bottom:14px;}
+
+  /* ===== 📋 Bulk Staff Import Modal ===== */
+  .field-head{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:5px;}
+  .field-head label{margin-bottom:0;}
+  .btn-import{background:#eef2ec; color:var(--brand-dark); border:1px solid var(--line); white-space:nowrap;}
+  .btn-import:hover{border-color:var(--brand); color:var(--brand);}
+
+  .modal-overlay{
+    display:none; position:fixed; inset:0; background:rgba(20,22,18,.45);
+    z-index:1000; align-items:flex-start; justify-content:center; padding:24px 14px; overflow-y:auto;
+  }
+  .modal-overlay.show{display:flex;}
+  .modal-box{
+    background:#fff; border-radius:var(--radius); width:100%; max-width:640px;
+    box-shadow:0 10px 40px rgba(0,0,0,.18); display:flex; flex-direction:column; max-height:calc(100vh - 48px);
+  }
+  .modal-head{display:flex; justify-content:space-between; align-items:center; padding:16px 18px; border-bottom:1px solid var(--line);}
+  .modal-head h2{font-size:15.5px; margin:0; color:var(--brand-dark);}
+  .modal-close{background:transparent; border:none; font-size:16px; cursor:pointer; color:var(--muted); padding:4px 6px; line-height:1;}
+  .modal-close:hover{color:var(--danger);}
+  .modal-body{padding:16px 18px; overflow-y:auto;}
+  .modal-foot{display:flex; justify-content:flex-end; gap:10px; padding:14px 18px; border-top:1px solid var(--line);}
+
+  #importRawText{min-height:110px; font-family:monospace; font-size:12.5px;}
+  .import-header-toggle{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted); font-weight:600; margin-top:9px;}
+  .import-header-toggle input{width:auto;}
+
+  .import-preview-wrap{margin-top:16px;}
+  .import-preview-bar{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; font-size:12.5px; color:var(--muted); font-weight:600;}
+  .import-table-scroll{border:1px solid var(--line); border-radius:10px; overflow:auto; max-height:300px;}
+  table.import-table{width:100%; border-collapse:collapse; font-size:13px;}
+  table.import-table th{
+    position:sticky; top:0; background:#f6f7fb; color:var(--muted); font-weight:600; font-size:11px;
+    text-transform:uppercase; text-align:left; padding:8px 7px; border-bottom:1px solid var(--line); z-index:1;
+  }
+  table.import-table td{padding:5px 6px; border-bottom:1px solid var(--line); vertical-align:middle;}
+  table.import-table tr:last-child td{border-bottom:none;}
+  table.import-table input[type="text"]{padding:6px 8px; font-size:12.5px; border-radius:7px;}
+  table.import-table input[type="checkbox"]{width:auto;}
+  .import-del-btn{background:transparent; border:none; cursor:pointer; font-size:14px; padding:4px; color:var(--danger); border-radius:6px;}
+  .import-del-btn:hover{background:#fdeceb;}
+  tr.dup-row td{background:#fdf8ec;}
+  tr.dup-note-row td{padding:0 6px 6px;}
+  .dup-note{font-size:11.5px; color:var(--warn); font-weight:600;}
+  .import-empty{color:var(--muted); font-size:13px; text-align:center; padding:18px 0;}
 </style>
 </head>
 <body>
@@ -125,9 +170,12 @@
         </div>
       </div>
       <div class="field">
-        <label>รายชื่อ Staff ที่เกี่ยวข้องกับกิจกรรมนี้ <span class="req">*</span></label>
+        <div class="field-head">
+          <label>รายชื่อ Staff ที่เกี่ยวข้องกับกิจกรรมนี้ <span class="req">*</span></label>
+          <button type="button" class="btn btn-small btn-import" onclick="openImportModal('employeeList')">📋 นำเข้าจาก Excel</button>
+        </div>
         <textarea id="employeeList" placeholder="พิมพ์ 1 คนต่อบรรทัด รูปแบบ: ชื่อ นามสกุล - แผนก"></textarea>
-        <div class="hint">พิมพ์ "ชื่อ นามสกุล - แผนก" แล้วกด Enter ขึ้นบรรทัดใหม่ทีละคน</div>
+        <div class="hint">พิมพ์ "ชื่อ นามสกุล - แผนก" แล้วกด Enter ขึ้นบรรทัดใหม่ทีละคน หรือกด "นำเข้าจาก Excel" เพื่อวางข้อมูลจาก Excel โดยตรง</div>
       </div>
       <button class="btn" id="createBtn" onclick="createNewEvent()">✅ สร้างกิจกรรมและลิงก์</button>
     </div>
@@ -164,7 +212,10 @@
         </div>
       </div>
       <div class="field">
-        <label>รายชื่อ Staff ที่เกี่ยวข้องกับกิจกรรมนี้ <span class="req">*</span></label>
+        <div class="field-head">
+          <label>รายชื่อ Staff ที่เกี่ยวข้องกับกิจกรรมนี้ <span class="req">*</span></label>
+          <button type="button" class="btn btn-small btn-import" onclick="openImportModal('editEmployeeList')">📋 นำเข้าจาก Excel</button>
+        </div>
         <textarea id="editEmployeeList"></textarea>
       </div>
       <button class="btn" id="editSaveBtn" onclick="saveEditEvent()">💾 บันทึกการแก้ไข</button>
@@ -212,6 +263,52 @@
         <div id="exportEventList" style="max-height:280px; overflow-y:auto; border:1px solid var(--line); border-radius:9px; padding:8px 12px; margin-top:8px;"></div>
       </div>
       <button class="btn" id="exportBtn" onclick="exportEventsToExcel()">📥 ดาวน์โหลด Excel</button>
+    </div>
+  </div>
+
+  <!-- 📋 Bulk Staff Import Modal -->
+  <div class="modal-overlay" id="importModalOverlay" onclick="if(event.target===this) closeImportModal()">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h2>📋 นำเข้ารายชื่อ Staff จาก Excel</h2>
+        <button type="button" class="modal-close" onclick="closeImportModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field" style="margin-bottom:0;">
+          <label>วางข้อมูลที่คัดลอกจาก Excel (2 คอลัมน์: ชื่อ-นามสกุล และ แผนก)</label>
+          <textarea id="importRawText" placeholder="Navisa Thanasuttawong (Noinae)&#9;Marketing&#10;สมชาย ใจดี&#9;IT" oninput="handleImportRawInput()"></textarea>
+          <label class="import-header-toggle">
+            <input type="checkbox" id="importSkipHeader" onchange="parseImportPreview()">
+            แถวแรกเป็นหัวตาราง (เช่น "ชื่อ / แผนก") ให้ข้ามแถวนี้
+          </label>
+          <div class="hint">คัดลอกทั้ง 2 คอลัมน์จาก Excel/Google Sheets แล้ววางที่นี่ได้เลย ระบบจะแยกชื่อและแผนกให้อัตโนมัติ (คั่นด้วย Tab)</div>
+        </div>
+
+        <div class="import-preview-wrap" id="importPreviewWrap" style="display:none;">
+          <div class="import-preview-bar">
+            <span id="importPreviewCount"></span>
+            <button type="button" class="btn btn-small" onclick="addEmptyImportRow()">➕ เพิ่มแถวว่าง</button>
+          </div>
+          <div class="import-table-scroll">
+            <table class="import-table">
+              <thead>
+                <tr>
+                  <th style="width:30px;"><input type="checkbox" id="importSelectAll" checked onchange="toggleAllImportRows(this.checked)"></th>
+                  <th>ชื่อ-นามสกุล</th>
+                  <th>แผนก</th>
+                  <th style="width:34px;"></th>
+                </tr>
+              </thead>
+              <tbody id="importTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="import-empty" id="importEmptyMsg" style="display:none;">ยังไม่พบข้อมูลที่แยกได้ ลองตรวจสอบว่าคัดลอกมาถูกคอลัมน์หรือไม่</div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-outline" onclick="closeImportModal()">ยกเลิก</button>
+        <button type="button" class="btn" id="importConfirmBtn" onclick="confirmImport()" disabled>➕ เพิ่มเข้ารายชื่อ</button>
+      </div>
     </div>
   </div>
 </div>
@@ -563,6 +660,204 @@ function parseEmployees(text){
     if(idx === -1) return { name: line, department: '' };
     return { name: line.slice(0, idx).trim(), department: line.slice(idx+1).trim() };
   });
+}
+
+/* ===================================================================
+   📋 BULK STAFF IMPORT (paste-from-Excel modal)
+   Lets a user paste raw rows copied straight out of Excel/Google Sheets
+   (tab-separated: Name\tDepartment), preview/edit/delete the parsed
+   rows, then append them into the target textarea (#employeeList or
+   #editEmployeeList) in the "Name - Department" format that
+   parseEmployees() already understands.
+=================================================================== */
+let importTargetId = null;
+let importRows = [];
+let importRowSeq = 0;
+let importParseTimer = null;
+
+function openImportModal(targetId){
+  importTargetId = targetId;
+  importRows = [];
+  const raw = document.getElementById('importRawText');
+  raw.value = '';
+  document.getElementById('importSkipHeader').checked = false;
+  document.getElementById('importSelectAll').checked = true;
+  renderImportPreview();
+  document.getElementById('importModalOverlay').classList.add('show');
+  document.body.style.overflow = 'hidden';
+  setTimeout(()=>raw.focus(), 50);
+}
+
+function closeImportModal(){
+  document.getElementById('importModalOverlay').classList.remove('show');
+  document.body.style.overflow = '';
+  clearTimeout(importParseTimer);
+}
+
+// Debounced so parsing doesn't run on every single keystroke while typing,
+// but still feels instant after a paste.
+function handleImportRawInput(){
+  clearTimeout(importParseTimer);
+  importParseTimer = setTimeout(parseImportPreview, 150);
+}
+
+// Names already present in the target textarea — used to flag duplicates
+// in the preview so the user can spot them before adding.
+function getExistingImportNames(){
+  const set = new Set();
+  const ta = importTargetId ? document.getElementById(importTargetId) : null;
+  if(!ta) return set;
+  parseEmployees(ta.value).forEach(e=>{
+    if(e.name) set.add(e.name.trim().toLowerCase());
+  });
+  return set;
+}
+
+function parseImportPreview(){
+  const rawText = document.getElementById('importRawText').value;
+  const skipHeader = document.getElementById('importSkipHeader').checked;
+  const existingNames = getExistingImportNames();
+
+  const lines = rawText.replace(/\r/g,'').split('\n').filter(l=>l.trim() !== '');
+  const startIdx = (skipHeader && lines.length > 0) ? 1 : 0;
+
+  importRows = lines.slice(startIdx).map(line=>{
+    // Primary case: pasted straight from Excel — columns separated by Tab.
+    let parts = line.split('\t').map(p=>p.trim()).filter((p,i,arr)=> !(p==='' && i===arr.length-1));
+    let name = '', department = '';
+
+    if(parts.length >= 2){
+      name = parts[0];
+      department = parts.slice(1).join(' ').trim();
+    } else {
+      // Fallback for text that lost its tabs on paste (common with some
+      // browsers/OS clipboard managers): try 2+ spaces, then " - ".
+      const bySpaces = line.split(/\s{2,}/).map(p=>p.trim()).filter(Boolean);
+      if(bySpaces.length >= 2){
+        name = bySpaces[0];
+        department = bySpaces.slice(1).join(' ');
+      } else {
+        const dashIdx = line.lastIndexOf(' - ');
+        if(dashIdx !== -1){
+          name = line.slice(0, dashIdx).trim();
+          department = line.slice(dashIdx + 3).trim();
+        } else {
+          name = line.trim();
+          department = '';
+        }
+      }
+    }
+
+    if(!name) return null;
+    return {
+      id: 'imp' + (importRowSeq++),
+      name, department,
+      include: true,
+      isDuplicate: existingNames.has(name.toLowerCase())
+    };
+  }).filter(Boolean);
+
+  renderImportPreview();
+}
+
+function escapeAttr(str){
+  return String(str==null ? '' : str)
+    .replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderImportPreview(){
+  const wrap = document.getElementById('importPreviewWrap');
+  const emptyMsg = document.getElementById('importEmptyMsg');
+  const body = document.getElementById('importTableBody');
+  const confirmBtn = document.getElementById('importConfirmBtn');
+  const rawHasText = document.getElementById('importRawText').value.trim() !== '';
+
+  if(importRows.length === 0){
+    wrap.style.display = 'none';
+    emptyMsg.style.display = rawHasText ? 'block' : 'none';
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '➕ เพิ่มเข้ารายชื่อ';
+    return;
+  }
+
+  emptyMsg.style.display = 'none';
+  wrap.style.display = 'block';
+
+  body.innerHTML = importRows.map(r=>{
+    const rowHtml = `
+      <tr class="${r.isDuplicate ? 'dup-row' : ''}">
+        <td><input type="checkbox" ${r.include ? 'checked' : ''} onchange="toggleImportRow('${r.id}', this.checked)"></td>
+        <td><input type="text" value="${escapeAttr(r.name)}" placeholder="ชื่อ-นามสกุล" oninput="updateImportRow('${r.id}','name',this.value)"></td>
+        <td><input type="text" value="${escapeAttr(r.department)}" placeholder="แผนก" oninput="updateImportRow('${r.id}','department',this.value)"></td>
+        <td><button type="button" class="import-del-btn" title="ลบแถวนี้" onclick="deleteImportRow('${r.id}')">🗑</button></td>
+      </tr>`;
+    const dupNoteHtml = r.isDuplicate
+      ? `<tr class="dup-note-row"><td></td><td colspan="3" class="dup-note">⚠️ มีชื่อนี้อยู่ในรายชื่อแล้ว — ตรวจสอบก่อนเพิ่มซ้ำ</td></tr>`
+      : '';
+    return rowHtml + dupNoteHtml;
+  }).join('');
+
+  updateImportSummary();
+}
+
+// Lightweight updates (checkbox toggle / text edits) skip the full table
+// re-render so the input the user is actively typing in doesn't lose focus.
+function updateImportSummary(){
+  const confirmBtn = document.getElementById('importConfirmBtn');
+  const countEl = document.getElementById('importPreviewCount');
+  const includedCount = importRows.filter(r=>r.include && r.name.trim() !== '').length;
+  countEl.textContent = `พบ ${importRows.length} รายการ — จะเพิ่ม ${includedCount} รายการ`;
+  confirmBtn.textContent = `➕ เพิ่มเข้ารายชื่อ (${includedCount})`;
+  confirmBtn.disabled = includedCount === 0;
+}
+
+function updateImportRow(id, field, value){
+  const r = importRows.find(x=>x.id===id);
+  if(!r) return;
+  r[field] = value;
+  updateImportSummary();
+}
+
+function toggleImportRow(id, checked){
+  const r = importRows.find(x=>x.id===id);
+  if(!r) return;
+  r.include = checked;
+  updateImportSummary();
+}
+
+function toggleAllImportRows(checked){
+  importRows.forEach(r=> r.include = checked);
+  renderImportPreview();
+}
+
+function deleteImportRow(id){
+  importRows = importRows.filter(x=>x.id!==id);
+  renderImportPreview();
+}
+
+function addEmptyImportRow(){
+  importRows.push({ id:'imp'+(importRowSeq++), name:'', department:'', include:true, isDuplicate:false });
+  renderImportPreview();
+}
+
+function confirmImport(){
+  const rows = importRows.filter(r=>r.include && r.name.trim() !== '');
+  if(rows.length === 0 || !importTargetId) return;
+
+  const ta = document.getElementById(importTargetId);
+  if(!ta) return;
+
+  const lines = rows.map(r=>{
+    const name = r.name.trim();
+    const dept = r.department.trim();
+    return dept ? `${name} - ${dept}` : name;
+  });
+
+  const existing = ta.value.trim();
+  ta.value = existing ? existing + '\n' + lines.join('\n') : lines.join('\n');
+
+  closeImportModal();
+  showToast(`✅ เพิ่มรายชื่อ ${rows.length} คนแล้ว — ตรวจสอบรายชื่อก่อนบันทึก`, 'ok');
 }
 
 function showToast(message, type){
