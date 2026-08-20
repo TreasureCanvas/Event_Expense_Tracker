@@ -276,7 +276,7 @@
       <div class="modal-body">
         <div class="field" style="margin-bottom:0;">
           <label>วางข้อมูลที่คัดลอกจาก Excel (2 คอลัมน์: ชื่อ-นามสกุล และ แผนก)</label>
-          <textarea id="importRawText" placeholder="Name Surname (Nickname)&#9;Marketing&#10;สมชาย ใจดี&#9;IT" oninput="handleImportRawInput()"></textarea>
+          <textarea id="importRawText" placeholder="Navisa Thanasuttawong (Noinae)&#9;Marketing&#10;สมชาย ใจดี&#9;IT" oninput="handleImportRawInput()"></textarea>
           <label class="import-header-toggle">
             <input type="checkbox" id="importSkipHeader" onchange="parseImportPreview()">
             แถวแรกเป็นหัวตาราง (เช่น "ชื่อ / แผนก") ให้ข้ามแถวนี้
@@ -713,25 +713,79 @@ function getExistingImportNames(){
   return set;
 }
 
+// Normalizes line endings and re-joins Excel cells that were broken across
+// multiple physical lines by Alt+Enter. When Excel copies a multi-line
+// cell to the clipboard as plain text, it wraps that cell's value in
+// double quotes and keeps the internal line break literally, e.g.:
+//   "Somchai\nSomsak"<TAB>IT
+// A line with an odd number of quote characters means "this logical row
+// isn't finished yet" — so we keep merging subsequent physical lines into
+// it until the quotes balance out. This stops a single multi-line cell
+// from being mistaken for several separate employee rows.
+function preprocessImportText(text){
+  const normalized = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const rawLines = normalized.split('\n');
+
+  const mergedLines = [];
+  let buffer = '';
+  let openQuote = false;
+  for(const ln of rawLines){
+    buffer = openQuote ? (buffer + ' ' + ln) : ln;
+    const quoteCount = (ln.match(/"/g) || []).length;
+    if(quoteCount % 2 === 1) openQuote = !openQuote;
+    if(!openQuote){
+      mergedLines.push(buffer);
+      buffer = '';
+    }
+  }
+  if(buffer !== '') mergedLines.push(buffer); // unterminated quote — flush what's left rather than drop it
+
+  // Strip wrapping quote characters and collapse any leftover internal
+  // line breaks/whitespace so a merged multi-line cell renders as one
+  // clean value instead of corrupting the Name/Department fields.
+  return mergedLines.map(l => l.replace(/"/g, '').replace(/\s*\n\s*/g, ' '));
+}
+
 function parseImportPreview(){
   const rawText = document.getElementById('importRawText').value;
   const skipHeader = document.getElementById('importSkipHeader').checked;
   const existingNames = getExistingImportNames();
 
-  const lines = rawText.replace(/\r/g,'').split('\n').filter(l=>l.trim() !== '');
+  // Edge case #1: drop empty lines and lines that are whitespace-only
+  // (common when a trailing blank row gets copied along with the data).
+  const lines = preprocessImportText(rawText).filter(l => l.trim() !== '');
   const startIdx = (skipHeader && lines.length > 0) ? 1 : 0;
 
-  importRows = lines.slice(startIdx).map(line=>{
-    // Primary case: pasted straight from Excel — columns separated by Tab.
-    let parts = line.split('\t').map(p=>p.trim()).filter((p,i,arr)=> !(p==='' && i===arr.length-1));
+  // Edge case #4: decide the parsing strategy ONCE for the whole pasted
+  // block. If a tab shows up anywhere in the paste, trust tabs as the
+  // column separator for every row — a row that happens to have no tab is
+  // simply a name-only row, not a candidate for dash/space splitting.
+  // Only fall back to space/dash splitting when the ENTIRE paste has no
+  // tabs at all. This prevents a hyphenated name like "Somchai-Somsak"
+  // from being accidentally split when the data is really tab-separated.
+  const pasteHasTabs = lines.some(l => l.includes('\t'));
+
+  importRows = lines.slice(startIdx).map(rawLine=>{
+    const line = rawLine.trim();
+    if(line === '') return null; // guard: whitespace-only row slipped through
+
     let name = '', department = '';
 
-    if(parts.length >= 2){
-      name = parts[0];
-      department = parts.slice(1).join(' ').trim();
+    if(pasteHasTabs){
+      const parts = line.split('\t').map(p=>p.trim()).filter((p,i,arr)=> !(p==='' && i===arr.length-1));
+      if(parts.length >= 2){
+        name = parts[0];
+        department = parts.slice(1).join(' ').trim();
+      } else {
+        // No tab on this particular line even though the paste overall is
+        // tab-separated — treat the whole line as a name-only row rather
+        // than guessing with a dash/space split.
+        name = line;
+        department = '';
+      }
     } else {
-      // Fallback for text that lost its tabs on paste (common with some
-      // browsers/OS clipboard managers): try 2+ spaces, then " - ".
+      // Nothing in the whole paste is tab-separated — best-effort fallback
+      // to 2+ spaces, then " - ", for text that lost its tabs on copy.
       const bySpaces = line.split(/\s{2,}/).map(p=>p.trim()).filter(Boolean);
       if(bySpaces.length >= 2){
         name = bySpaces[0];
@@ -742,13 +796,18 @@ function parseImportPreview(){
           name = line.slice(0, dashIdx).trim();
           department = line.slice(dashIdx + 3).trim();
         } else {
-          name = line.trim();
+          name = line;
           department = '';
         }
       }
     }
 
+    // Edge case #2: always normalize to a real string — never let
+    // department end up as undefined/null when only a name was pasted.
+    name = (name || '').trim();
+    department = (department || '').trim();
     if(!name) return null;
+
     return {
       id: 'imp' + (importRowSeq++),
       name, department,
@@ -802,19 +861,23 @@ function renderImportPreview(){
 
 // Lightweight updates (checkbox toggle / text edits) skip the full table
 // re-render so the input the user is actively typing in doesn't lose focus.
+// Edge case #5: the Confirm button stays disabled unless at least one row
+// is both checked AND has a non-empty name after trimming.
 function updateImportSummary(){
   const confirmBtn = document.getElementById('importConfirmBtn');
   const countEl = document.getElementById('importPreviewCount');
-  const includedCount = importRows.filter(r=>r.include && r.name.trim() !== '').length;
+  const includedCount = importRows.filter(r=>r.include && (r.name || '').trim() !== '').length;
   countEl.textContent = `พบ ${importRows.length} รายการ — จะเพิ่ม ${includedCount} รายการ`;
   confirmBtn.textContent = `➕ เพิ่มเข้ารายชื่อ (${includedCount})`;
   confirmBtn.disabled = includedCount === 0;
 }
 
 function updateImportRow(id, field, value){
+  if(field !== 'name' && field !== 'department') return;
   const r = importRows.find(x=>x.id===id);
   if(!r) return;
-  r[field] = value;
+  // Never let a field go undefined/null — always normalize to a string.
+  r[field] = value == null ? '' : value;
   updateImportSummary();
 }
 
@@ -841,15 +904,17 @@ function addEmptyImportRow(){
 }
 
 function confirmImport(){
-  const rows = importRows.filter(r=>r.include && r.name.trim() !== '');
+  // Guard again at commit time, not just via the disabled button — never
+  // write an "undefined - undefined" style line into the textarea.
+  const rows = importRows.filter(r=>r.include && (r.name || '').trim() !== '');
   if(rows.length === 0 || !importTargetId) return;
 
   const ta = document.getElementById(importTargetId);
   if(!ta) return;
 
   const lines = rows.map(r=>{
-    const name = r.name.trim();
-    const dept = r.department.trim();
+    const name = (r.name || '').trim();
+    const dept = (r.department || '').trim();
     return dept ? `${name} - ${dept}` : name;
   });
 
