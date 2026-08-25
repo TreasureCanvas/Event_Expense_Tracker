@@ -327,7 +327,7 @@
       <div class="modal-body">
         <div class="field" style="margin-bottom:0;">
           <label>วางข้อมูลที่คัดลอกจาก Excel (2 คอลัมน์: ชื่อ-นามสกุล และ แผนก)</label>
-          <textarea id="importRawText" placeholder="Navisa Thanasuttawong (Noinae)&#9;Marketing&#10;สมชาย ใจดี&#9;IT" oninput="handleImportRawInput()"></textarea>
+          <textarea id="importRawText" placeholder="Somchai Jaidee (Somchai)&#9;Marketing&#10;สมชาย ใจดี&#9;IT" oninput="handleImportRawInput()"></textarea>
           <label class="import-header-toggle">
             <input type="checkbox" id="importSkipHeader" onchange="parseImportPreview()">
             แถวแรกเป็นหัวตาราง (เช่น "ชื่อ / แผนก") ให้ข้ามแถวนี้
@@ -1540,6 +1540,33 @@ async function exportEventsToExcel(){
 }
 
 document.addEventListener('DOMContentLoaded', loadEvents);
+
+/* ===================================================================
+   🔄 AUTO-REFRESH ON PAGE NAVIGATION
+   When the user navigates back to this page (browser Back button, or
+   returning from form.html/an external link), the browser may restore a
+   stale cached snapshot instead of re-running the page's scripts. Force
+   a full reload in that case so event/roster data is always fresh.
+=================================================================== */
+window.addEventListener('pageshow', function(event) {
+  if (event.persisted || (window.performance && window.performance.navigation && window.performance.navigation.type === 2)) {
+    window.location.reload();
+  }
+});
+
+/* ===================================================================
+   🖱️ CLICK-OUTSIDE DROPDOWN AUTO-CLOSE
+   Any open <details> dropdown (e.g. a future type/menu selector) should
+   close itself the moment the user clicks or taps anywhere outside it,
+   instead of staying open until explicitly toggled shut again.
+=================================================================== */
+function closeDropdownsOutside(evt){
+  document.querySelectorAll('details[open]').forEach(function(d){
+    if(!d.contains(evt.target)) d.removeAttribute('open');
+  });
+}
+document.addEventListener('click', closeDropdownsOutside, true);
+document.addEventListener('touchstart', closeDropdownsOutside, true);
 </script>
 </body>
 </html>
