@@ -185,16 +185,6 @@
         <input id="department" placeholder="เช่น ฝ่ายการตลาด">
       </div>
     </div>
-    <div class="field">
-      <label>วัตถุประสงค์การเดินทาง <span class="req">*</span></label>
-      <input id="purpose" placeholder="เช่น ประชุมลูกค้า, อบรมประจำปี">
-    </div>
-    <div class="field">
-      <label>ราคาน้ำมันอ้างอิง (แก๊สโซฮอล์ 91) บาท/ลิตร</label>
-      <input id="fuelPrice" type="number" step="0.01" min="0" value="34.57"
-        onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '34.57'; refreshCarFares();">
-      <div class="hint">ราคานี้เป็นค่าอ้างอิงที่ปรับปรุงด้วยมือเป็นระยะ ไม่ใช่ราคาสดแบบเรียลไทม์ — กรุณาตรวจสอบราคาจริงวันที่เดินทาง (เช่นที่ gasprice.kapook.com) แล้วแก้ไขให้ตรงได้เสมอ</div>
-    </div>
   </div>
 
   <!-- TRIPS: one block per day, each with ขาไป + ขากลับ -->
@@ -248,10 +238,6 @@
   <div id="pDaysWrap"></div>
   <div id="pFooterBlock">
     <div class="grand-total-box"><span>ยอดรวมทั้งสิ้น</span><span id="pTotal"></span></div>
-    <div class="sign-area">
-      <div class="sign-line">ลงชื่อผู้เบิก / วันที่</div>
-      <div class="sign-line">ลงชื่อผู้อนุมัติ / วันที่</div>
-    </div>
   </div>
 </div>
 
@@ -368,7 +354,7 @@ const SEGMENT_TYPES = [
   { value:'ARL', label:'Airport Rail Link', kind:'rail' },
   { value:'CAR', label:'รถยนต์ส่วนบุคคล', kind:'car' },
   { value:'TAXI', label:'แท็กซี่', kind:'manual' },
-  { value:'GRAB', label:'รถโดยสารรับจ้างผ่านแอปพลิเคชัน', kind:'manual' },
+  { value:'GRAB', label:'Grab/Lineman/Bolt', kind:'manual' },
   { value:'MOTORCYCLE', label:'รถจักรยานยนต์รับจ้าง', kind:'manual' },
   { value:'PARKING', label:'ค่าจอดรถ', kind:'manual' },
   { value:'TOLL', label:'ค่าธรรมเนียมผ่านทางพิเศษ (ทางด่วน)', kind:'toll' },
@@ -382,7 +368,31 @@ let eventName = '';
 // when the person actually switches to a *different* member (not on every
 // blur), and lets us restore a clean default when they clear the field.
 let lastLoadedEmployeeName = '';
-let defaultFuelPrice = 34.57;
+
+// Per-day Gasohol 91 price (+ receipt image, for the PDF) as entered by
+// the event admin in index.html. Loaded once from apiGetEventInfo and used
+// for the personal-vehicle auto-calculation below — there is no manual
+// fuel-price input on this form anymore.
+let eventFuelPrices = []; // [{ date:'YYYY-MM-DD', price:Number, receiptImage:{base64,...}|null, receiptUrl }]
+
+// Returns the full fuel-price entry that applies to a given travel date:
+// an exact match if one exists, otherwise the closest *previous* event
+// date's entry (falls back to the earliest available entry if the travel
+// date is before every recorded price).
+function getFuelPriceEntryForDate(dateStr){
+  if(!dateStr || eventFuelPrices.length === 0) return null;
+  const exact = eventFuelPrices.find(fp => fp.date === dateStr);
+  if(exact) return exact;
+  const prior = eventFuelPrices.filter(fp => fp.date < dateStr).sort((a,b)=> b.date.localeCompare(a.date));
+  if(prior.length > 0) return prior[0];
+  const sorted = eventFuelPrices.slice().sort((a,b)=> a.date.localeCompare(b.date));
+  return sorted.length ? sorted[0] : null;
+}
+
+function getFuelPriceForDate(dateStr){
+  const entry = getFuelPriceEntryForDate(dateStr);
+  return entry ? (Number(entry.price) || 0) : 0;
+}
 
 function newSegment(){ return { type:'', origin:'', destination:'', distanceKm:'', amount:0, otherDescription:'', attachments:[], attachmentUrls:[] }; }
 function newDay(date){ return { date: date || '', outboundSegments:[newSegment()], returnSegments:[newSegment()] }; }
@@ -513,19 +523,15 @@ async function loadEventInfo(){
     employeeList = res.employees || [];
     document.getElementById('employeeSuggestions').innerHTML =
       employeeList.map(e=>`<option value="${e.name}">`).join('');
+    eventFuelPrices = res.fuelPrices || [];
+    refreshCarFaresAll();
   }catch(err){
     showMsg('err','เชื่อมต่อระบบหลังบ้านไม่สำเร็จ: '+err+' (ตรวจสอบว่าตั้งค่า API_URL ในโค้ดถูกต้องแล้ว)');
   }
-  try{
-    const fp = await callApi('getFuelPrice', {});
-    if(fp.ok){ defaultFuelPrice = fp.price; document.getElementById('fuelPrice').value = fp.price; }
-  }catch(err){ /* ignore */ }
 }
 
 function resetFormForNewEmployee(){
   document.getElementById('department').value = '';
-  document.getElementById('purpose').value = '';
-  document.getElementById('fuelPrice').value = defaultFuelPrice;
   state.days = [ newDay() ];
   ['Err','Ok','Warn'].forEach(t=>{ const el=document.getElementById('msg'+t); if(el) el.style.display='none'; });
 }
@@ -580,8 +586,6 @@ async function onEmployeeChange(){
       // gives an honest account of what just happened before we render.
       setEmployeeLoadStatus('กำลังดึงรูปภาพหลักฐาน...');
       document.getElementById('department').value = res.data.department || document.getElementById('department').value;
-      document.getElementById('purpose').value = res.data.purpose || '';
-      document.getElementById('fuelPrice').value = res.data.fuelRefPrice || defaultFuelPrice;
       state.days = (res.data.trips && res.data.trips.length) ? tripsArrayToDays(res.data.trips) : [ newDay() ];
       showMsg('warn', `พบเอกสารที่เคยส่งไว้แล้ว (สถานะล่าสุด: ${res.data.status}) — ระบบดึงข้อมูลเดิมมาให้แก้ไข การกด "ยืนยันส่งเอกสาร" จะบันทึกทับเวอร์ชันเดิม`);
     }
@@ -595,15 +599,27 @@ async function onEmployeeChange(){
 /* ---------- RENDER TRIPS ---------- */
 function addDay(){ state.days.push(newDay()); render(); }
 function removeDay(di){ if(state.days.length<=1) return; state.days.splice(di,1); render(); }
-function dayUpdate(di,field,value){ state.days[di][field] = value; refreshTotals(); }
+function dayUpdate(di,field,value){
+  state.days[di][field] = value;
+  if(field==='date'){
+    // The travel date determines which day's fuel price applies to any
+    // "Personal Vehicle" segment on this day — re-run the auto-calculation
+    // (and re-render, so the amount fields/fuel-price hint reflect it).
+    state.days[di].outboundSegments.forEach(seg=>recalcSegment(seg, value));
+    state.days[di].returnSegments.forEach(seg=>recalcSegment(seg, value));
+    render();
+    return;
+  }
+  refreshTotals();
+}
 function addSegment(di,key){ state.days[di][key].push(newSegment()); render(); }
 function removeSegment(di,key,si){ state.days[di][key].splice(si,1); render(); }
 
 function render(){
   const c = document.getElementById('tripsContainer');
   c.innerHTML = state.days.map((day,di)=>{
-    const outHtml = day.outboundSegments.map((seg,si)=>renderSegment(di,'outboundSegments',seg,si)).join('');
-    const retHtml = day.returnSegments.map((seg,si)=>renderSegment(di,'returnSegments',seg,si)).join('');
+    const outHtml = day.outboundSegments.map((seg,si)=>renderSegment(di,'outboundSegments',seg,si,day.date)).join('');
+    const retHtml = day.returnSegments.map((seg,si)=>renderSegment(di,'returnSegments',seg,si,day.date)).join('');
     const outTotal = day.outboundSegments.reduce((s,seg)=>s+(parseFloat(seg.amount)||0),0);
     const retTotal = day.returnSegments.reduce((s,seg)=>s+(parseFloat(seg.amount)||0),0);
     return `
@@ -631,7 +647,7 @@ function render(){
   updateTotals();
 }
 
-function renderSegment(di,key,seg,si){
+function renderSegment(di,key,seg,si,dayDate){
   const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
   let body = '';
   if(typeCfg.kind==='placeholder'){
@@ -664,6 +680,10 @@ function renderSegment(di,key,seg,si){
           oninput="segAmountInput(${di},'${key}',${si},this.value)"
           onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>`;
   } else if(typeCfg.kind==='car'){
+    const fuelEntry = getFuelPriceEntryForDate(dayDate);
+    const fuelNote = fuelEntry && fuelEntry.price > 0
+      ? `ราคาน้ำมันอ้างอิงวันที่ ${dayDate || '-'}: ${Number(fuelEntry.price).toFixed(2)} บาท/ลิตร${fuelEntry.date !== dayDate ? ` (ใช้ราคาล่าสุดของวันที่ ${fuelEntry.date})` : ''}`
+      : 'ยังไม่มีข้อมูลราคาน้ำมันสำหรับวันที่นี้ในระบบ — กรุณาติดต่อผู้ดูแลกิจกรรมให้เพิ่มราคาน้ำมันของวันนี้';
     body = `
       <div class="grid2">
         <div class="field"><label>จาก (ต้นทาง) <span class="req">*</span></label>
@@ -677,7 +697,7 @@ function renderSegment(di,key,seg,si){
         <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? seg.amount : ''}"
           oninput="segAmountInput(${di},'${key}',${si},this.value)"
           onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>
-      <div class="hint">สูตร: (ระยะทาง ÷ 15) × ราคาน้ำมันแก๊สโซฮอลล์91 ณ วันเดินทาง</div>`;
+      <div class="hint">สูตร: (ระยะทาง ÷ 15) × ราคาน้ำมันแก๊สโซฮอลล์91 ณ วันเดินทาง — ${fuelNote}</div>`;
   } else if(seg.type==='PARKING'){
     body = `
       <div class="field"><label>จำนวนเงิน (บาท) <span class="req">*</span></label>
@@ -752,7 +772,7 @@ function renderSegment(di,key,seg,si){
 function segUpdate(di,key,si,field,value){
   const seg = state.days[di][key][si];
   Object.assign(seg, newSegment(), {type:value});
-  recalcSegment(seg);
+  recalcSegment(seg, state.days[di].date);
   render();
 }
 
@@ -763,7 +783,7 @@ function segFieldInput(di,key,si,field,value){
   const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
   if((field==='origin' || field==='destination' || field==='distanceKm') &&
      (typeCfg.kind==='rail' || typeCfg.kind==='car')){
-    recalcSegment(seg);
+    recalcSegment(seg, state.days[di].date);
     const amtInput = document.getElementById(`amtinput-${di}-${key}-${si}`);
     if(amtInput) amtInput.value = seg.amount;
   }
@@ -802,24 +822,28 @@ function refreshTotals(){
   return grand;
 }
 
-function recalcSegment(seg){
+// Amount = (Distance / 15) * Gasohol 91 price of that travel date — with
+// the closest-previous-event-date fallback baked into getFuelPriceForDate().
+function recalcSegment(seg, date){
   const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
   if(typeCfg.kind==='rail'){
     seg.amount = railFare(seg.type, seg.origin, seg.destination);
   } else if(typeCfg.kind==='car'){
-    const price = parseFloat(document.getElementById('fuelPrice').value)||0;
+    const price = getFuelPriceForDate(date);
     const dist = parseFloat(seg.distanceKm)||0;
     seg.amount = Math.round((dist/15*price)*100)/100;
   }
 }
 
-function refreshCarFares(){
+// Re-runs the personal-vehicle auto-calculation for every day/segment —
+// used once the event's fuel-price table has (re)loaded.
+function refreshCarFaresAll(){
   state.days.forEach((day,di)=>{
     ['outboundSegments','returnSegments'].forEach(key=>{
       day[key].forEach((seg,si)=>{
         const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
         if(typeCfg.kind==='car'){
-          recalcSegment(seg);
+          recalcSegment(seg, day.date);
           const amtInput = document.getElementById(`amtinput-${di}-${key}-${si}`);
           if(amtInput) amtInput.value = seg.amount;
         }
@@ -972,7 +996,6 @@ function validate(){
 
   if(!document.getElementById('employeeName').value.trim()){ errors.push('กรุณากรอกชื่อผู้เบิก'); ok=false; }
   if(!document.getElementById('department').value.trim()){ errors.push('กรุณากรอกแผนก/ฝ่าย'); ok=false; }
-  if(!document.getElementById('purpose').value.trim()){ errors.push('กรุณากรอกวัตถุประสงค์การเดินทาง'); ok=false; }
 
   state.days.forEach((day,di)=>{
     if(!day.date){ errors.push(`วันที่ ${di+1}: กรุณาเลือกวันที่เดินทาง`); ok=false; }
@@ -1032,9 +1055,7 @@ function buildPrintArea(total){
   document.getElementById('pIssueDate').textContent = formatThaiDate(new Date().toISOString().slice(0,10));
   document.getElementById('pMeta').innerHTML = `
     <div><span class="label">ผู้เบิก:</span> ${document.getElementById('employeeName').value || '-'}</div>
-    <div><span class="label">แผนก/ฝ่าย:</span> ${document.getElementById('department').value || '-'}</div>
-    <div><span class="label">วัตถุประสงค์:</span> ${document.getElementById('purpose').value || '-'}</div>
-    <div><span class="label">ราคาน้ำมันอ้างอิง:</span> ${document.getElementById('fuelPrice').value || '-'} บาท/ลิตร</div>`;
+    <div><span class="label">แผนก/ฝ่าย:</span> ${document.getElementById('department').value || '-'}</div>`;
 
   const wrap = document.getElementById('pDaysWrap');
   wrap.innerHTML = '';
@@ -1258,6 +1279,28 @@ async function generatePdfBlob(){
           await placeOriginalPhoto(att, caption);
         }
       }
+
+      // Daily fuel receipt attachment: if this day has any "Personal
+      // Vehicle" (CAR) segment, append the Gasohol 91 price + the event
+      // admin's uploaded receipt image for that specific date (with the
+      // same closest-previous-date fallback used for the amount calc).
+      const hasCarSegment = segmentsWithDir.some(({seg}) => {
+        const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
+        return typeCfg && typeCfg.kind==='car';
+      });
+      if(hasCarSegment){
+        const fuelEntry = getFuelPriceEntryForDate(day.date);
+        if(fuelEntry){
+          const fallbackNote = fuelEntry.date !== day.date ? ` (อ้างอิงราคาวันที่ ${fuelEntry.date} เนื่องจากไม่มีราคาของวันนี้)` : '';
+          const caption = `⛽ ใบเสร็จราคาน้ำมันแก๊สโซฮอล์ 91 วันที่ ${formatThaiDate(day.date)}: ${Number(fuelEntry.price||0).toFixed(2)} บาท/ลิตร${fallbackNote}`;
+          if(fuelEntry.receiptImage && fuelEntry.receiptImage.base64){
+            await placeOriginalPhoto(fuelEntry.receiptImage, caption);
+          } else {
+            const noteCanvas = await captureCaptionLabel(caption + ' (ไม่มีใบเสร็จแนบในระบบ)');
+            placeImage(noteCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (noteCanvas.height * contentWidth) / noteCanvas.width);
+          }
+        }
+      }
     }
 
     await placeCapturedBlock(document.getElementById('pFooterBlock'), 0.92);
@@ -1347,8 +1390,6 @@ async function submitForm(){
       eventId: EVENT_ID,
       employeeName: document.getElementById('employeeName').value.trim(),
       department: document.getElementById('department').value.trim(),
-      purpose: document.getElementById('purpose').value,
-      fuelRefPrice: document.getElementById('fuelPrice').value,
       totalAmount: total,
       summaryText: buildSummaryText(total),
       pdfBase64: pdfBase64,
