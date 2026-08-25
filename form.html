@@ -136,6 +136,13 @@
   .inline-toast.show{display:block;}
   .inline-toast.visible{opacity:1;}
   .hint{font-size:12px; color:var(--muted); margin-top:3px;}
+  /* ===== 🔍 Image preview lightbox ===== */
+  .view-img-link{font-size:11.5px; color:var(--brand); font-weight:600; text-decoration:none; cursor:pointer; white-space:nowrap; background:none; border:none; padding:0; font-family:inherit;}
+  .view-img-link:hover{text-decoration:underline;}
+  .lightbox-overlay{display:none; position:fixed; inset:0; background:rgba(10,12,9,.82); z-index:2000; align-items:center; justify-content:center; padding:24px; cursor:zoom-out;}
+  .lightbox-overlay.show{display:flex;}
+  .lightbox-overlay img{max-width:100%; max-height:100%; border-radius:8px; box-shadow:0 10px 40px rgba(0,0,0,.4); cursor:default;}
+  .lightbox-close{position:fixed; top:18px; right:22px; background:transparent; border:none; color:#fff; font-size:26px; cursor:pointer; z-index:2001; line-height:1;}
   #printArea{position:fixed; left:-9999px; top:0; width:700px; background:#fff; padding:36px; font-family:'Sarabun',sans-serif; color:#20281f;}
   #pHeaderBlock{padding:4px 8px 4px 4px; background:#fff;}
   #pFooterBlock{padding:4px 8px 4px 4px; background:#fff;}
@@ -221,6 +228,12 @@
   <div style="text-align:center; color:var(--muted); font-size:11px; margin-top:20px;">Build: 2026-08-11-v11 (form.html)</div>
 </div>
 
+<!-- 🔍 Image preview lightbox -->
+<div class="lightbox-overlay" id="imgLightbox" onclick="closeImageLightbox()">
+  <button type="button" class="lightbox-close" onclick="closeImageLightbox(event)">✕</button>
+  <img id="imgLightboxImg" src="" alt="ตัวอย่างรูปภาพ" onclick="event.stopPropagation()">
+</div>
+
 <!-- hidden printable template used by jsPDF -->
 <div id="printArea">
   <div id="pHeaderBlock">
@@ -253,6 +266,24 @@ if (SERVER_EVENT_ID.indexOf('<?') !== -1) SERVER_EVENT_ID = '';
 const params = new URLSearchParams(window.location.search);
 const EVENT_ID = SERVER_EVENT_ID || params.get('event') || '';
 const TODAY_ISO = new Date().toISOString().slice(0,10);
+
+/* ===================================================================
+   🔍 IMAGE PREVIEW LIGHTBOX
+   Shared modal used to inspect any previously-uploaded image (travel
+   receipts, daily fuel-price receipts) at full size.
+=================================================================== */
+function openImageLightbox(src){
+  if(!src) return;
+  document.getElementById('imgLightboxImg').src = src;
+  document.getElementById('imgLightbox').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeImageLightbox(evt){
+  if(evt) evt.stopPropagation();
+  document.getElementById('imgLightbox').classList.remove('show');
+  document.getElementById('imgLightboxImg').src = '';
+  document.body.style.overflow = '';
+}
 
 /* =========================================================
    ตารางราคาตั๋ว BTS สายสีเขียว
@@ -358,6 +389,7 @@ const SEGMENT_TYPES = [
   { value:'MOTORCYCLE', label:'รถจักรยานยนต์รับจ้าง', kind:'manual' },
   { value:'PARKING', label:'ค่าจอดรถ', kind:'manual' },
   { value:'TOLL', label:'ค่าธรรมเนียมผ่านทางพิเศษ (ทางด่วน)', kind:'toll' },
+  { value:'NO_CLAIM', label:'ไม่เบิกค่าเดินทาง', kind:'none' },
   { value:'OTHER', label:'อื่นๆ', kind:'manual' }
 ];
 
@@ -676,7 +708,7 @@ function renderSegment(di,key,seg,si,dayDate){
         </div>
       </div>
       <div class="field"><label>จำนวนเงิน (บาท) — คำนวณอัตโนมัติ แก้ไขได้ <span class="req">*</span></label>
-        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? seg.amount : ''}"
+        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
           oninput="segAmountInput(${di},'${key}',${si},this.value)"
           onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>`;
   } else if(typeCfg.kind==='car'){
@@ -694,17 +726,19 @@ function renderSegment(di,key,seg,si,dayDate){
       <div class="field"><label>ระยะทาง (กิโลเมตร) <span class="req">*</span></label>
         <input type="number" step="0.1" min="0" placeholder="0.0" value="${seg.distanceKm || ''}" oninput="segFieldInput(${di},'${key}',${si},'distanceKm',this.value)"></div>
       <div class="field"><label>จำนวนเงิน (บาท) — คำนวณอัตโนมัติ แก้ไขได้ <span class="req">*</span></label>
-        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? seg.amount : ''}"
+        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
           oninput="segAmountInput(${di},'${key}',${si},this.value)"
           onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>
       <div class="hint">สูตร: (ระยะทาง ÷ 15) × ราคาน้ำมันแก๊สโซฮอลล์91 ณ วันเดินทาง — ${fuelNote}</div>`;
   } else if(seg.type==='PARKING'){
     body = `
       <div class="field"><label>จำนวนเงิน (บาท) <span class="req">*</span></label>
-        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? seg.amount : ''}"
+        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
           oninput="segAmountInput(${di},'${key}',${si},this.value)"
           onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>
       <div class="hint">ค่าจอดรถไม่ต้องระบุต้นทาง/ปลายทาง — กรอกเฉพาะจำนวนเงินและแนบสลิป/ใบเสร็จ</div>`;
+  } else if(typeCfg.kind==='none'){
+    body = `<div class="hint">เลือก "ไม่เบิกค่าเดินทาง" แล้ว — ระบบจะไม่แสดงช่องระยะทาง/จำนวนเงิน และไม่ต้องแนบไฟล์หลักฐานสำหรับรายการนี้ (ยอดเงินของรายการนี้ = 0.00 บาท โดยอัตโนมัติ)</div>`;
   } else if(seg.type==='TOLL'){
     body = `
       <div class="grid2">
@@ -714,7 +748,7 @@ function renderSegment(di,key,seg,si,dayDate){
           <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder="ไม่บังคับ"></div>
       </div>
       <div class="field"><label>จำนวนเงิน (บาท) <span class="req">*</span></label>
-        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? seg.amount : ''}"
+        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
           oninput="segAmountInput(${di},'${key}',${si},this.value)"
           onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>
       <div class="hint">ต้นทาง/ปลายทางไม่บังคับ — กรอกจำนวนเงินและแนบใบเสร็จค่าทางด่วน</div>`;
@@ -731,7 +765,7 @@ function renderSegment(di,key,seg,si,dayDate){
           <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder="เช่น สนามบิน"></div>
       </div>
       <div class="field"><label>จำนวนเงิน (บาท) <span class="req">*</span></label>
-        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? seg.amount : ''}"
+        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
           oninput="segAmountInput(${di},'${key}',${si},this.value)"
           onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>`;
   }
@@ -741,9 +775,9 @@ function renderSegment(di,key,seg,si,dayDate){
   // all get a real <img> thumbnail preview here. Existing ones get a small
   // "เดิม" badge so employees can tell what was already submitted.
   const thumbs = (seg.attachments||[]).map((a,ai)=>`
-      <span class="attach-thumb">${a.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${a.base64}"><span class="rm" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</span></span>`).join('');
+      <span class="attach-thumb">${a.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${a.base64}"><button type="button" class="view-img-link" onclick="openImageLightbox('${a.base64}')">🔍 ดูรูปภาพ</button><span class="rm" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</span></span>`).join('');
 
-  const attachHtml = `
+  const attachHtml = typeCfg.kind === 'none' ? '' : `
     <div class="attach-box">
       <label>แนบรูปภาพหลักฐาน/สลิป (แนบได้มากกว่า 1 ไฟล์)</label>
       <input type="file" accept="image/*" multiple onchange="handleFiles(event, ${di}, '${key}', ${si})">
@@ -785,7 +819,7 @@ function segFieldInput(di,key,si,field,value){
      (typeCfg.kind==='rail' || typeCfg.kind==='car')){
     recalcSegment(seg, state.days[di].date);
     const amtInput = document.getElementById(`amtinput-${di}-${key}-${si}`);
-    if(amtInput) amtInput.value = seg.amount;
+    if(amtInput) amtInput.value = Number(seg.amount).toFixed(2);
   }
 
   if(field==='origin' || field==='destination'){
@@ -832,6 +866,10 @@ function recalcSegment(seg, date){
     const price = getFuelPriceForDate(date);
     const dist = parseFloat(seg.distanceKm)||0;
     seg.amount = Math.round((dist/15*price)*100)/100;
+  } else if(typeCfg.kind==='none'){
+    // "ไม่เบิกค่าเดินทาง" (No Expense Claim) — always exactly 0.00, no
+    // manual amount entry and no receipt required for this segment.
+    seg.amount = 0;
   }
 }
 
@@ -845,7 +883,7 @@ function refreshCarFaresAll(){
         if(typeCfg.kind==='car'){
           recalcSegment(seg, day.date);
           const amtInput = document.getElementById(`amtinput-${di}-${key}-${si}`);
-          if(amtInput) amtInput.value = seg.amount;
+          if(amtInput) amtInput.value = Number(seg.amount).toFixed(2);
         }
       });
     });
@@ -908,6 +946,9 @@ function fmt(n){ return (Number(n)||0).toLocaleString('th-TH',{minimumFractionDi
 function segmentLine(seg){
   const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
   const amt = fmt(seg.amount);
+  if(typeCfg.kind==='none'){
+    return `เดินทางด้วย ${typeCfg.label} (ไม่มีการเบิกค่าใช้จ่าย) ราคา ${amt} บาท`;
+  }
   if(typeCfg.kind==='car'){
     return `เดินทางด้วยรถยนต์ส่วนบุคคล จาก ${seg.origin||'-'} ไป ${seg.destination||'-'} ระยะทาง ${seg.distanceKm||0} กม. ราคา ${amt} บาท`;
   }
@@ -1031,7 +1072,9 @@ function validate(){
           errors.push(`${tag}: กรุณาระบุรายละเอียดประเภทการเดินทาง`); ok=false;
         }
 
-        if(!(parseFloat(seg.amount) > 0)){
+        // "ไม่เบิกค่าเดินทาง" never requires an amount — its expense is
+        // always exactly 0.00 by design, with no extra input required.
+        if(typeCfg.kind!=='none' && !(parseFloat(seg.amount) > 0)){
           errors.push(`${tag}: กรุณากรอกจำนวนเงิน`); ok=false;
         }
       });
@@ -1068,17 +1111,17 @@ function buildPrintArea(total){
       const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
       const typeLabel = (seg.type==='OTHER' && seg.otherDescription) ? `อื่นๆ (${seg.otherDescription})` : typeCfg.label;
       const tollEmpty = seg.type==='TOLL' && !seg.origin && !seg.destination;
-      const detail = (seg.type==='PARKING' || tollEmpty)
+      const detail = (seg.type==='PARKING' || tollEmpty || typeCfg.kind==='none')
         ? '-'
         : (typeCfg.kind==='car'
           ? `${seg.origin||'-'} → ${seg.destination||'-'} (${seg.distanceKm||0} กม.)`
           : `${seg.origin||'-'} → ${seg.destination||'-'}`);
-      rows += `<tr><td>${i+1}</td><td>${typeLabel}</td><td>${detail}</td><td class="amt">${(seg.amount||0).toFixed(2)}</td></tr>`;
+      rows += `<tr><td>${i+1}</td><td>${typeLabel}</td><td>${detail}</td><td class="amt">${(Number(seg.amount)||0).toFixed(2)}</td></tr>`;
     });
     return {
       html: `<div class="dir-title">${title}</div>
         <table><thead><tr><th>#</th><th>ประเภท</th><th>รายละเอียด</th><th class="amt">จำนวนเงิน</th></tr></thead>
-        <tbody>${rows}<tr class="subtotal-row"><td colspan="3">ยอดรวม ${title}</td><td class="amt">${subtotal.toFixed(2)}</td></tr></tbody></table>`,
+        <tbody>${rows}<tr class="subtotal-row"><td colspan="3">ยอดรวม ${title}</td><td class="amt">${(Number(subtotal)||0).toFixed(2)}</td></tr></tbody></table>`,
       subtotal
     };
   }
@@ -1390,7 +1433,7 @@ async function submitForm(){
       eventId: EVENT_ID,
       employeeName: document.getElementById('employeeName').value.trim(),
       department: document.getElementById('department').value.trim(),
-      totalAmount: total,
+      totalAmount: Number(total.toFixed(2)),
       summaryText: buildSummaryText(total),
       pdfBase64: pdfBase64,
       pdfFileName: pdfFileName(),
