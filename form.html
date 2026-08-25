@@ -1504,6 +1504,21 @@ window.addEventListener('DOMContentLoaded', async () => {
   render(); // ✅ เพิ่มบรรทัดนี้ เพื่อสั่งเรนเดอร์ section รายการเดินทางทันที
   await loadEventInfo();
 });
+
+/* ===================================================================
+   🖱️ CLICK-OUTSIDE DROPDOWN AUTO-CLOSE
+   The travel-mode selector (<details class="type-dropdown">) already
+   closes itself when an option is picked, but it should also close the
+   moment the user clicks or taps anywhere else on the page — not stay
+   open until they happen to pick an option or reopen it.
+=================================================================== */
+function closeDropdownsOutside(evt){
+  document.querySelectorAll('details.type-dropdown[open]').forEach(function(d){
+    if(!d.contains(evt.target)) d.removeAttribute('open');
+  });
+}
+document.addEventListener('click', closeDropdownsOutside, true);
+document.addEventListener('touchstart', closeDropdownsOutside, true);
 </script>
 </body>
 </html>
