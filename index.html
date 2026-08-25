@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <style>
   :root{ --brand:#FE6D43; --brand-dark:#222222; --accent:#e8a33d; --bg:#F6F7FB; --card:#ffffff; --line:#e2e5e1;
     --text:#20281f; --muted:#686868; --ok:#1f7a4d; --warn:#b9770e; --danger:#c0392b; --pending:#8b8f89; --radius:14px; }
@@ -116,6 +118,27 @@
   tr.dup-note-row td{padding:0 6px 6px;}
   .dup-note{font-size:11.5px; color:var(--warn); font-weight:600;}
   .import-empty{color:var(--muted); font-size:13px; text-align:center; padding:18px 0;}
+
+  /* ===== ⛽ Daily Fuel Price + Receipt inputs ===== */
+  .fuel-price-header{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;}
+  .fuel-price-title{font-size:13.5px; font-weight:700; color:var(--brand-dark);}
+  .fuel-price-link{font-size:12px; color:var(--brand); text-decoration:none; font-weight:600; white-space:nowrap;}
+  .fuel-price-link:hover{text-decoration:underline;}
+  .fuel-day-row{border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:10px; background:#fbfbfa;}
+  .fuel-day-row label{font-weight:400;}
+  .fuel-day-row .fuel-day-label{font-weight:700; margin-bottom:6px;}
+  .fuel-preview-list{margin-top:8px; display:flex; flex-wrap:wrap; gap:8px;}
+  .fuel-thumb{position:relative; display:inline-flex; align-items:center; gap:6px; background:#f1f4f0; border-radius:8px; padding:4px 8px 4px 4px;}
+  .fuel-thumb img{height:38px; width:38px; object-fit:cover; border-radius:6px;}
+  .fuel-thumb .rm{cursor:pointer; color:var(--danger); font-weight:700; font-size:13px; padding:0 3px;}
+  .existing-badge{font-size:10px; color:#6b7a63; background:#e2ebdd; border-radius:5px; padding:1px 5px; white-space:nowrap;}
+
+  /* ===== 📦 Roster bulk PDF -> ZIP export ===== */
+  .roster-bulk-bar{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;}
+  .roster-select-all{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted); font-weight:600;}
+  .roster-select-all input{width:auto;}
+  th.roster-check-col, td.roster-check-col{width:28px;}
+  td.roster-check-col input{width:auto;}
 </style>
 </head>
 <body>
@@ -161,11 +184,11 @@
       <div class="grid2">
         <div class="field">
           <label>วันที่เริ่ม Event <span class="req">*</span></label>
-          <input id="startDate" type="date">
+          <input id="startDate" type="date" onchange="renderFuelInputs('create')">
         </div>
         <div class="field">
           <label>วันที่สิ้นสุด Event</label>
-          <input id="endDate" type="date">
+          <input id="endDate" type="date" onchange="renderFuelInputs('create')">
           <div class="hint">ถ้าเป็นกิจกรรมวันเดียว เว้นว่างไว้ได้</div>
         </div>
       </div>
@@ -176,6 +199,13 @@
         </div>
         <textarea id="employeeList" placeholder="พิมพ์ 1 คนต่อบรรทัด รูปแบบ: ชื่อ นามสกุล - แผนก"></textarea>
         <div class="hint">พิมพ์ "ชื่อ นามสกุล - แผนก" แล้วกด Enter ขึ้นบรรทัดใหม่ทีละคน หรือกด "นำเข้าจาก Excel" เพื่อวางข้อมูลจาก Excel โดยตรง</div>
+      </div>
+      <div class="field">
+        <div class="fuel-price-header">
+          <span class="fuel-price-title">⛽ ราคาน้ำมันแก๊สโซฮอล์ 91 รายวัน + ใบเสร็จ</span>
+          <a class="fuel-price-link" href="https://gasprice.kapook.com" target="_blank" rel="noopener">🔗 เช็กราคาน้ำมันย้อนหลัง (gasprice.kapook.com)</a>
+        </div>
+        <div id="fuelPricesContainer"><div class="hint">กรุณาเลือกวันที่เริ่ม Event ก่อน เพื่อกรอกราคาน้ำมันรายวัน</div></div>
       </div>
       <button class="btn" id="createBtn" onclick="createNewEvent()">✅ สร้างกิจกรรมและลิงก์</button>
     </div>
@@ -204,11 +234,11 @@
       <div class="grid2">
         <div class="field">
           <label>วันที่เริ่ม Event <span class="req">*</span></label>
-          <input id="editStartDate" type="date">
+          <input id="editStartDate" type="date" onchange="renderFuelInputs('edit')">
         </div>
         <div class="field">
           <label>วันที่สิ้นสุด Event</label>
-          <input id="editEndDate" type="date">
+          <input id="editEndDate" type="date" onchange="renderFuelInputs('edit')">
         </div>
       </div>
       <div class="field">
@@ -217,6 +247,13 @@
           <button type="button" class="btn btn-small btn-import" onclick="openImportModal('editEmployeeList')">📋 นำเข้าจาก Excel</button>
         </div>
         <textarea id="editEmployeeList"></textarea>
+      </div>
+      <div class="field">
+        <div class="fuel-price-header">
+          <span class="fuel-price-title">⛽ ราคาน้ำมันแก๊สโซฮอล์ 91 รายวัน + ใบเสร็จ</span>
+          <a class="fuel-price-link" href="https://gasprice.kapook.com" target="_blank" rel="noopener">🔗 เช็กราคาน้ำมันย้อนหลัง (gasprice.kapook.com)</a>
+        </div>
+        <div id="editFuelPricesContainer"><div class="hint">กรุณาเลือกวันที่เริ่ม Event ก่อน เพื่อกรอกราคาน้ำมันรายวัน</div></div>
       </div>
       <button class="btn" id="editSaveBtn" onclick="saveEditEvent()">💾 บันทึกการแก้ไข</button>
     </div>
@@ -475,6 +512,141 @@ function toggleSelectAllFiltered(checked){
 let allEvents = [];
 let rosterCache = {};
 
+/* ===================================================================
+   ⛽ DYNAMIC DAILY FUEL PRICE + RECEIPT INPUTS
+   Renders one price+receipt row per day in the event's date range, for
+   both the Create and Edit event forms. State is kept in a plain object
+   keyed by ISO date ('YYYY-MM-DD') so it survives adding/removing days
+   at the edges of the range without losing anything already typed.
+=================================================================== */
+let createFuelPrices = {}; // date -> { price, receipt: null | {base64,fileName,mimeType,isExisting?,existingUrl?} }
+let editFuelPrices = {};
+
+function fuelStateFor(mode){ return mode === 'create' ? createFuelPrices : editFuelPrices; }
+
+// Builds the inclusive list of ISO dates between start and end (end
+// defaults to start for single-day events).
+function dateRangeArray(start, end){
+  if(!start) return [];
+  const s = new Date(start + 'T00:00:00');
+  if(isNaN(s)) return [];
+  const e = end ? new Date(end + 'T00:00:00') : s;
+  const endD = isNaN(e) ? s : e;
+  const days = [];
+  const cur = new Date(s);
+  let guard = 0;
+  while(cur <= endD && guard < 366){ // 366-day guard against bad ranges
+    days.push(cur.toISOString().slice(0,10));
+    cur.setDate(cur.getDate() + 1);
+    guard++;
+  }
+  return days;
+}
+
+function renderFuelInputs(mode){
+  const startId = mode === 'create' ? 'startDate' : 'editStartDate';
+  const endId = mode === 'create' ? 'endDate' : 'editEndDate';
+  const containerId = mode === 'create' ? 'fuelPricesContainer' : 'editFuelPricesContainer';
+  const container = document.getElementById(containerId);
+  if(!container) return;
+
+  const startEl = document.getElementById(startId);
+  const endEl = document.getElementById(endId);
+  const start = startEl ? startEl.value : '';
+  const end = endEl ? endEl.value : '';
+  const days = dateRangeArray(start, end);
+  const stateObj = fuelStateFor(mode);
+
+  if(days.length === 0){
+    container.innerHTML = '<div class="hint">กรุณาเลือกวันที่เริ่ม Event ก่อน เพื่อกรอกราคาน้ำมันรายวัน</div>';
+    return;
+  }
+
+  container.innerHTML = days.map((d, idx) => {
+    const entry = stateObj[d] || { price:'', receipt:null };
+    const thumb = entry.receipt
+      ? `<div class="fuel-preview-list"><span class="fuel-thumb">${entry.receipt.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${entry.receipt.base64}"><span class="rm" onclick="removeFuelReceipt('${mode}','${d}')">✕</span></span></div>`
+      : '';
+    return `
+      <div class="fuel-day-row">
+        <div class="fuel-day-label">วันที่ ${idx+1}: ${d}</div>
+        <div class="grid2">
+          <div>
+            <label>ราคาแก๊สโซฮอล์ 91 (บาท/ลิตร)</label>
+            <input type="number" step="0.01" min="0" placeholder="เช่น 34.57" value="${entry.price !== '' && entry.price !== undefined ? entry.price : ''}"
+              oninput="updateFuelPriceValue('${mode}','${d}',this.value)">
+          </div>
+          <div>
+            <label>แนบใบเสร็จราคาน้ำมันวันนี้</label>
+            <input type="file" accept="image/*" onchange="handleFuelReceiptFile(event,'${mode}','${d}')">
+          </div>
+        </div>
+        ${thumb}
+      </div>`;
+  }).join('');
+}
+
+function updateFuelPriceValue(mode, date, value){
+  const stateObj = fuelStateFor(mode);
+  if(!stateObj[date]) stateObj[date] = { price:'', receipt:null };
+  stateObj[date].price = value;
+}
+
+function handleFuelReceiptFile(evt, mode, date){
+  const file = evt.target.files && evt.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const stateObj = fuelStateFor(mode);
+    if(!stateObj[date]) stateObj[date] = { price:'', receipt:null };
+    stateObj[date].receipt = { base64: e.target.result, fileName: file.name, mimeType: file.type };
+    renderFuelInputs(mode);
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeFuelReceipt(mode, date){
+  const stateObj = fuelStateFor(mode);
+  if(stateObj[date]) stateObj[date].receipt = null;
+  renderFuelInputs(mode);
+}
+
+// Converts the in-memory fuel-price state into the payload shape the
+// backend expects — existing (unchanged) receipts are sent back as
+// {isExisting:true, existingUrl} so the server never re-uploads or drops
+// them; freshly picked files are sent as raw Base64.
+function collectFuelPricesPayload(mode){
+  const stateObj = fuelStateFor(mode);
+  return Object.keys(stateObj).map(date => {
+    const entry = stateObj[date];
+    let receipt = null;
+    if(entry.receipt){
+      receipt = entry.receipt.isExisting
+        ? { isExisting:true, existingUrl: entry.receipt.existingUrl }
+        : { base64: entry.receipt.base64, fileName: entry.receipt.fileName, mimeType: entry.receipt.mimeType };
+    }
+    return { date, price: parseFloat(entry.price) || 0, receipt };
+  }).filter(fp => fp.price > 0 || fp.receipt);
+}
+
+// Loads previously-saved fuel prices/receipts (from apiGetEventInfo) back
+// into the edit form's state so nothing already uploaded is ever lost —
+// each receipt is tagged isExisting + existingUrl so a re-save keeps
+// pointing at the same Drive file instead of re-uploading a duplicate.
+function loadFuelPricesIntoState(mode, fuelPrices){
+  const stateObj = fuelStateFor(mode);
+  Object.keys(stateObj).forEach(k => delete stateObj[k]);
+  (fuelPrices || []).forEach(fp => {
+    if(!fp || !fp.date) return;
+    stateObj[fp.date] = {
+      price: fp.price || '',
+      receipt: (fp.receiptImage && fp.receiptImage.base64)
+        ? { base64: fp.receiptImage.base64, fileName: fp.receiptImage.fileName, mimeType: fp.receiptImage.mimeType, isExisting:true, existingUrl: fp.receiptUrl }
+        : null
+    };
+  });
+}
+
 // ---------- Date helper: normalize any date value coming back from the
 // backend (ISO string, dd/MM/yyyy, dd/MM/yyyy in Buddhist Era, or a raw
 // Date-like value) into the strict YYYY-MM-DD format required by
@@ -624,13 +796,16 @@ async function toggleRoster(eventId, i){
     const isEdit = r.status && r.status.startsWith('มีการแก้ไข');
     const dot = !r.submitted ? 'dot-grey' : (isEdit ? 'dot-orange' : 'dot-green');
     const cls = !r.submitted ? 'status-pending' : (isEdit ? 'status-edit' : 'status-new');
+    const canExport = r.submitted && r.pdfUrl;
     return `
     <tr>
+      <td class="roster-check-col">${canExport ? `<input type="checkbox" class="roster-check" data-pdf-url="${escapeAttr(r.pdfUrl)}" data-name="${escapeAttr(r.employeeName)}">` : ''}</td>
       <td><span class="dot ${dot}"></span><span class="${cls}">${r.status || 'รอส่งเอกสาร'}</span></td>
       <td>${r.employeeName}</td>
       <td>${r.department||'-'}</td>
+      <td>${r.submitted ? (r.claimedDays||0) + ' วัน' : '-'}</td>
       <td>${r.submitted ? Number(r.totalAmount).toLocaleString('th-TH',{minimumFractionDigits:2})+' บาท' : '-'}</td>
-      <td>${r.submitted && r.pdfUrl ? `<a class="pdf-link" href="${r.pdfUrl}" target="_blank">เปิดเอกสาร ↗</a>` : '-'}</td>
+      <td>${canExport ? `<a class="pdf-link" href="${r.pdfUrl}" target="_blank">เปิดเอกสาร ↗</a>` : '-'}</td>
     </tr>`;
   }).join('');
 
@@ -641,17 +816,80 @@ async function toggleRoster(eventId, i){
       <span>🟡 มีการแก้ไข ${editedCount}</span>
       <span>⚪ ยังไม่ส่ง ${pendingCount}</span>
     </div>
+    <div class="roster-bulk-bar">
+      <label class="roster-select-all">
+        <input type="checkbox" onchange="toggleAllRosterChecks(this, ${i})">
+        เลือกทั้งหมด (Select All)
+      </label>
+      <button class="btn btn-small bulk-zip-btn" onclick="bulkExportSelectedPdfs('${eventId}', ${i})">📦 ดาวน์โหลด PDF ที่เลือกเป็น ZIP</button>
+    </div>
     <table>
-      <thead><tr><th>สถานะ</th><th>ชื่อ-นามสกุล</th><th>แผนก</th><th>ยอดเงิน</th><th>PDF File</th></tr></thead>
+      <thead><tr><th class="roster-check-col"></th><th>สถานะ</th><th>ชื่อ-นามสกุล</th><th>แผนก</th><th>จำนวนวันที่เบิก</th><th>ยอดเงิน</th><th>PDF File</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
       <tfoot>
         <tr class="roster-total-row" style="font-weight:700; border-top:2px solid var(--line);">
+          <td></td>
           <td colspan="3" style="text-align:right;">ยอดรวมทั้งสิ้น (Grand Total)</td>
           <td>${grandTotal.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท</td>
           <td></td>
         </tr>
       </tfoot>
     </table>`;
+}
+
+function toggleAllRosterChecks(checkboxEl, i){
+  const panel = document.getElementById('roster-'+i);
+  if(!panel) return;
+  panel.querySelectorAll('.roster-check').forEach(cb => { cb.checked = checkboxEl.checked; });
+}
+
+async function bulkExportSelectedPdfs(eventId, i){
+  const panel = document.getElementById('roster-'+i);
+  if(!panel) return;
+  const checked = Array.from(panel.querySelectorAll('.roster-check:checked'));
+  if(checked.length === 0){
+    showToast('⚠️ กรุณาเลือกสตาฟอย่างน้อย 1 คนก่อนดาวน์โหลด', 'err');
+    return;
+  }
+
+  const btn = panel.querySelector('.bulk-zip-btn');
+  const originalText = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ กำลังรวมไฟล์ PDF...'; }
+
+  try{
+    const zip = new JSZip();
+    const usedNames = new Set();
+    let successCount = 0;
+
+    for(const cb of checked){
+      const url = cb.dataset.pdfUrl;
+      const rawName = (cb.dataset.name || 'พนักงาน').replace(/[\\/:*?"<>|]/g,'_');
+      if(!url) continue;
+      const res = await callApi('getFileBase64', {url});
+      if(res && res.ok && res.base64){
+        let fileName = rawName + '.pdf';
+        let n = 2;
+        while(usedNames.has(fileName)){ fileName = `${rawName} (${n}).pdf`; n++; }
+        usedNames.add(fileName);
+        const base64Data = res.base64.split(',')[1] || res.base64;
+        zip.file(fileName, base64Data, {base64:true});
+        successCount++;
+      }
+    }
+
+    if(successCount === 0){
+      showToast('❌ ไม่พบไฟล์ PDF ที่ดาวน์โหลดได้', 'err');
+      return;
+    }
+
+    const blob = await zip.generateAsync({type:'blob'});
+    saveAs(blob, `เอกสารเบิกค่าเดินทาง_${eventId}.zip`);
+    showToast(`✅ ดาวน์โหลด ZIP สำเร็จ (${successCount}/${checked.length} ไฟล์)`, 'ok');
+  }catch(err){
+    showToast('❌ สร้าง ZIP ไม่สำเร็จ: ' + err, 'err');
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = originalText; }
+  }
 }
 
 function parseEmployees(text){
@@ -964,7 +1202,8 @@ async function createNewEvent(){
   btn.textContent = 'กำลังสร้าง...';
 
   try{
-    const res = await callApi('createEvent', {eventName, ownerName, venue, startDate, endDate, employees});
+    const fuelPrices = collectFuelPricesPayload('create');
+    const res = await callApi('createEvent', {eventName, ownerName, venue, startDate, endDate, employees, fuelPrices});
     if(!res.ok){ msg.textContent = res.error; msg.style.display='block'; return; }
 
     document.getElementById('eventName').value = '';
@@ -973,6 +1212,8 @@ async function createNewEvent(){
     document.getElementById('startDate').value = '';
     document.getElementById('endDate').value = '';
     document.getElementById('employeeList').value = '';
+    createFuelPrices = {};
+    renderFuelInputs('create');
 
     await loadEvents();
     showListView();
@@ -1006,12 +1247,27 @@ function editEvent(eventId){
   document.getElementById('editStartDate').value = toISODate(ev.startDate);
   document.getElementById('editEndDate').value = toISODate(ev.endDate);
 
+  editFuelPrices = {};
+  const fuelContainer = document.getElementById('editFuelPricesContainer');
+  if(fuelContainer) fuelContainer.innerHTML = '<div class="hint">กำลังโหลดราคาน้ำมัน...</div>';
+
   const empListEl = document.getElementById('editEmployeeList');
   empListEl.value = '';
   empListEl.disabled = true;
   empListEl.placeholder = 'กำลังโหลดรายชื่อ...';
 
   showEditViewEl();
+
+  callApi('getEventInfo', {eventId}).then(res=>{
+    if(myRequestToken !== editRequestToken) return;
+    if(res.ok){
+      loadFuelPricesIntoState('edit', res.fuelPrices);
+    }
+    renderFuelInputs('edit');
+  }).catch(()=>{
+    if(myRequestToken !== editRequestToken) return;
+    renderFuelInputs('edit');
+  });
 
   callApi('getEventRoster', {eventId}).then(res=>{
     // A newer edit request has since started — discard this stale result.
@@ -1058,12 +1314,14 @@ async function saveEditEvent(){
   btn.textContent = '⏳ กำลังบันทึก...';
 
   try{
+    const fuelPrices = collectFuelPricesPayload('edit');
     const res = await callApi('updateEvent', {
-      eventId: editingEventId, eventName, ownerName, venue, startDate, endDate, employees
+      eventId: editingEventId, eventName, ownerName, venue, startDate, endDate, employees, fuelPrices
     });
 
     if(res.ok){
       delete rosterCache[editingEventId];
+      editFuelPrices = {};
       await loadEvents();
       showListView();
       showToast('✅ บันทึกการแก้ไขสำเร็จ', 'ok');
