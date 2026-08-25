@@ -9,7 +9,9 @@
 const SHEET_EVENTS = 'Events';
 const SHEET_SUBMISSIONS = 'Submissions';
 const SHEET_EVENT_EMPLOYEES = 'EventEmployees';
+const SHEET_EVENT_FUEL_PRICES = 'EventFuelPrices';
 const DRIVE_FOLDER_NAME = 'EventExpenseTracker_Files';
+const FUEL_RECEIPTS_SUBFOLDER_NAME = 'Fuel_Receipts';
 
 // ---------- SETUP ----------
 function setupSheets() {
@@ -38,6 +40,16 @@ function setupSheets() {
     'event_id', 'employee_name', 'department'
   ]);
 
+  ensureSheet(SHEET_EVENT_FUEL_PRICES, [
+    'event_id', 'date', 'price', 'receipt_url'
+  ]);
+  // Force the 'date' column to stay plain text (YYYY-MM-DD) — otherwise
+  // Sheets auto-converts date-looking strings into Date serials, which
+  // breaks the simple lexicographic date comparisons used for the
+  // "closest previous date" fuel-price fallback in form.html.
+  const fpSheet = ss.getSheetByName(SHEET_EVENT_FUEL_PRICES);
+  fpSheet.getRange('B2:B').setNumberFormat('@');
+
   getOrCreateDriveFolder();
   Logger.log('Setup complete.');
 }
@@ -46,6 +58,29 @@ function getOrCreateDriveFolder() {
   const folders = DriveApp.getFoldersByName(DRIVE_FOLDER_NAME);
   if (folders.hasNext()) return folders.next();
   return DriveApp.createFolder(DRIVE_FOLDER_NAME);
+}
+
+// ---------- Per-event Drive folder structure ----------
+// Root ("EventExpenseTracker_Files")
+//   └── <event folder, e.g. "EV-2026-ABCD1234 - อบรมการตลาด">   <- travel receipts + PDFs live here (unchanged location)
+//         └── "Fuel_Receipts"                                    <- NEW: daily fuel price receipt images live here, kept
+//                                                                    separate from travel receipt images
+function getOrCreateSubfolder_(parentFolder, name) {
+  const it = parentFolder.getFoldersByName(name);
+  if (it.hasNext()) return it.next();
+  return parentFolder.createFolder(name);
+}
+
+function getOrCreateEventFolder(eventId, eventName) {
+  const root = getOrCreateDriveFolder();
+  const safeEventName = String(eventName || '').replace(/[\\/:*?"<>|]/g, '_').trim();
+  const folderName = safeEventName ? (eventId + ' - ' + safeEventName) : eventId;
+  return getOrCreateSubfolder_(root, folderName);
+}
+
+function getOrCreateFuelReceiptsFolder(eventId, eventName) {
+  const eventFolder = getOrCreateEventFolder(eventId, eventName);
+  return getOrCreateSubfolder_(eventFolder, FUEL_RECEIPTS_SUBFOLDER_NAME);
 }
 
 // ---------- SAFE SCHEMA MIGRATION ----------
@@ -149,6 +184,8 @@ function routeAction(action, payload) {
       return apiGetMySubmission(payload);
     case 'getFuelPrice':
       return apiGetFuelPrice();
+    case 'getFileBase64':
+      return apiGetFileAsBase64(payload);
     default:
       return { ok: false, error: 'ไม่พบ Action ที่ระบุ: ' + action };
   }
@@ -188,6 +225,24 @@ function dateStr(d) {
   if (!d) return '';
   if (typeof d === 'string') return d;
   return Utilities.formatDate(d, 'GMT+7', 'dd/MM/yyyy');
+}
+
+// Normalizes any date value (plain 'YYYY-MM-DD' string, a Date object that
+// Sheets may have auto-parsed despite the '@' text format, or anything else)
+// into a strict 'YYYY-MM-DD' string. Used for the fuel-price table so dates
+// can be compared/matched with simple lexicographic string comparisons.
+function isoDateStr(d) {
+  if (!d) return '';
+  if (d instanceof Date) {
+    if (isNaN(d)) return '';
+    return Utilities.formatDate(d, 'GMT+7', 'yyyy-MM-dd');
+  }
+  const str = String(d).trim();
+  let m = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+  const parsed = new Date(str);
+  if (!isNaN(parsed)) return Utilities.formatDate(parsed, 'GMT+7', 'yyyy-MM-dd');
+  return str;
 }
 
 function safeSetPublicSharing(file) {
@@ -235,6 +290,83 @@ function driveFileToBase64Attachment_(url) {
   }
 }
 
+// ---------- Daily fuel price + receipt persistence ----------
+// payload.fuelPrices shape (per day): {
+//   date: 'YYYY-MM-DD',
+//   price: number,
+//   receipt: null
+//        | { isExisting:true, existingUrl:'<drive url>' }   <- previously uploaded, keep as-is (never re-uploaded)
+//        | { base64:'data:image/...;base64,...', fileName, mimeType }  <- freshly picked file to upload
+// }
+// Mirrors the isExisting/existingUrl pattern already used for travel-
+// receipt attachments in apiSubmitExpense, so editing an event never
+// silently deletes or re-encodes a fuel receipt that wasn't touched.
+function saveFuelPrices_(eventId, eventName, fuelPrices) {
+  const sheet = getSheet(SHEET_EVENT_FUEL_PRICES);
+  if (!sheet) return;
+
+  // Replace this event's price rows wholesale — safe because every row we
+  // write below either keeps the receipt's existing Drive URL untouched or
+  // uploads a fresh one; nothing is ever silently dropped unless the client
+  // omitted that date/receipt on purpose (i.e. the user removed it in the UI).
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('event_id');
+  const rowsToDelete = [];
+  for (let r = 1; r < data.length; r++) {
+    if (data[r][idCol] === eventId) rowsToDelete.push(r + 1);
+  }
+  rowsToDelete.reverse().forEach(r => sheet.deleteRow(r));
+
+  if (!Array.isArray(fuelPrices) || fuelPrices.length === 0) return;
+
+  let fuelFolder = null; // lazily created — only if we actually need to upload a new receipt
+
+  fuelPrices.forEach(fp => {
+    if (!fp || !fp.date) return;
+    let receiptUrl = '';
+
+    if (fp.receipt) {
+      if (fp.receipt.isExisting && fp.receipt.existingUrl) {
+        receiptUrl = fp.receipt.existingUrl;
+      } else if (fp.receipt.base64) {
+        try {
+          if (!fuelFolder) fuelFolder = getOrCreateFuelReceiptsFolder(eventId, eventName);
+          const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/.exec(fp.receipt.base64);
+          const mime = match ? match[1] : 'image/jpeg';
+          const dataPart = match ? match[2] : fp.receipt.base64;
+          const ext = (mime.split('/')[1] || 'jpg');
+          const blob = Utilities.newBlob(
+            Utilities.base64Decode(dataPart), mime,
+            'fuel_' + eventId + '_' + fp.date + '.' + ext
+          );
+          const file = fuelFolder.createFile(blob);
+          safeSetPublicSharing(file);
+          receiptUrl = file.getUrl();
+        } catch (err) {
+          Logger.log('Fuel receipt save error (' + fp.date + '): ' + err.toString());
+        }
+      }
+    }
+
+    sheet.appendRow([eventId, String(fp.date), Number(fp.price) || 0, receiptUrl]);
+  });
+}
+
+function getEventFuelPrices_(eventId) {
+  const rows = sheetToObjects(getSheet(SHEET_EVENT_FUEL_PRICES)).filter(x => x.event_id === eventId);
+  return rows.map(fp => {
+    const receiptUrl = fp.receipt_url || '';
+    const receiptImage = receiptUrl ? driveFileToBase64Attachment_(receiptUrl) : null;
+    return {
+      date: isoDateStr(fp.date),
+      price: Number(fp.price) || 0,
+      receiptUrl: receiptUrl,
+      receiptImage: receiptImage
+    };
+  }).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 // ---------- API: สร้างกิจกรรมใหม่ ----------
 function apiCreateEvent(payload) {
   if (!payload || !payload.eventName || !payload.ownerName) {
@@ -267,6 +399,8 @@ function apiCreateEvent(payload) {
       empSheet.appendRow([eventId, String(emp.name).trim(), String(emp.department || '').trim()]);
     });
   }
+
+  saveFuelPrices_(eventId, payload.eventName, payload.fuelPrices);
 
   return {
     ok: true,
@@ -324,6 +458,13 @@ function apiUpdateEvent(payload) {
     });
   }
 
+  // Photo persistence guarantee: saveFuelPrices_ only re-uploads receipts
+  // flagged as freshly-picked (fp.receipt.base64); anything flagged
+  // isExisting/existingUrl keeps pointing at its original Drive file, so
+  // editing the event never drops previously uploaded fuel receipts unless
+  // the client omitted them on purpose (user removed them in the UI).
+  saveFuelPrices_(payload.eventId, payload.eventName, payload.fuelPrices);
+
   return { ok: true, eventId: payload.eventId };
 }
 
@@ -369,7 +510,12 @@ function apiGetEventInfo(payload) {
       eventId: ev.event_id, eventName: ev.event_name, ownerName: ev.owner_name, venue: ev.venue || '',
       startDate: dateStr(ev.start_date), endDate: dateStr(ev.end_date)
     },
-    employees: employees
+    employees: employees,
+    // Per-day Gasohol 91 price + (if any) its receipt image, pre-fetched as
+    // Base64 — used by index.html to pre-populate the edit form, and by
+    // form.html both for the personal-vehicle auto-calculation and for
+    // attaching the day's fuel receipt into the generated PDF.
+    fuelPrices: getEventFuelPrices_(eventId)
   };
 }
 
@@ -385,19 +531,34 @@ function apiGetEventRoster(payload) {
   const roster = sheetToObjects(getSheet(SHEET_EVENT_EMPLOYEES)).filter(x => x.event_id === eventId);
   const submissions = sheetToObjects(getSheet(SHEET_SUBMISSIONS)).filter(s => s.event_id === eventId);
 
+  // จำนวนวันที่เบิก (Claimed Days Count) — number of unique travel dates
+  // found across that staff member's submitted trip details.
+  function countClaimedDays_(sub) {
+    if (!sub || !sub.trip_details_json) return 0;
+    try {
+      const details = JSON.parse(sub.trip_details_json);
+      const dates = new Set();
+      (details.trips || []).forEach(t => { if (t.date) dates.add(String(t.date)); });
+      return dates.size;
+    } catch (err) {
+      return 0;
+    }
+  }
+
   const rows = roster.map(emp => {
     const sub = submissions.find(s => String(s.employee_name).trim() === String(emp.employee_name).trim());
     if (!sub) {
       return {
         employeeName: emp.employee_name, department: emp.department,
         submitted: false, status: 'ยังไม่ส่งเอกสาร', updatedAt: '', totalAmount: 0,
-        pdfUrl: '', summaryText: ''
+        pdfUrl: '', summaryText: '', claimedDays: 0
       };
     }
     return {
       employeeName: emp.employee_name, department: emp.department,
       submitted: true, status: sub.submission_status, updatedAt: sub.updated_at,
-      totalAmount: Number(sub.total_amount) || 0, pdfUrl: sub.pdf_file_url, summaryText: sub.summary_text
+      totalAmount: Number(sub.total_amount) || 0, pdfUrl: sub.pdf_file_url, summaryText: sub.summary_text,
+      claimedDays: countClaimedDays_(sub)
     };
   });
 
@@ -422,7 +583,10 @@ function apiSubmitExpense(payload) {
   const ev = events.find(e => e.event_id === payload.eventId);
   if (!ev) return { ok: false, error: 'ไม่พบกิจกรรมนี้ในระบบ' };
 
-  const folder = getOrCreateDriveFolder();
+  // Travel-receipt images & the generated PDF live directly inside this
+  // event's own folder (kept apart from daily fuel-price receipts, which
+  // are filed under that event folder's "Fuel_Receipts" subfolder instead).
+  const folder = getOrCreateEventFolder(payload.eventId, ev.event_name);
 
   // 1. บันทึกไฟล์ PDF เอกสารเบิกเงินลง Drive (ทำก่อนล็อก เพราะ Drive I/O ใช้เวลานาน)
   let pdfUrl = '';
@@ -581,6 +745,19 @@ function apiGetMySubmission(payload) {
       updatedAt: sub.updated_at
     }
   };
+}
+
+// ---------- API: ดึงไฟล์ใดๆ ใน Drive กลับมาเป็น Base64 ----------
+// Used by index.html's bulk "PDF -> ZIP" export: fetching a Drive share
+// link directly from the browser returns an HTML viewer page (not the raw
+// file bytes) and is blocked by CORS anyway, so the client asks the backend
+// to read the file server-side and hand back ready-to-embed Base64 instead.
+// Reuses the same helper already trusted for receipt-image previews.
+function apiGetFileAsBase64(payload) {
+  if (!payload || !payload.url) return { ok: false, error: 'ไม่ได้ระบุ URL ไฟล์' };
+  const att = driveFileToBase64Attachment_(payload.url);
+  if (!att) return { ok: false, error: 'ไม่สามารถอ่านไฟล์นี้ได้ (อาจถูกลบ หรือไม่มีสิทธิ์เข้าถึง)' };
+  return { ok: true, base64: att.base64, fileName: att.fileName, mimeType: att.mimeType };
 }
 
 // ---------- API: ราคาน้ำมันอ้างอิง ----------
