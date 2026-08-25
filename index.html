@@ -572,6 +572,20 @@ function fuelStateFor(mode){ return mode === 'create' ? createFuelPrices : editF
 function bufferDatesFor(mode){ return mode === 'create' ? createBufferDates : editBufferDates; }
 function setBufferDatesFor(mode, arr){ if(mode === 'create') createBufferDates = arr; else editBufferDates = arr; }
 
+// Formats a Date object as a LOCAL calendar date string (YYYY-MM-DD),
+// using getFullYear/getMonth/getDate rather than toISOString(). This
+// matters because toISOString() converts to UTC first — in a UTC+ timezone
+// (e.g. Thailand, UTC+7), local midnight on "Aug 24" becomes "Aug 23,
+// 17:00 UTC", so .toISOString().slice(0,10) silently produced the WRONG
+// day (one day too early). Every date the fuel-price baseline works with
+// is a local calendar date, never a UTC timestamp, so it must always be
+// formatted this way.
+function localISODate(d){
+  if(!(d instanceof Date) || isNaN(d)) return '';
+  const y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+  return `${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+}
+
 // Builds the inclusive list of ISO dates between start and end (end
 // defaults to start for single-day events). This is the MANDATORY
 // baseline — every one of these dates always gets a fuel-price row,
@@ -587,7 +601,7 @@ function dateRangeArray(start, end){
   const cur = new Date(s);
   let guard = 0;
   while(cur <= endD && guard < 366){ // 366-day guard against bad ranges
-    days.push(cur.toISOString().slice(0,10));
+    days.push(localISODate(cur));
     cur.setDate(cur.getDate() + 1);
     guard++;
   }
@@ -612,7 +626,7 @@ function addBufferFuelDate(mode){
   const earliest = [...buffers, ...mandatoryDays].sort()[0] || start;
   const d = new Date(earliest + 'T00:00:00');
   d.setDate(d.getDate() - 1);
-  const newDate = d.toISOString().slice(0,10);
+  const newDate = localISODate(d);
   if(buffers.includes(newDate) || mandatoryDays.includes(newDate)) return;
   buffers.push(newDate);
   setBufferDatesFor(mode, buffers);
@@ -654,7 +668,7 @@ function renderFuelInputs(mode){
   setBufferDatesFor(mode, buffers);
   const allDays = [...buffers, ...mandatoryDays].sort();
 
-  const addBufferBtnHtml = `<button type="button" class="btn btn-small btn-outline btn-add-buffer" onclick="addBufferFuelDate('${mode}')">➕ เพิ่มวันที่ก่อนหน้า (บัฟเฟอร์ - ไม่บังคับ)</button>`;
+  const addBufferBtnHtml = `<button type="button" class="btn btn-small btn-outline btn-add-buffer" onclick="addBufferFuelDate('${mode}')">+ เพิ่มวันเดินทางก่อนหน้า</button>`;
 
   container.innerHTML = addBufferBtnHtml + allDays.map((d, idx) => {
     const isBuffer = !mandatorySet.has(d);
