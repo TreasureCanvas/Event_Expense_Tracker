@@ -139,6 +139,20 @@
   .roster-select-all input{width:auto;}
   th.roster-check-col, td.roster-check-col{width:28px;}
   td.roster-check-col input{width:auto;}
+
+  /* ===== 🔍 Image preview lightbox ===== */
+  .view-img-link{font-size:11.5px; color:var(--brand); font-weight:600; text-decoration:none; cursor:pointer; white-space:nowrap; background:none; border:none; padding:0;}
+  .view-img-link:hover{text-decoration:underline;}
+  .lightbox-overlay{display:none; position:fixed; inset:0; background:rgba(10,12,9,.82); z-index:2000; align-items:center; justify-content:center; padding:24px; cursor:zoom-out;}
+  .lightbox-overlay.show{display:flex;}
+  .lightbox-overlay img{max-width:100%; max-height:100%; border-radius:8px; box-shadow:0 10px 40px rgba(0,0,0,.4); cursor:default;}
+  .lightbox-close{position:fixed; top:18px; right:22px; background:transparent; border:none; color:#fff; font-size:26px; cursor:pointer; z-index:2001; line-height:1;}
+
+  /* ===== ⛽ Buffer (optional, pre-event) fuel date rows ===== */
+  .fuel-day-mandatory{font-size:10px; color:#fff; background:var(--brand); border-radius:5px; padding:1px 6px; white-space:nowrap; font-weight:700;}
+  .fuel-day-buffer{font-size:10px; color:#8a6d00; background:#fdf3e2; border-radius:5px; padding:1px 6px; white-space:nowrap; font-weight:700;}
+  .fuel-day-remove{cursor:pointer; color:var(--danger); font-weight:700; font-size:13px; margin-left:8px;}
+  .btn-add-buffer{margin-bottom:10px;}
 </style>
 </head>
 <body>
@@ -348,6 +362,12 @@
       </div>
     </div>
   </div>
+
+  <!-- 🔍 Image preview lightbox -->
+  <div class="lightbox-overlay" id="imgLightbox" onclick="closeImageLightbox()">
+    <button type="button" class="lightbox-close" onclick="closeImageLightbox(event)">✕</button>
+    <img id="imgLightboxImg" src="" alt="ตัวอย่างรูปภาพ" onclick="event.stopPropagation()">
+  </div>
 </div>
 
 <script>
@@ -365,6 +385,25 @@ function callApi(action, payload){
 function formLinkFor(eventId){
   // ชี้ไปยัง Vercel Domain ของคุณเสมอ
   return window.location.origin + '/form.html?event=' + encodeURIComponent(eventId);
+}
+
+/* ===================================================================
+   🔍 IMAGE PREVIEW LIGHTBOX
+   Shared modal used to inspect any previously-uploaded image (travel
+   receipts, daily fuel-price receipts) at full size, without leaving
+   the Edit Event / Edit Claim view.
+=================================================================== */
+function openImageLightbox(src){
+  if(!src) return;
+  document.getElementById('imgLightboxImg').src = src;
+  document.getElementById('imgLightbox').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeImageLightbox(evt){
+  if(evt) evt.stopPropagation();
+  document.getElementById('imgLightbox').classList.remove('show');
+  document.getElementById('imgLightboxImg').src = '';
+  document.body.style.overflow = '';
 }
 
 function showListView(){
@@ -522,10 +561,22 @@ let rosterCache = {};
 let createFuelPrices = {}; // date -> { price, receipt: null | {base64,fileName,mimeType,isExisting?,existingUrl?} }
 let editFuelPrices = {};
 
+// Extra "buffer" dates the admin has manually added, BEFORE the mandatory
+// event start date (e.g. a travel day before the event officially begins).
+// These are optional and can be removed; they never replace or hide any of
+// the mandatory event-date rows below.
+let createBufferDates = [];
+let editBufferDates = [];
+
 function fuelStateFor(mode){ return mode === 'create' ? createFuelPrices : editFuelPrices; }
+function bufferDatesFor(mode){ return mode === 'create' ? createBufferDates : editBufferDates; }
+function setBufferDatesFor(mode, arr){ if(mode === 'create') createBufferDates = arr; else editBufferDates = arr; }
 
 // Builds the inclusive list of ISO dates between start and end (end
-// defaults to start for single-day events).
+// defaults to start for single-day events). This is the MANDATORY
+// baseline — every one of these dates always gets a fuel-price row,
+// with no way to remove it, so the event's exact date range (e.g.
+// Aug 24–26) is always represented by default.
 function dateRangeArray(start, end){
   if(!start) return [];
   const s = new Date(start + 'T00:00:00');
@@ -543,6 +594,40 @@ function dateRangeArray(start, end){
   return days;
 }
 
+// Adds one optional "buffer" date immediately before the earliest date
+// currently shown (mandatory or already-added buffer) — lets the admin
+// cover travel that happened the day(s) before the event officially
+// started. Buffer dates are never mandatory and can be removed again.
+function addBufferFuelDate(mode){
+  const startId = mode === 'create' ? 'startDate' : 'editStartDate';
+  const endId = mode === 'create' ? 'endDate' : 'editEndDate';
+  const start = document.getElementById(startId) ? document.getElementById(startId).value : '';
+  if(!start){
+    showToast('⚠️ กรุณาเลือกวันที่เริ่ม Event ก่อน', 'err');
+    return;
+  }
+  const end = document.getElementById(endId) ? document.getElementById(endId).value : '';
+  const mandatoryDays = dateRangeArray(start, end);
+  const buffers = bufferDatesFor(mode);
+  const earliest = [...buffers, ...mandatoryDays].sort()[0] || start;
+  const d = new Date(earliest + 'T00:00:00');
+  d.setDate(d.getDate() - 1);
+  const newDate = d.toISOString().slice(0,10);
+  if(buffers.includes(newDate) || mandatoryDays.includes(newDate)) return;
+  buffers.push(newDate);
+  setBufferDatesFor(mode, buffers);
+  renderFuelInputs(mode);
+}
+
+// Removes a previously-added optional buffer date (mandatory event-date
+// rows have no remove control and can never be deleted this way).
+function removeBufferFuelDate(mode, date){
+  setBufferDatesFor(mode, bufferDatesFor(mode).filter(d => d !== date));
+  const stateObj = fuelStateFor(mode);
+  delete stateObj[date];
+  renderFuelInputs(mode);
+}
+
 function renderFuelInputs(mode){
   const startId = mode === 'create' ? 'startDate' : 'editStartDate';
   const endId = mode === 'create' ? 'endDate' : 'editEndDate';
@@ -554,27 +639,41 @@ function renderFuelInputs(mode){
   const endEl = document.getElementById(endId);
   const start = startEl ? startEl.value : '';
   const end = endEl ? endEl.value : '';
-  const days = dateRangeArray(start, end);
+  const mandatoryDays = dateRangeArray(start, end); // MUST always be generated, by default, from the Event Start Date
   const stateObj = fuelStateFor(mode);
 
-  if(days.length === 0){
+  if(mandatoryDays.length === 0){
     container.innerHTML = '<div class="hint">กรุณาเลือกวันที่เริ่ม Event ก่อน เพื่อกรอกราคาน้ำมันรายวัน</div>';
     return;
   }
 
-  container.innerHTML = days.map((d, idx) => {
+  // De-duplicate buffer dates against the mandatory range (a buffer date
+  // that now falls inside the event's own range is redundant).
+  const mandatorySet = new Set(mandatoryDays);
+  const buffers = bufferDatesFor(mode).filter(d => !mandatorySet.has(d));
+  setBufferDatesFor(mode, buffers);
+  const allDays = [...buffers, ...mandatoryDays].sort();
+
+  const addBufferBtnHtml = `<button type="button" class="btn btn-small btn-outline btn-add-buffer" onclick="addBufferFuelDate('${mode}')">➕ เพิ่มวันที่ก่อนหน้า (บัฟเฟอร์ - ไม่บังคับ)</button>`;
+
+  container.innerHTML = addBufferBtnHtml + allDays.map((d, idx) => {
+    const isBuffer = !mandatorySet.has(d);
     const entry = stateObj[d] || { price:'', receipt:null };
     const thumb = entry.receipt
-      ? `<div class="fuel-preview-list"><span class="fuel-thumb">${entry.receipt.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${entry.receipt.base64}"><span class="rm" onclick="removeFuelReceipt('${mode}','${d}')">✕</span></span></div>`
+      ? `<div class="fuel-preview-list"><span class="fuel-thumb">${entry.receipt.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${entry.receipt.base64}"><button type="button" class="view-img-link" onclick="openImageLightbox('${entry.receipt.base64}')">🔍 ดูรูปภาพ</button><span class="rm" onclick="removeFuelReceipt('${mode}','${d}')">✕</span></span></div>`
       : '';
     return `
       <div class="fuel-day-row">
-        <div class="fuel-day-label">วันที่ ${idx+1}: ${d}</div>
+        <div class="fuel-day-label">วันที่ ${idx+1}: ${d}
+          ${isBuffer ? '<span class="fuel-day-buffer">บัฟเฟอร์ / ไม่บังคับ</span>' : '<span class="fuel-day-mandatory">วัน Event / จำเป็น</span>'}
+          ${isBuffer ? `<span class="fuel-day-remove" title="ลบวันบัฟเฟอร์นี้" onclick="removeBufferFuelDate('${mode}','${d}')">✕</span>` : ''}
+        </div>
         <div class="grid2">
           <div>
             <label>ราคาแก๊สโซฮอล์ 91 (บาท/ลิตร)</label>
             <input type="number" step="0.01" min="0" placeholder="เช่น 34.57" value="${entry.price !== '' && entry.price !== undefined ? entry.price : ''}"
-              oninput="updateFuelPriceValue('${mode}','${d}',this.value)">
+              oninput="updateFuelPriceValue('${mode}','${d}',this.value)"
+              onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : ''; updateFuelPriceValue('${mode}','${d}',this.value);">
           </div>
           <div>
             <label>แนบใบเสร็จราคาน้ำมันวันนี้</label>
@@ -645,6 +744,20 @@ function loadFuelPricesIntoState(mode, fuelPrices){
         : null
     };
   });
+
+  // Any previously-saved date that falls OUTSIDE the event's mandatory
+  // start–end range is a buffer date someone added earlier — restore it
+  // as a buffer row so it keeps showing (and isn't silently lost) instead
+  // of only ever re-appearing if it happens to fall in the mandatory range.
+  const startId = mode === 'create' ? 'startDate' : 'editStartDate';
+  const endId = mode === 'create' ? 'endDate' : 'editEndDate';
+  const start = document.getElementById(startId) ? document.getElementById(startId).value : '';
+  const end = document.getElementById(endId) ? document.getElementById(endId).value : '';
+  const mandatorySet = new Set(dateRangeArray(start, end));
+  const restoredBuffers = (fuelPrices || [])
+    .map(fp => fp && fp.date)
+    .filter(d => d && !mandatorySet.has(d));
+  setBufferDatesFor(mode, restoredBuffers);
 }
 
 // ---------- Date helper: normalize any date value coming back from the
@@ -799,12 +912,12 @@ async function toggleRoster(eventId, i){
     const canExport = r.submitted && r.pdfUrl;
     return `
     <tr>
-      <td class="roster-check-col">${canExport ? `<input type="checkbox" class="roster-check" data-pdf-url="${escapeAttr(r.pdfUrl)}" data-name="${escapeAttr(r.employeeName)}">` : ''}</td>
+      <td class="roster-check-col">${canExport ? `<input type="checkbox" class="roster-check" data-pdf-url="${escapeAttr(r.pdfUrl)}" data-name="${escapeAttr(r.employeeName)}" data-department="${escapeAttr(r.department||'')}">` : ''}</td>
       <td><span class="dot ${dot}"></span><span class="${cls}">${r.status || 'รอส่งเอกสาร'}</span></td>
       <td>${r.employeeName}</td>
       <td>${r.department||'-'}</td>
       <td>${r.submitted ? (r.claimedDays||0) + ' วัน' : '-'}</td>
-      <td>${r.submitted ? Number(r.totalAmount).toLocaleString('th-TH',{minimumFractionDigits:2})+' บาท' : '-'}</td>
+      <td>${r.submitted ? Number(r.totalAmount).toLocaleString('th-TH',{minimumFractionDigits:2, maximumFractionDigits:2})+' บาท' : '-'}</td>
       <td>${canExport ? `<a class="pdf-link" href="${r.pdfUrl}" target="_blank">เปิดเอกสาร ↗</a>` : '-'}</td>
     </tr>`;
   }).join('');
@@ -830,7 +943,7 @@ async function toggleRoster(eventId, i){
         <tr class="roster-total-row" style="font-weight:700; border-top:2px solid var(--line);">
           <td></td>
           <td colspan="3" style="text-align:right;">ยอดรวมทั้งสิ้น (Grand Total)</td>
-          <td>${grandTotal.toLocaleString('th-TH',{minimumFractionDigits:2})} บาท</td>
+          <td>${grandTotal.toLocaleString('th-TH',{minimumFractionDigits:2, maximumFractionDigits:2})} บาท</td>
           <td></td>
         </tr>
       </tfoot>
@@ -856,6 +969,12 @@ async function bulkExportSelectedPdfs(eventId, i){
   const originalText = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = '⏳ กำลังรวมไฟล์ PDF...'; }
 
+  // Naming convention:
+  //   ZIP archive:            เอกสารเบิกค่าเดินทาง_[event_name].zip
+  //   Individual PDF inside:  เอกสารเบิกค่าเดินทาง_[event_name] - [full_name] [department].pdf
+  const ev = allEvents.find(e => e.eventId === eventId);
+  const rawEventName = ((ev && ev.eventName) || eventId).replace(/[\\/:*?"<>|]/g,'_');
+
   try{
     const zip = new JSZip();
     const usedNames = new Set();
@@ -864,12 +983,14 @@ async function bulkExportSelectedPdfs(eventId, i){
     for(const cb of checked){
       const url = cb.dataset.pdfUrl;
       const rawName = (cb.dataset.name || 'พนักงาน').replace(/[\\/:*?"<>|]/g,'_');
+      const rawDept = (cb.dataset.department || '').replace(/[\\/:*?"<>|]/g,'_');
       if(!url) continue;
       const res = await callApi('getFileBase64', {url});
       if(res && res.ok && res.base64){
-        let fileName = rawName + '.pdf';
+        const baseFileName = `เอกสารเบิกค่าเดินทาง_${rawEventName} - ${rawName}${rawDept ? ' ' + rawDept : ''}`;
+        let fileName = baseFileName + '.pdf';
         let n = 2;
-        while(usedNames.has(fileName)){ fileName = `${rawName} (${n}).pdf`; n++; }
+        while(usedNames.has(fileName)){ fileName = `${baseFileName} (${n}).pdf`; n++; }
         usedNames.add(fileName);
         const base64Data = res.base64.split(',')[1] || res.base64;
         zip.file(fileName, base64Data, {base64:true});
@@ -883,7 +1004,7 @@ async function bulkExportSelectedPdfs(eventId, i){
     }
 
     const blob = await zip.generateAsync({type:'blob'});
-    saveAs(blob, `เอกสารเบิกค่าเดินทาง_${eventId}.zip`);
+    saveAs(blob, `เอกสารเบิกค่าเดินทาง_${rawEventName}.zip`);
     showToast(`✅ ดาวน์โหลด ZIP สำเร็จ (${successCount}/${checked.length} ไฟล์)`, 'ok');
   }catch(err){
     showToast('❌ สร้าง ZIP ไม่สำเร็จ: ' + err, 'err');
@@ -1213,6 +1334,7 @@ async function createNewEvent(){
     document.getElementById('endDate').value = '';
     document.getElementById('employeeList').value = '';
     createFuelPrices = {};
+    createBufferDates = [];
     renderFuelInputs('create');
 
     await loadEvents();
@@ -1248,6 +1370,7 @@ function editEvent(eventId){
   document.getElementById('editEndDate').value = toISODate(ev.endDate);
 
   editFuelPrices = {};
+  editBufferDates = [];
   const fuelContainer = document.getElementById('editFuelPricesContainer');
   if(fuelContainer) fuelContainer.innerHTML = '<div class="hint">กำลังโหลดราคาน้ำมัน...</div>';
 
@@ -1322,6 +1445,7 @@ async function saveEditEvent(){
     if(res.ok){
       delete rosterCache[editingEventId];
       editFuelPrices = {};
+      editBufferDates = [];
       await loadEvents();
       showListView();
       showToast('✅ บันทึกการแก้ไขสำเร็จ', 'ok');
@@ -1360,18 +1484,21 @@ async function exportEventsToExcel(){
       if(res.ok && res.roster){
         let eventTotal = 0;
         res.roster.forEach((r,idx)=>{
-          const amount = r.submitted ? Number(r.totalAmount) : 0;
+          // Round to strictly 2 decimal places (e.g. 150.00, 1250.50) so
+          // the exported figures never show stray floating-point digits.
+          const amount = r.submitted ? Number((Number(r.totalAmount)||0).toFixed(2)) : 0;
           eventTotal += amount;
           rows.push({
             'ชื่องาน': eventName,
             'ลำดับสตาฟ': idx + 1,
             'ชื่อสตาฟ': r.employeeName,
             'แผนก': r.department || '',
-            'ยอดเงิน': amount,
+            'ยอดเงิน': amount.toFixed(2),
             'link pdf': r.pdfUrl || ''
           });
         });
 
+        eventTotal = Number(eventTotal.toFixed(2));
         // Append a grand-total summary row at the bottom of this event's
         // block of data before moving on to the next selected event.
         rows.push({
@@ -1379,7 +1506,7 @@ async function exportEventsToExcel(){
           'ลำดับสตาฟ': '',
           'ชื่อสตาฟ': 'ยอดรวมทั้งสิ้น (Grand Total)',
           'แผนก': '',
-          'ยอดเงิน': eventTotal,
+          'ยอดเงิน': eventTotal.toFixed(2),
           'link pdf': ''
         });
       }
