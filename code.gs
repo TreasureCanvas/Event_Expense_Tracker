@@ -349,7 +349,7 @@ function saveFuelPrices_(eventId, eventName, fuelPrices) {
       }
     }
 
-    sheet.appendRow([eventId, String(fp.date), Number(fp.price) || 0, receiptUrl]);
+    sheet.appendRow([eventId, String(fp.date), Math.round((Number(fp.price) || 0) * 100) / 100, receiptUrl]);
   });
 }
 
@@ -360,7 +360,7 @@ function getEventFuelPrices_(eventId) {
     const receiptImage = receiptUrl ? driveFileToBase64Attachment_(receiptUrl) : null;
     return {
       date: isoDateStr(fp.date),
-      price: Number(fp.price) || 0,
+      price: Math.round((Number(fp.price) || 0) * 100) / 100,
       receiptUrl: receiptUrl,
       receiptImage: receiptImage
     };
@@ -557,7 +557,7 @@ function apiGetEventRoster(payload) {
     return {
       employeeName: emp.employee_name, department: emp.department,
       submitted: true, status: sub.submission_status, updatedAt: sub.updated_at,
-      totalAmount: Number(sub.total_amount) || 0, pdfUrl: sub.pdf_file_url, summaryText: sub.summary_text,
+      totalAmount: Math.round((Number(sub.total_amount) || 0) * 100) / 100, pdfUrl: sub.pdf_file_url, summaryText: sub.summary_text,
       claimedDays: countClaimedDays_(sub)
     };
   });
@@ -676,7 +676,9 @@ function apiSubmitExpense(payload) {
     : 'แนบเอกสารแล้ว (' + timeNow + ' น.)';
 
   const submissionId = isResubmit ? all[existingIndex].submission_id : generateId('SUB');
-  const safeTotalAmount = Number(payload.totalAmount) || 0;
+  // Round to strictly 2 decimal places (e.g. 150.00, 1250.50) before
+  // persisting, so stored amounts never carry stray floating-point digits.
+  const safeTotalAmount = Math.round((Number(payload.totalAmount) || 0) * 100) / 100;
 
   const rowData = [
     submissionId,
