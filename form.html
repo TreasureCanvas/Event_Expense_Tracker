@@ -265,7 +265,20 @@ if (SERVER_EVENT_ID.indexOf('<?') !== -1) SERVER_EVENT_ID = '';
 
 const params = new URLSearchParams(window.location.search);
 const EVENT_ID = SERVER_EVENT_ID || params.get('event') || '';
-const TODAY_ISO = new Date().toISOString().slice(0,10);
+
+// Formats a Date object as a LOCAL calendar date string (YYYY-MM-DD),
+// using getFullYear/getMonth/getDate rather than toISOString(). This
+// matters because toISOString() converts to UTC first — in a UTC+
+// timezone (e.g. Thailand, UTC+7), local midnight can be reported as the
+// PREVIOUS day once converted to UTC, silently shifting "today" back by
+// one day right around midnight.
+function localISODate(d){
+  if(!(d instanceof Date) || isNaN(d)) return '';
+  const y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+  return `${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+}
+
+const TODAY_ISO = localISODate(new Date());
 
 /* ===================================================================
    🔍 IMAGE PREVIEW LIGHTBOX
@@ -724,7 +737,8 @@ function renderSegment(di,key,seg,si,dayDate){
           <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder="เช่น สนามบิน"></div>
       </div>
       <div class="field"><label>ระยะทาง (กิโลเมตร) <span class="req">*</span></label>
-        <input type="number" step="0.1" min="0" placeholder="0.0" value="${seg.distanceKm || ''}" oninput="segFieldInput(${di},'${key}',${si},'distanceKm',this.value)"></div>
+        <input type="number" step="0.01" min="0" placeholder="0.00" value="${seg.distanceKm ? Number(seg.distanceKm).toFixed(2) : ''}" oninput="segFieldInput(${di},'${key}',${si},'distanceKm',this.value)"
+          onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : ''; segFieldInput(${di},'${key}',${si},'distanceKm',this.value);"></div>
       <div class="field"><label>จำนวนเงิน (บาท) — คำนวณอัตโนมัติ แก้ไขได้ <span class="req">*</span></label>
         <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
           oninput="segAmountInput(${di},'${key}',${si},this.value)"
@@ -738,7 +752,10 @@ function renderSegment(di,key,seg,si,dayDate){
           onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>
       <div class="hint">ค่าจอดรถไม่ต้องระบุต้นทาง/ปลายทาง — กรอกเฉพาะจำนวนเงินและแนบสลิป/ใบเสร็จ</div>`;
   } else if(typeCfg.kind==='none'){
-    body = `<div class="hint">เลือก "ไม่เบิกค่าเดินทาง" แล้ว — ระบบจะไม่แสดงช่องระยะทาง/จำนวนเงิน และไม่ต้องแนบไฟล์หลักฐานสำหรับรายการนี้ (ยอดเงินของรายการนี้ = 0.00 บาท โดยอัตโนมัติ)</div>`;
+    // "ไม่เบิกค่าเดินทาง" (No Expense Claim) — quietly hide the
+    // distance/amount/receipt inputs with no explanatory note, to keep
+    // the UI clean. The amount is forced to 0 in recalcSegment().
+    body = '';
   } else if(seg.type==='TOLL'){
     body = `
       <div class="grid2">
@@ -950,7 +967,7 @@ function segmentLine(seg){
     return `เดินทางด้วย ${typeCfg.label} (ไม่มีการเบิกค่าใช้จ่าย) ราคา ${amt} บาท`;
   }
   if(typeCfg.kind==='car'){
-    return `เดินทางด้วยรถยนต์ส่วนบุคคล จาก ${seg.origin||'-'} ไป ${seg.destination||'-'} ระยะทาง ${seg.distanceKm||0} กม. ราคา ${amt} บาท`;
+    return `เดินทางด้วยรถยนต์ส่วนบุคคล จาก ${seg.origin||'-'} ไป ${seg.destination||'-'} ระยะทาง ${Number(seg.distanceKm||0).toFixed(2)} กม. ราคา ${amt} บาท`;
   }
   if(seg.type==='PARKING'){
     return `เดินทางด้วย ${typeCfg.label} ราคา ${amt} บาท`;
@@ -1095,7 +1112,7 @@ function showMsg(type, text){
 /* ---------- PDF GENERATION ---------- */
 function buildPrintArea(total){
   document.getElementById('pEventName').textContent = eventName || '';
-  document.getElementById('pIssueDate').textContent = formatThaiDate(new Date().toISOString().slice(0,10));
+  document.getElementById('pIssueDate').textContent = formatThaiDate(localISODate(new Date()));
   document.getElementById('pMeta').innerHTML = `
     <div><span class="label">ผู้เบิก:</span> ${document.getElementById('employeeName').value || '-'}</div>
     <div><span class="label">แผนก/ฝ่าย:</span> ${document.getElementById('department').value || '-'}</div>`;
@@ -1114,7 +1131,7 @@ function buildPrintArea(total){
       const detail = (seg.type==='PARKING' || tollEmpty || typeCfg.kind==='none')
         ? '-'
         : (typeCfg.kind==='car'
-          ? `${seg.origin||'-'} → ${seg.destination||'-'} (${seg.distanceKm||0} กม.)`
+          ? `${seg.origin||'-'} → ${seg.destination||'-'} (${Number(seg.distanceKm||0).toFixed(2)} กม.)`
           : `${seg.origin||'-'} → ${seg.destination||'-'}`);
       rows += `<tr><td>${i+1}</td><td>${typeLabel}</td><td>${detail}</td><td class="amt">${(Number(seg.amount)||0).toFixed(2)}</td></tr>`;
     });
