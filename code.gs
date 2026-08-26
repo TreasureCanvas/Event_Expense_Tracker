@@ -545,20 +545,34 @@ function apiGetEventRoster(payload) {
     }
   }
 
+  // Structured per-leg trip data (date, ขาไป/ขากลับ label, segments with
+  // travel mode / origin / destination / amount) — used by index.html to
+  // build the "Copy Excel Template Summary" text without having to
+  // re-parse or re-fetch anything else.
+  function getTripDetails_(sub) {
+    if (!sub || !sub.trip_details_json) return [];
+    try {
+      const details = JSON.parse(sub.trip_details_json);
+      return details.trips || [];
+    } catch (err) {
+      return [];
+    }
+  }
+
   const rows = roster.map(emp => {
     const sub = submissions.find(s => String(s.employee_name).trim() === String(emp.employee_name).trim());
     if (!sub) {
       return {
         employeeName: emp.employee_name, department: emp.department,
         submitted: false, status: 'ยังไม่ส่งเอกสาร', updatedAt: '', totalAmount: 0,
-        pdfUrl: '', summaryText: '', claimedDays: 0
+        pdfUrl: '', summaryText: '', claimedDays: 0, tripDetails: []
       };
     }
     return {
       employeeName: emp.employee_name, department: emp.department,
       submitted: true, status: sub.submission_status, updatedAt: sub.updated_at,
       totalAmount: Math.round((Number(sub.total_amount) || 0) * 100) / 100, pdfUrl: sub.pdf_file_url, summaryText: sub.summary_text,
-      claimedDays: countClaimedDays_(sub)
+      claimedDays: countClaimedDays_(sub), tripDetails: getTripDetails_(sub)
     };
   });
 
