@@ -327,7 +327,7 @@
       <div class="modal-body">
         <div class="field" style="margin-bottom:0;">
           <label>วางข้อมูลที่คัดลอกจาก Excel (2 คอลัมน์: ชื่อ-นามสกุล และ แผนก)</label>
-          <textarea id="importRawText" placeholder="Somchai Jaidee (Somchai)&#9;Marketing&#10;สมชาย ใจดี&#9;IT" oninput="handleImportRawInput()"></textarea>
+          <textarea id="importRawText" placeholder="Navisa Thanasuttawong (Noinae)&#9;Marketing&#10;สมชาย ใจดี&#9;IT" oninput="handleImportRawInput()"></textarea>
           <label class="import-header-toggle">
             <input type="checkbox" id="importSkipHeader" onchange="parseImportPreview()">
             แถวแรกเป็นหัวตาราง (เช่น "ชื่อ / แผนก") ให้ข้ามแถวนี้
@@ -919,14 +919,14 @@ async function toggleRoster(eventId, i){
   // so it always reflects the latest submitted/edited expense amounts.
   const grandTotal = data.roster.reduce((sum, r) => sum + (r.submitted ? (Number(r.totalAmount) || 0) : 0), 0);
 
-  const rowsHtml = data.roster.map(r=>{
+  const rowsHtml = data.roster.map((r, idx)=>{
     const isEdit = r.status && r.status.startsWith('มีการแก้ไข');
     const dot = !r.submitted ? 'dot-grey' : (isEdit ? 'dot-orange' : 'dot-green');
     const cls = !r.submitted ? 'status-pending' : (isEdit ? 'status-edit' : 'status-new');
     const canExport = r.submitted && r.pdfUrl;
     return `
     <tr>
-      <td class="roster-check-col">${canExport ? `<input type="checkbox" class="roster-check" data-pdf-url="${escapeAttr(r.pdfUrl)}" data-name="${escapeAttr(r.employeeName)}" data-department="${escapeAttr(r.department||'')}">` : ''}</td>
+      <td class="roster-check-col">${canExport ? `<input type="checkbox" class="roster-check" data-index="${idx}" data-pdf-url="${escapeAttr(r.pdfUrl)}" data-name="${escapeAttr(r.employeeName)}" data-department="${escapeAttr(r.department||'')}">` : ''}</td>
       <td><span class="dot ${dot}"></span><span class="${cls}">${r.status || 'รอส่งเอกสาร'}</span></td>
       <td>${r.employeeName}</td>
       <td>${r.department||'-'}</td>
@@ -949,6 +949,7 @@ async function toggleRoster(eventId, i){
         เลือกทั้งหมด (Select All)
       </label>
       <button class="btn btn-small bulk-zip-btn" onclick="bulkExportSelectedPdfs('${eventId}', ${i})">📦 ดาวน์โหลด PDF ที่เลือกเป็น ZIP</button>
+      <button class="btn btn-small btn-outline" onclick="copyExcelSummaryForSelected('${eventId}', ${i})">📋 คัดลอกข้อความสรุปสำหรับ Excel</button>
     </div>
     <table>
       <thead><tr><th class="roster-check-col"></th><th>สถานะ</th><th>ชื่อ-นามสกุล</th><th>แผนก</th><th>จำนวนวันที่เบิก</th><th>ยอดเงิน</th><th>PDF File</th></tr></thead>
@@ -968,6 +969,125 @@ function toggleAllRosterChecks(checkboxEl, i){
   const panel = document.getElementById('roster-'+i);
   if(!panel) return;
   panel.querySelectorAll('.roster-check').forEach(cb => { cb.checked = checkboxEl.checked; });
+}
+
+/* ===================================================================
+   📋 COPY EXCEL TEMPLATE SUMMARY (คัดลอกข้อความสรุปสำหรับ Excel)
+=================================================================== */
+
+// Mirrors form.html's SEGMENT_TYPES labels, so a travel-mode code stored
+// in trip_details_json (e.g. "CAR", "BTS_GREEN") can be translated back
+// into its Thai display label for the summary text.
+const SEGMENT_TYPE_LABELS = {
+  BTS_GREEN: 'BTS สายสีเขียว',
+  BTS_GOLD: 'BTS สายสีทอง',
+  BTS_YELLOW: 'MRT สายสีเหลือง',
+  BTS_PINK: 'MRT สายสีชมพู',
+  MRT_BLUE: 'MRT สีน้ำเงิน',
+  MRT_PURPLE: 'MRT สีม่วง',
+  SRT_RED: 'SRT สีแดง',
+  ARL: 'Airport Rail Link',
+  CAR: 'รถยนต์ส่วนบุคคล',
+  TAXI: 'แท็กซี่',
+  GRAB: 'Grab/Lineman/Bolt',
+  MOTORCYCLE: 'รถจักรยานยนต์รับจ้าง',
+  PARKING: 'ค่าจอดรถ',
+  TOLL: 'ค่าธรรมเนียมผ่านทางพิเศษ (ทางด่วน)',
+  NO_CLAIM: 'ไม่เบิกค่าเดินทาง',
+  OTHER: 'อื่นๆ'
+};
+
+function formatThaiDate(dateStr){
+  if(!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  if(isNaN(d)) return dateStr;
+  return d.toLocaleDateString('th-TH', {day:'2-digit', month:'2-digit', year:'numeric'});
+}
+
+// Renders one travel leg ("เดินทางด้วย[Mode] จาก [Origin] - ไป [Destination]
+// รวม [Amount] บาท"), with amounts strictly forced to 2 decimal places.
+function segmentToExcelText(seg){
+  const modeLabel = SEGMENT_TYPE_LABELS[seg.type] || seg.type || '-';
+  const origin = seg.origin || '-';
+  const destination = seg.destination || '-';
+  const amount = (Number(seg.amount) || 0).toFixed(2);
+  return `เดินทางด้วย${modeLabel} จาก ${origin} - ไป ${destination} รวม ${amount} บาท`;
+}
+
+// Joins every leg/segment of one direction (ขาไป or ขากลับ) with " + ",
+// so additional legs within the same direction read as one continuous
+// sentence rather than separate lines.
+function buildLegGroupText(label, segments){
+  const validSegs = (segments || []).filter(s => s && s.type);
+  if(validSegs.length === 0) return '';
+  return `${label} ${validSegs.map(segmentToExcelText).join(' + ')}`;
+}
+
+// Builds the single-line Excel-summary text for one staff member, e.g.
+// "สมชาย ใจดี - 24/08/2569 ขาไป เดินทางด้วยรถยนต์ส่วนบุคคล จาก บ้าน - ไป
+// ที่ทำงาน รวม 150.00 บาท + เดินทางด้วยค่าจอดรถ จาก - - ไป - รวม 20.00 บาท
+// ขากลับ เดินทางด้วยรถยนต์ส่วนบุคคล จาก ที่ทำงาน - ไป บ้าน รวม 150.00 บาท"
+// Multi-day claims are folded into the SAME single line, separated by
+// " | " between each day's block, so the whole thing still pastes into
+// exactly one Excel cell.
+function buildExcelSummaryLine(row){
+  const trips = row.tripDetails || [];
+
+  // Group trips by date, preserving the ขาไป/ขากลับ split for each date.
+  const byDate = [];
+  trips.forEach(trip => {
+    if(!trip) return;
+    let bucket = byDate.find(b => b.date === trip.date);
+    if(!bucket){ bucket = {date: trip.date, outbound: [], inbound: []}; byDate.push(bucket); }
+    if(trip.label === 'ขากลับ') bucket.inbound = bucket.inbound.concat(trip.segments || []);
+    else bucket.outbound = bucket.outbound.concat(trip.segments || []);
+  });
+
+  const dayBlocks = byDate.map(b => {
+    const parts = [formatThaiDate(b.date)];
+    const outText = buildLegGroupText('ขาไป', b.outbound);
+    const inText = buildLegGroupText('ขากลับ', b.inbound);
+    if(outText) parts.push(outText);
+    if(inText) parts.push(inText);
+    return parts.join(' ');
+  }).filter(Boolean);
+
+  let line = `${row.employeeName || '-'} - ${dayBlocks.join(' | ')}`;
+
+  // Strip out any stray line breaks/tabs so the whole thing always stays
+  // strictly on a single line (one Excel cell) when pasted.
+  line = line.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  return line;
+}
+
+async function copyExcelSummaryForSelected(eventId, i){
+  const panel = document.getElementById('roster-'+i);
+  if(!panel) return;
+  const checked = Array.from(panel.querySelectorAll('.roster-check:checked'));
+  if(checked.length === 0){
+    showToast('⚠️ กรุณาเลือกสตาฟอย่างน้อย 1 คนก่อนคัดลอก', 'err');
+    return;
+  }
+
+  const rosterRows = (rosterCache[eventId] && rosterCache[eventId].roster) || [];
+  const lines = checked
+    .map(cb => rosterRows[Number(cb.dataset.index)])
+    .filter(Boolean)
+    .map(buildExcelSummaryLine);
+
+  if(lines.length === 0){
+    showToast('❌ ไม่พบข้อมูลการเดินทางของสตาฟที่เลือก', 'err');
+    return;
+  }
+
+  const fullText = lines.join('\n');
+
+  try{
+    await navigator.clipboard.writeText(fullText);
+    showToast('คัดลอกข้อความสรุปสำหรับ Excel เรียบร้อยแล้ว! สามารถกด Ctrl+V วางในเซลล์ Excel ได้ทันที', 'ok');
+  }catch(err){
+    showToast('❌ คัดลอกไม่สำเร็จ: ' + err, 'err');
+  }
 }
 
 async function bulkExportSelectedPdfs(eventId, i){
