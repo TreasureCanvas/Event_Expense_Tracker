@@ -170,7 +170,7 @@
      intent and apply if this markup is ever rendered/printed directly:
      each caption stays glued to its image, and photos are shown at about
      half page width instead of stretched edge-to-edge. */
-  #printArea .evidence-section-title{font-size:15px; font-weight:700; color:#222; border-bottom:2px solid #222; padding-bottom:6px; margin:22px 0 12px;}
+  #printArea .evidence-section-title{page-break-before: always; break-before: page; font-size:15px; font-weight:700; color:#222; border-bottom:2px solid #222; padding-bottom:6px; margin:22px 0 12px;}
   #printArea .evidence-item{page-break-inside: avoid; break-inside: avoid; margin-bottom:16px;}
   #printArea .evidence-item .evidence-caption{font-size:12px; color:#555; margin-bottom:4px;}
   #printArea .evidence-item img{max-width:50%; width:50%; display:block; margin:0 auto;}
@@ -1139,6 +1139,18 @@ function validate(){
         if(typeCfg.kind!=='none' && !(parseFloat(seg.amount) > 0)){
           errors.push(`${tag}: กรุณากรอกจำนวนเงิน`); ok=false;
         }
+
+        // Mandatory receipt/photo upload for these travel modes — a
+        // parking or toll receipt, or a Google Maps screenshot proving the
+        // distance for a personal-vehicle trip. Submission is blocked
+        // without at least one attached file.
+        const requiresReceipt = seg.type==='PARKING' || seg.type==='TOLL' || typeCfg.kind==='car';
+        if(requiresReceipt && !((seg.attachments||[]).length > 0)){
+          const receiptTag = seg.type==='PARKING' ? 'ใบเสร็จค่าจอดรถ'
+            : seg.type==='TOLL' ? 'ใบเสร็จค่าทางด่วน'
+            : 'ภาพหน้าจอ Google Maps แสดงระยะทาง';
+          errors.push(`${tag}: กรุณาแนบไฟล์ ${receiptTag} (จำเป็นสำหรับวิธีการเดินทางนี้)`); ok=false;
+        }
       });
     });
   });
@@ -1444,8 +1456,14 @@ async function generatePdfBlob(){
 
     await placeCapturedBlock(document.getElementById('pFooterBlock'), 0.92);
 
-    // ===== Evidence section — strictly AFTER the Grand Total bar =====
+    // ===== Evidence section — strictly AFTER the Grand Total bar, and
+    // ALWAYS starting on a brand new page (mandatory page-break-before),
+    // regardless of how much room is left on the current page. =====
     if(evidenceQueue.length > 0){
+      doc.addPage();
+      cursorY = margin;
+      forceNewPage = false;
+
       const titleCanvas = await captureSectionTitle('📎 หลักฐานประกอบการเบิกจ่าย (ใบเสร็จ/รูปถ่าย)');
       placeImage(titleCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (titleCanvas.height * contentWidth) / titleCanvas.width);
 
