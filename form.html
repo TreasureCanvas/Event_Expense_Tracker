@@ -163,6 +163,17 @@
   #printArea td.amt, #printArea th.amt{text-align:right;}
   #printArea .subtotal-row td{background:#fafafa; font-weight:600;}
   #printArea .grand-total-box{background:#222222; color:#fff; border-radius:10px; padding:14px 18px; margin-top:22px; display:flex; justify-content:space-between; align-items:center; font-size:16px; font-weight:700;}
+  /* ===== 📎 Evidence/receipt section (moved below the Grand Total bar) =====
+     The actual PDF pagination is computed in JS (generatePdfBlob), since
+     the document is assembled via html2canvas + jsPDF rather than the
+     browser's native print pipeline — but these rules describe the same
+     intent and apply if this markup is ever rendered/printed directly:
+     each caption stays glued to its image, and photos are shown at about
+     half page width instead of stretched edge-to-edge. */
+  #printArea .evidence-section-title{font-size:15px; font-weight:700; color:#222; border-bottom:2px solid #222; padding-bottom:6px; margin:22px 0 12px;}
+  #printArea .evidence-item{page-break-inside: avoid; break-inside: avoid; margin-bottom:16px;}
+  #printArea .evidence-item .evidence-caption{font-size:12px; color:#555; margin-bottom:4px;}
+  #printArea .evidence-item img{max-width:50%; width:50%; display:block; margin:0 auto;}
   #printArea .sign-area{display:grid; grid-template-columns:1fr 1fr; gap:40px; margin-top:56px;}
   #printArea .sign-line{border-top:1px solid #888; padding-top:6px; font-size:12px; color:#686868; text-align:center;}
   .req{color:var(--danger);}
@@ -437,6 +448,40 @@ function getFuelPriceEntryForDate(dateStr){
 function getFuelPriceForDate(dateStr){
   const entry = getFuelPriceEntryForDate(dateStr);
   return entry ? (Number(entry.price) || 0) : 0;
+}
+
+// Fuel-price receipt photos are only ever needed at PDF-generation time
+// (embedded as proof alongside "Personal Vehicle" travel days), so
+// apiGetEventInfo intentionally does NOT send them on page load — this
+// fetches them just-in-time, right before building the PDF, and only if
+// this claim actually uses "Personal Vehicle" on at least one day and the
+// images haven't already been loaded this session.
+async function ensureFuelReceiptImagesLoaded(){
+  const needsFuelReceipts = state.days.some(day =>
+    [...day.outboundSegments, ...day.returnSegments].some(seg => {
+      const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
+      return typeCfg && typeCfg.kind==='car';
+    })
+  );
+  if(!needsFuelReceipts) return;
+
+  const alreadyLoaded = eventFuelPrices.every(fp => !fp.receiptUrl || fp.receiptImage);
+  if(alreadyLoaded) return;
+
+  try{
+    const res = await callApi('getFuelReceiptImages', { eventId: EVENT_ID });
+    if(res && res.ok && Array.isArray(res.fuelPrices)){
+      const imageByDate = {};
+      res.fuelPrices.forEach(fp => { imageByDate[fp.date] = fp.receiptImage; });
+      eventFuelPrices.forEach(fp => {
+        if(imageByDate[fp.date] !== undefined) fp.receiptImage = imageByDate[fp.date];
+      });
+    }
+  }catch(err){
+    // Non-fatal — the PDF will just note "no receipt on file" for that
+    // date instead of embedding a photo.
+    console.error('Failed to load fuel receipt images:', err);
+  }
 }
 
 function newSegment(){ return { type:'', origin:'', destination:'', distanceKm:'', amount:0, otherDescription:'', attachments:[], attachmentUrls:[] }; }
@@ -1180,6 +1225,16 @@ async function captureCaptionLabel(text){
   return canvas;
 }
 
+async function captureSectionTitle(text){
+  const tmp = document.createElement('div');
+  tmp.style.cssText = 'font-family:Sarabun,sans-serif; font-size:15px; font-weight:700; color:#222; padding:2px 4px 8px; border-bottom:2px solid #222; background:#fff;';
+  tmp.textContent = text;
+  document.getElementById('pDaysWrap').appendChild(tmp);
+  const canvas = await html2canvas(tmp, { scale:2, backgroundColor:'#ffffff', useCORS:true });
+  tmp.remove();
+  return canvas;
+}
+
 function guessImageFormat(mimeType, dataUrl){
   const src = (mimeType || '').toLowerCase() || (/^data:image\/([a-zA-Z0-9.+-]+);/.exec(dataUrl||'')||[])[1] || '';
   if(src.includes('png')) return 'PNG';
@@ -1206,6 +1261,7 @@ function getImageNaturalSize(dataUrl){
 // CORS/Drive-fetch step and nothing that can fail at PDF-export time.
 
 async function generatePdfBlob(){
+  await ensureFuelReceiptImagesLoaded();
   const total = updateTotals();
   buildPrintArea(total);
 
@@ -1276,9 +1332,14 @@ async function generatePdfBlob(){
     });
   }
 
+  // Evidence photos are shown at roughly half the page width, centered,
+  // instead of stretched edge-to-edge across the full A4 page.
+  const EVIDENCE_IMG_WIDTH_RATIO = 0.5;
+
   async function placeOriginalPhoto(att, caption){
     const labelCanvas = await captureCaptionLabel(caption);
-    placeImage(labelCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (labelCanvas.height * contentWidth) / labelCanvas.width);
+    const labelImgData = labelCanvas.toDataURL('image/jpeg', 0.92);
+    const labelHeight = (labelCanvas.height * contentWidth) / labelCanvas.width;
 
     const shouldCompress = document.getElementById('compressImages').checked;
     let photoData = att.base64;
@@ -1294,25 +1355,44 @@ async function generatePdfBlob(){
       naturalSize = await getImageNaturalSize(att.base64);
     }
 
-    let w = contentWidth, h = (naturalSize.height * w) / naturalSize.width;
-    const maxH = maxBlockHeight - BLOCK_GAP;
-    if(h > maxH){ h = maxH; w = (naturalSize.width * h) / naturalSize.height; }
+    let w = contentWidth * EVIDENCE_IMG_WIDTH_RATIO;
+    let h = (naturalSize.height * w) / naturalSize.width;
+    const maxPhotoH = maxBlockHeight - labelHeight - BLOCK_GAP * 2;
+    if(h > maxPhotoH){ h = maxPhotoH; w = (naturalSize.width * h) / naturalSize.height; }
+    const xOffset = margin + (contentWidth - w) / 2; // center horizontally
 
-    if(forceNewPage || (!firstBlock && cursorY + h > pageHeight - margin)){
+    // Caption + photo are kept together as ONE atomic unit — the
+    // equivalent of CSS `page-break-inside: avoid` for this canvas-based
+    // PDF pipeline (html2canvas/jsPDF don't honor real CSS pagination, so
+    // the "stay together" guarantee is enforced here in JS instead): if
+    // the pair doesn't fit in the remaining space on the current page, a
+    // new page starts BEFORE either one is drawn, so the caption sentence
+    // can never end up separated from its image across a page break.
+    const combinedHeight = labelHeight + BLOCK_GAP + h;
+    if(forceNewPage || (!firstBlock && cursorY + combinedHeight > pageHeight - margin)){
       doc.addPage(); cursorY = margin; forceNewPage = false;
     }
+
+    doc.addImage(labelImgData, 'JPEG', margin, cursorY, contentWidth, labelHeight);
+    cursorY += labelHeight + BLOCK_GAP;
+    firstBlock = false;
+
     try{
-      doc.addImage(photoData, format, margin, cursorY, w, h);
+      doc.addImage(photoData, format, xOffset, cursorY, w, h);
       cursorY += h + BLOCK_GAP;
     }catch(err){
       const noteCanvas = await captureCaptionLabel('⚠️ ไม่สามารถแสดงรูปนี้ในเอกสารได้ (ไฟล์ภาพรูปแบบไม่รองรับ เช่น HEIC) - โปรดแนบเป็น JPG/PNG แทน');
       placeImage(noteCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (noteCanvas.height * contentWidth) / noteCanvas.width);
     }
-    firstBlock = false;
   }
 
   try{
     await placeCapturedBlock(document.getElementById('pHeaderBlock'), 0.92);
+
+    // Evidence photos (travel receipts + daily fuel receipts) are no
+    // longer placed inline per-day — they're collected here in order and
+    // placed as one section AFTER the Grand Total bar instead (see below).
+    const evidenceQueue = [];
 
     for(const dayBlockEl of Array.from(document.querySelectorAll('#pDaysWrap > .day-block'))){
       await placeCapturedBlock(dayBlockEl, 0.92);
@@ -1336,12 +1416,12 @@ async function generatePdfBlob(){
         // one render path, no Drive fetch at export time.
         for(const att of (seg.attachments||[])){
           const caption = `📎 หลักฐาน${att.isExisting ? ' (ไฟล์เดิม)' : ''}: ${dirLabel} — ${typeLabel}${routeSuffix}`;
-          await placeOriginalPhoto(att, caption);
+          evidenceQueue.push({ att, caption });
         }
       }
 
       // Daily fuel receipt attachment: if this day has any "Personal
-      // Vehicle" (CAR) segment, append the Gasohol 91 price + the event
+      // Vehicle" (CAR) segment, queue the Gasohol 91 price + the event
       // admin's uploaded receipt image for that specific date (with the
       // same closest-previous-date fallback used for the amount calc).
       const hasCarSegment = segmentsWithDir.some(({seg}) => {
@@ -1354,16 +1434,30 @@ async function generatePdfBlob(){
           const fallbackNote = fuelEntry.date !== day.date ? ` (อ้างอิงราคาวันที่ ${fuelEntry.date} เนื่องจากไม่มีราคาของวันนี้)` : '';
           const caption = `⛽ ใบเสร็จราคาน้ำมันแก๊สโซฮอล์ 91 วันที่ ${formatThaiDate(day.date)}: ${Number(fuelEntry.price||0).toFixed(2)} บาท/ลิตร${fallbackNote}`;
           if(fuelEntry.receiptImage && fuelEntry.receiptImage.base64){
-            await placeOriginalPhoto(fuelEntry.receiptImage, caption);
+            evidenceQueue.push({ att: fuelEntry.receiptImage, caption });
           } else {
-            const noteCanvas = await captureCaptionLabel(caption + ' (ไม่มีใบเสร็จแนบในระบบ)');
-            placeImage(noteCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (noteCanvas.height * contentWidth) / noteCanvas.width);
+            evidenceQueue.push({ att: null, caption: caption + ' (ไม่มีใบเสร็จแนบในระบบ)' });
           }
         }
       }
     }
 
     await placeCapturedBlock(document.getElementById('pFooterBlock'), 0.92);
+
+    // ===== Evidence section — strictly AFTER the Grand Total bar =====
+    if(evidenceQueue.length > 0){
+      const titleCanvas = await captureSectionTitle('📎 หลักฐานประกอบการเบิกจ่าย (ใบเสร็จ/รูปถ่าย)');
+      placeImage(titleCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (titleCanvas.height * contentWidth) / titleCanvas.width);
+
+      for(const { att, caption } of evidenceQueue){
+        if(att && att.base64){
+          await placeOriginalPhoto(att, caption);
+        } else {
+          const noteCanvas = await captureCaptionLabel(caption);
+          placeImage(noteCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (noteCanvas.height * contentWidth) / noteCanvas.width);
+        }
+      }
+    }
   } finally {
     el.style.position = prevPosition;
     el.style.left = prevLeft;
