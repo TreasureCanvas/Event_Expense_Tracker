@@ -1146,10 +1146,10 @@ function validate(){
         // without at least one attached file.
         const requiresReceipt = seg.type==='PARKING' || seg.type==='TOLL' || typeCfg.kind==='car';
         if(requiresReceipt && !((seg.attachments||[]).length > 0)){
-          const receiptTag = seg.type==='PARKING' ? 'ใบเสร็จค่าจอดรถ'
-            : seg.type==='TOLL' ? 'ใบเสร็จค่าทางด่วน'
-            : 'ภาพหน้าจอ Google Maps แสดงระยะทาง';
-          errors.push(`${tag}: กรุณาแนบไฟล์ ${receiptTag} (จำเป็นสำหรับวิธีการเดินทางนี้)`); ok=false;
+          const receiptWarning = seg.type==='PARKING' ? 'กรุณาแนบรูปใบเสร็จค่าจอดรถ'
+            : seg.type==='TOLL' ? 'กรุณาแนบรูปใบเสร็จค่าทางด่วน'
+            : 'กรุณาแนบรูปภาพแคปหน้าจอ Google Maps สำหรับรถยนต์ส่วนตัว';
+          errors.push(`${tag}: ${receiptWarning}`); ok=false;
         }
       });
     });
