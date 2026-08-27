@@ -839,9 +839,20 @@ function renderSegment(di,key,seg,si,dayDate){
   const thumbs = (seg.attachments||[]).map((a,ai)=>`
       <span class="attach-thumb">${a.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${a.base64}"><button type="button" class="view-img-link" onclick="openImageLightbox('${a.base64}')">🔍 ดูรูปภาพ</button><span class="rm" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</span></span>`).join('');
 
+  // Parking, Toll, and Personal Vehicle require at least one attached
+  // file (see validate()) — flag that visually with a red "*" and a
+  // mode-specific label, matching the exact wording used in the
+  // validation alert, so employees see the requirement before they hit
+  // submit instead of only finding out from the error message.
+  const requiresReceipt = seg.type==='PARKING' || seg.type==='TOLL' || typeCfg.kind==='car';
+  const attachLabel = seg.type==='PARKING' ? 'แนบรูปใบเสร็จค่าจอดรถ'
+    : seg.type==='TOLL' ? 'แนบรูปใบเสร็จค่าทางด่วน'
+    : typeCfg.kind==='car' ? 'แนบรูปภาพแคปหน้าจอ Google Maps สำหรับรถยนต์ส่วนตัว'
+    : 'แนบรูปภาพหลักฐาน/สลิป (แนบได้มากกว่า 1 ไฟล์)';
+
   const attachHtml = typeCfg.kind === 'none' ? '' : `
     <div class="attach-box">
-      <label>แนบรูปภาพหลักฐาน/สลิป (แนบได้มากกว่า 1 ไฟล์)</label>
+      <label>${attachLabel}${requiresReceipt ? ' <span class="req">*</span>' : ''}</label>
       <input type="file" accept="image/*" multiple onchange="handleFiles(event, ${di}, '${key}', ${si})">
       ${thumbs ? `<div class="preview-list">${thumbs}</div>` : ''}
     </div>`;
