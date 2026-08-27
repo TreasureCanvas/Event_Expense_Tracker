@@ -328,7 +328,7 @@
       <div class="modal-body">
         <div class="field" style="margin-bottom:0;">
           <label>วางข้อมูลที่คัดลอกจาก Excel (2 คอลัมน์: ชื่อ-นามสกุล และ แผนก)</label>
-          <textarea id="importRawText" placeholder="Somchai Jaidee (Som)&#9;Marketing&#10;สมชาย ใจดี&#9;IT" oninput="handleImportRawInput()"></textarea>
+          <textarea id="importRawText" placeholder="Navisa Thanasuttawong (Noinae)&#9;Marketing&#10;สมชาย ใจดี&#9;IT" oninput="handleImportRawInput()"></textarea>
           <label class="import-header-toggle">
             <input type="checkbox" id="importSkipHeader" onchange="parseImportPreview()">
             แถวแรกเป็นหัวตาราง (เช่น "ชื่อ / แผนก") ให้ข้ามแถวนี้
@@ -1007,33 +1007,61 @@ function formatThaiDate(dateStr){
   return d.toLocaleDateString('th-TH', {day:'2-digit', month:'2-digit', year:'numeric'});
 }
 
-// Renders one travel leg ("เดินทางด้วย[Mode] จาก [Origin] - ไป [Destination]
-// รวม [Amount] บาท"), with amounts strictly forced to 2 decimal places.
-function segmentToExcelText(seg){
-  const modeLabel = SEGMENT_TYPE_LABELS[seg.type] || seg.type || '-';
+// Returns the fuel price that applies to a given travel date: an exact
+// match if one exists, otherwise the closest *previous* event date's
+// price (falling back to the earliest available price if the travel date
+// is before every recorded price). Mirrors form.html's
+// getFuelPriceEntryForDate/getFuelPriceForDate exactly, so the price shown
+// here always matches what was actually used to calculate the amount.
+function getFuelPriceForDateIndex(dateStr, fuelPrices){
+  if(!dateStr || !fuelPrices || fuelPrices.length === 0) return 0;
+  const exact = fuelPrices.find(fp => fp.date === dateStr);
+  if(exact) return Number(exact.price) || 0;
+  const prior = fuelPrices.filter(fp => fp.date < dateStr).sort((a,b) => b.date.localeCompare(a.date));
+  if(prior.length > 0) return Number(prior[0].price) || 0;
+  const sorted = fuelPrices.slice().sort((a,b) => a.date.localeCompare(b.date));
+  return sorted.length ? (Number(sorted[0].price) || 0) : 0;
+}
+
+// Renders one travel leg. Personal Vehicle (CAR) segments get the detailed
+// fuel calculation formula placed after the destination and before the
+// final amount, e.g.:
+//   "เดินทางด้วยรถยนต์ส่วนตัว จาก ออฟฟิศ - ไป สถานที่จัดงาน 80.00/15x35.62 = 189.97 บาท"
+// Every other mode keeps the plain "... รวม [Amount] บาท" pattern.
+// Amounts, distance, and fuel price are all strictly forced to 2 decimals.
+function segmentToExcelText(seg, dateStr, fuelPrices){
   const origin = seg.origin || '-';
   const destination = seg.destination || '-';
   const amount = (Number(seg.amount) || 0).toFixed(2);
+
+  if(seg.type === 'CAR'){
+    const distance = (Number(seg.distanceKm) || 0).toFixed(2);
+    const price = getFuelPriceForDateIndex(dateStr, fuelPrices).toFixed(2);
+    return `เดินทางด้วยรถยนต์ส่วนตัว จาก ${origin} - ไป ${destination} ${distance}/15x${price} = ${amount} บาท`;
+  }
+
+  const modeLabel = SEGMENT_TYPE_LABELS[seg.type] || seg.type || '-';
   return `เดินทางด้วย${modeLabel} จาก ${origin} - ไป ${destination} รวม ${amount} บาท`;
 }
 
 // Joins every leg/segment of one direction (ขาไป or ขากลับ) with " + ",
 // so additional legs within the same direction read as one continuous
 // sentence rather than separate lines.
-function buildLegGroupText(label, segments){
+function buildLegGroupText(label, segments, dateStr, fuelPrices){
   const validSegs = (segments || []).filter(s => s && s.type);
   if(validSegs.length === 0) return '';
-  return `${label} ${validSegs.map(segmentToExcelText).join(' + ')}`;
+  return `${label} ${validSegs.map(s => segmentToExcelText(s, dateStr, fuelPrices)).join(' + ')}`;
 }
 
 // Builds the single-line Excel-summary text for one staff member, e.g.
-// "สมชาย ใจดี - 24/08/2569 ขาไป เดินทางด้วยรถยนต์ส่วนบุคคล จาก บ้าน - ไป
-// ที่ทำงาน รวม 150.00 บาท + เดินทางด้วยค่าจอดรถ จาก - - ไป - รวม 20.00 บาท
-// ขากลับ เดินทางด้วยรถยนต์ส่วนบุคคล จาก ที่ทำงาน - ไป บ้าน รวม 150.00 บาท"
+// "สมชาย ใจดี - 24/08/2569 ขาไป เดินทางด้วยรถยนต์ส่วนตัว จาก บ้าน - ไป
+// ที่ทำงาน 80.00/15x35.62 = 186.67 บาท + เดินทางด้วยค่าจอดรถ จาก - - ไป -
+// รวม 20.00 บาท ขากลับ เดินทางด้วยรถยนต์ส่วนตัว จาก ที่ทำงาน - ไป บ้าน
+// 80.00/15x35.62 = 186.67 บาท"
 // Multi-day claims are folded into the SAME single line, separated by
 // " | " between each day's block, so the whole thing still pastes into
 // exactly one Excel cell.
-function buildExcelSummaryLine(row){
+function buildExcelSummaryLine(row, fuelPrices){
   const trips = row.tripDetails || [];
 
   // Group trips by date, preserving the ขาไป/ขากลับ split for each date.
@@ -1048,8 +1076,8 @@ function buildExcelSummaryLine(row){
 
   const dayBlocks = byDate.map(b => {
     const parts = [formatThaiDate(b.date)];
-    const outText = buildLegGroupText('ขาไป', b.outbound);
-    const inText = buildLegGroupText('ขากลับ', b.inbound);
+    const outText = buildLegGroupText('ขาไป', b.outbound, b.date, fuelPrices);
+    const inText = buildLegGroupText('ขากลับ', b.inbound, b.date, fuelPrices);
     if(outText) parts.push(outText);
     if(inText) parts.push(inText);
     return parts.join(' ');
@@ -1073,15 +1101,34 @@ async function copyExcelSummaryForSelected(eventId, i){
   }
 
   const rosterRows = (rosterCache[eventId] && rosterCache[eventId].roster) || [];
-  const lines = checked
+  const selectedRows = checked
     .map(cb => rosterRows[Number(cb.dataset.index)])
-    .filter(Boolean)
-    .map(buildExcelSummaryLine);
+    .filter(Boolean);
 
-  if(lines.length === 0){
+  if(selectedRows.length === 0){
     showToast('❌ ไม่พบข้อมูลการเดินทางของสตาฟที่เลือก', 'err');
     return;
   }
+
+  // Needed for the "รถยนต์ส่วนตัว" formula (distance/15 x fuel price) —
+  // only fetched if at least one selected staff member actually has a
+  // Personal Vehicle segment, and reuses the same lean/no-image endpoint
+  // apiGetEventInfo already exposes, so this stays fast.
+  const needsFuelPrices = selectedRows.some(r =>
+    (r.tripDetails || []).some(trip => (trip.segments || []).some(s => s && s.type === 'CAR'))
+  );
+  let fuelPrices = [];
+  if(needsFuelPrices){
+    try{
+      const infoRes = await callApi('getEventInfo', {eventId});
+      if(infoRes && infoRes.ok && Array.isArray(infoRes.fuelPrices)) fuelPrices = infoRes.fuelPrices;
+    }catch(err){
+      // Non-fatal — CAR segments will just show a fuel price of 0.00 in
+      // the formula rather than blocking the whole copy action.
+    }
+  }
+
+  const lines = selectedRows.map(row => buildExcelSummaryLine(row, fuelPrices));
 
   const fullText = lines.join('\n');
 
@@ -1524,6 +1571,24 @@ function editEvent(eventId){
       loadFuelPricesIntoState('edit', res.fuelPrices);
     }
     renderFuelInputs('edit');
+
+    // Receipt images are intentionally NOT included in getEventInfo (see
+    // code.gs) so this modal can open instantly — fetch them separately in
+    // the background and merge them in the moment they arrive, instead of
+    // blocking the whole edit view on every fuel-receipt Drive fetch.
+    if(res.ok && Array.isArray(res.fuelPrices) && res.fuelPrices.some(fp => fp.receiptUrl)){
+      callApi('getFuelReceiptImages', {eventId}).then(imgRes=>{
+        if(myRequestToken !== editRequestToken) return;
+        if(!imgRes.ok || !Array.isArray(imgRes.fuelPrices)) return;
+        const stateObj = fuelStateFor('edit');
+        imgRes.fuelPrices.forEach(fp=>{
+          if(fp.receiptImage && stateObj[fp.date]){
+            stateObj[fp.date].receipt = Object.assign({}, fp.receiptImage, {isExisting:true, existingUrl: fp.receiptUrl});
+          }
+        });
+        renderFuelInputs('edit');
+      }).catch(()=>{ /* non-fatal — thumbnails just won't appear */ });
+    }
   }).catch(()=>{
     if(myRequestToken !== editRequestToken) return;
     renderFuelInputs('edit');
