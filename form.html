@@ -805,9 +805,9 @@ function renderSegment(di,key,seg,si,dayDate){
     body = `
       <div class="grid2">
         <div class="field"><label>จาก (ต้นทาง) <span style="color:var(--muted); font-weight:400;"></span></label>
-          <input value="${seg.origin}" oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)" placeholder="ไม่บังคับ"></div>
+          <input value="${seg.origin}" oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)" placeholder="ไม่บังคับ เช่น ทางพิเศษเฉลิมมหานคร"></div>
         <div class="field"><label>ไป (ปลายทาง) <span style="color:var(--muted); font-weight:400;"></span></label>
-          <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder="ไม่บังคับ"></div>
+          <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder="ไม่บังคับ เช่น ทางพิเศษเฉลิมมหานคร"></div>
       </div>
       <div class="field"><label>จำนวนเงิน (บาท) <span class="req">*</span></label>
         <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
@@ -840,13 +840,15 @@ function renderSegment(di,key,seg,si,dayDate){
       <span class="attach-thumb">${a.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${a.base64}"><button type="button" class="view-img-link" onclick="openImageLightbox('${a.base64}')">🔍 ดูรูปภาพ</button><span class="rm" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</span></span>`).join('');
 
   // Parking, Toll, and Personal Vehicle require at least one attached
-  // file (see validate()) — flag that visually with a red "*" and a
-  // mode-specific label, matching the exact wording used in the
-  // validation alert, so employees see the requirement before they hit
-  // submit instead of only finding out from the error message.
-  const requiresReceipt = seg.type==='PARKING' || seg.type==='TOLL' || typeCfg.kind==='car';
+  // Parking, Toll, Personal Vehicle, and Grab/Lineman/Bolt all require at
+  // least one attached file (see validate()) — flag that visually with a
+  // red "*" and a mode-specific label, matching the exact wording used in
+  // the validation alert, so employees see the requirement before they
+  // hit submit instead of only finding out from the error message.
+  const requiresReceipt = seg.type==='PARKING' || seg.type==='TOLL' || seg.type==='GRAB' || typeCfg.kind==='car';
   const attachLabel = seg.type==='PARKING' ? 'แนบรูปใบเสร็จค่าจอดรถ'
     : seg.type==='TOLL' ? 'แนบรูปใบเสร็จค่าทางด่วน'
+    : seg.type==='GRAB' ? 'แนบรูปภาพหลักฐานการเดินทาง Grab/Lineman/Bolt'
     : typeCfg.kind==='car' ? 'แนบรูปภาพแคปหน้าจอ Google Maps สำหรับรถยนต์ส่วนตัว'
     : 'แนบรูปภาพหลักฐาน/สลิป (แนบได้มากกว่า 1 ไฟล์)';
 
@@ -1152,13 +1154,15 @@ function validate(){
         }
 
         // Mandatory receipt/photo upload for these travel modes — a
-        // parking or toll receipt, or a Google Maps screenshot proving the
-        // distance for a personal-vehicle trip. Submission is blocked
-        // without at least one attached file.
-        const requiresReceipt = seg.type==='PARKING' || seg.type==='TOLL' || typeCfg.kind==='car';
+        // parking or toll receipt, a Google Maps screenshot proving the
+        // distance for a personal-vehicle trip, or a trip screenshot for
+        // Grab/Lineman/Bolt. Submission is blocked without at least one
+        // attached file.
+        const requiresReceipt = seg.type==='PARKING' || seg.type==='TOLL' || seg.type==='GRAB' || typeCfg.kind==='car';
         if(requiresReceipt && !((seg.attachments||[]).length > 0)){
           const receiptWarning = seg.type==='PARKING' ? 'กรุณาแนบรูปใบเสร็จค่าจอดรถ'
             : seg.type==='TOLL' ? 'กรุณาแนบรูปใบเสร็จค่าทางด่วน'
+            : seg.type==='GRAB' ? 'กรุณาแนบรูปภาพหลักฐานการเดินทาง Grab/Lineman/Bolt'
             : 'กรุณาแนบรูปภาพแคปหน้าจอ Google Maps สำหรับรถยนต์ส่วนตัว';
           errors.push(`${tag}: ${receiptWarning}`); ok=false;
         }
