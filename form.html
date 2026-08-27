@@ -805,15 +805,15 @@ function renderSegment(di,key,seg,si,dayDate){
     body = `
       <div class="grid2">
         <div class="field"><label>จาก (ต้นทาง) <span style="color:var(--muted); font-weight:400;"></span></label>
-          <input value="${seg.origin}" oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)" placeholder="ไม่บังคับ เช่น ทางพิเศษเฉลิมมหานคร"></div>
+          <input value="${seg.origin}" oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)" placeholder="เช่น ทางพิเศษเฉลิมมหานคร"></div>
         <div class="field"><label>ไป (ปลายทาง) <span style="color:var(--muted); font-weight:400;"></span></label>
-          <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder="ไม่บังคับ เช่น ทางพิเศษเฉลิมมหานคร"></div>
+          <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder=เช่น ทางพิเศษเฉลิมมหานคร"></div>
       </div>
       <div class="field"><label>จำนวนเงิน (บาท) <span class="req">*</span></label>
         <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
           oninput="segAmountInput(${di},'${key}',${si},this.value)"
           onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>
-      <div class="hint">ต้นทาง/ปลายทางไม่บังคับ — กรอกจำนวนเงินและแนบใบเสร็จค่าทางด่วน</div>`;
+      <div class="hint">ต้นทาง/ปลายทาง — กรอกจำนวนเงินและแนบใบเสร็จค่าทางด่วน</div>`;
   } else {
     const otherField = seg.type==='OTHER' ? `
       <div class="field"><label>รายละเอียดเพิ่มเติม (ระบุประเภทการเดินทาง) <span class="req">*</span></label>
