@@ -186,6 +186,8 @@ function routeAction(action, payload) {
       return apiGetFuelPrice();
     case 'getFileBase64':
       return apiGetFileAsBase64(payload);
+    case 'getFuelReceiptImages':
+      return apiGetFuelReceiptImages(payload);
     default:
       return { ok: false, error: 'ไม่พบ Action ที่ระบุ: ' + action };
   }
@@ -211,6 +213,38 @@ function sheetToObjects(sheet) {
     headers.forEach((h, i) => obj[h] = row[i]);
     return obj;
   });
+}
+
+// ---------- Response caching (CacheService) ----------
+// Read-heavy endpoints (event list, event info, roster) re-scan whole
+// sheets on every call. When several people hit the same event in quick
+// succession (e.g. multiple staff opening the same form link, or an admin
+// refreshing the event list), a short-lived cache lets every call after
+// the first be served instantly with zero Sheets reads. TTLs are kept
+// short (30–60s) so nothing stays stale for long, and every mutation below
+// explicitly clears the relevant key(s) so writes are always reflected
+// immediately rather than waiting for the cache to expire.
+function cacheGetJson_(key) {
+  try {
+    const raw = CacheService.getScriptCache().get(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    return null; // cache miss/unavailable — caller just falls back to a real read
+  }
+}
+function cacheSetJson_(key, obj, ttlSeconds) {
+  try {
+    // CacheService values are capped at 100KB — silently skip caching
+    // (rather than fail the request) if a response is ever too large.
+    CacheService.getScriptCache().put(key, JSON.stringify(obj), ttlSeconds);
+  } catch (err) {
+    // too large or cache temporarily unavailable — fine, just not cached
+  }
+}
+function cacheRemove_(key) {
+  try {
+    CacheService.getScriptCache().remove(key);
+  } catch (err) { /* no-op */ }
 }
 
 function generateId(prefix) {
@@ -309,62 +343,95 @@ function saveFuelPrices_(eventId, eventName, fuelPrices) {
   // write below either keeps the receipt's existing Drive URL untouched or
   // uploads a fresh one; nothing is ever silently dropped unless the client
   // omitted that date/receipt on purpose (i.e. the user removed it in the UI).
+  //
+  // PERFORMANCE: previously this issued one deleteRow() call per existing
+  // row PLUS one appendRow() call per new row — each one a separate,
+  // relatively slow Sheets API round-trip. Instead, read the whole sheet
+  // once, build the final data set in memory (every other event's rows +
+  // this event's new rows), and write it all back with a single batched
+  // setValues() call.
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
   const idCol = headers.indexOf('event_id');
-  const rowsToDelete = [];
-  for (let r = 1; r < data.length; r++) {
-    if (data[r][idCol] === eventId) rowsToDelete.push(r + 1);
-  }
-  rowsToDelete.reverse().forEach(r => sheet.deleteRow(r));
+  const otherRows = data.slice(1).filter(row => row[idCol] !== eventId);
 
-  if (!Array.isArray(fuelPrices) || fuelPrices.length === 0) return;
+  const newRows = [];
+  if (Array.isArray(fuelPrices) && fuelPrices.length > 0) {
+    let fuelFolder = null; // lazily created — only if we actually need to upload a new receipt
 
-  let fuelFolder = null; // lazily created — only if we actually need to upload a new receipt
+    fuelPrices.forEach(fp => {
+      if (!fp || !fp.date) return;
+      let receiptUrl = '';
 
-  fuelPrices.forEach(fp => {
-    if (!fp || !fp.date) return;
-    let receiptUrl = '';
-
-    if (fp.receipt) {
-      if (fp.receipt.isExisting && fp.receipt.existingUrl) {
-        receiptUrl = fp.receipt.existingUrl;
-      } else if (fp.receipt.base64) {
-        try {
-          if (!fuelFolder) fuelFolder = getOrCreateFuelReceiptsFolder(eventId, eventName);
-          const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/.exec(fp.receipt.base64);
-          const mime = match ? match[1] : 'image/jpeg';
-          const dataPart = match ? match[2] : fp.receipt.base64;
-          const ext = (mime.split('/')[1] || 'jpg');
-          const blob = Utilities.newBlob(
-            Utilities.base64Decode(dataPart), mime,
-            'fuel_' + eventId + '_' + fp.date + '.' + ext
-          );
-          const file = fuelFolder.createFile(blob);
-          safeSetPublicSharing(file);
-          receiptUrl = file.getUrl();
-        } catch (err) {
-          Logger.log('Fuel receipt save error (' + fp.date + '): ' + err.toString());
+      if (fp.receipt) {
+        if (fp.receipt.isExisting && fp.receipt.existingUrl) {
+          receiptUrl = fp.receipt.existingUrl;
+        } else if (fp.receipt.base64) {
+          try {
+            if (!fuelFolder) fuelFolder = getOrCreateFuelReceiptsFolder(eventId, eventName);
+            const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/.exec(fp.receipt.base64);
+            const mime = match ? match[1] : 'image/jpeg';
+            const dataPart = match ? match[2] : fp.receipt.base64;
+            const ext = (mime.split('/')[1] || 'jpg');
+            const blob = Utilities.newBlob(
+              Utilities.base64Decode(dataPart), mime,
+              'fuel_' + eventId + '_' + fp.date + '.' + ext
+            );
+            const file = fuelFolder.createFile(blob);
+            safeSetPublicSharing(file);
+            receiptUrl = file.getUrl();
+          } catch (err) {
+            Logger.log('Fuel receipt save error (' + fp.date + '): ' + err.toString());
+          }
         }
       }
-    }
 
-    sheet.appendRow([eventId, String(fp.date), Math.round((Number(fp.price) || 0) * 100) / 100, receiptUrl]);
-  });
+      newRows.push([eventId, String(fp.date), Math.round((Number(fp.price) || 0) * 100) / 100, receiptUrl]);
+    });
+  }
+
+  const finalRows = otherRows.concat(newRows);
+  // Clear just the data area (keep the header row + its formatting intact)
+  // then write everything back in one shot.
+  const numCols = headers.length;
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, numCols).clearContent();
+  if (finalRows.length > 0) {
+    sheet.getRange(2, 1, finalRows.length, numCols).setValues(finalRows);
+  }
 }
 
+// Fast path — plain sheet read only, NO Drive calls. Used by
+// apiGetEventInfo, which fires on every single form.html/edit-event page
+// load. Each receipt image previously required its own synchronous
+// DriveApp.getFileById()+getBlob() round-trip *every time this ran* even
+// though the image itself is only actually needed once — at PDF-generation
+// time (form.html) or when an admin explicitly clicks "🔍 ดูรูปภาพ"
+// (index.html). Skipping that here is the single biggest speed win
+// available, since it turns "load the form" from N Drive fetches down to
+// zero.
 function getEventFuelPrices_(eventId) {
   const rows = sheetToObjects(getSheet(SHEET_EVENT_FUEL_PRICES)).filter(x => x.event_id === eventId);
   return rows.map(fp => {
     const receiptUrl = fp.receipt_url || '';
-    const receiptImage = receiptUrl ? driveFileToBase64Attachment_(receiptUrl) : null;
     return {
       date: isoDateStr(fp.date),
       price: Math.round((Number(fp.price) || 0) * 100) / 100,
       receiptUrl: receiptUrl,
-      receiptImage: receiptImage
+      receiptImage: null // fetched on demand — see getEventFuelPricesWithImages_
     };
   }).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Slow path — same data as above, but with each receipt image resolved to
+// Base64 via a Drive round-trip. Only called on demand: right before
+// form.html generates a PDF that actually needs a fuel receipt embedded,
+// or when index.html's edit-event view loads receipt previews in the
+// background after the fast fields have already rendered.
+function getEventFuelPricesWithImages_(eventId) {
+  return getEventFuelPrices_(eventId).map(fp => Object.assign({}, fp, {
+    receiptImage: fp.receiptUrl ? driveFileToBase64Attachment_(fp.receiptUrl) : null
+  }));
 }
 
 // ---------- API: สร้างกิจกรรมใหม่ ----------
@@ -393,14 +460,21 @@ function apiCreateEvent(payload) {
   ]);
 
   const empSheet = getSheet(SHEET_EVENT_EMPLOYEES);
-  if (Array.isArray(payload.employees)) {
-    payload.employees.forEach(emp => {
-      if (!emp || !emp.name) return;
-      empSheet.appendRow([eventId, String(emp.name).trim(), String(emp.department || '').trim()]);
-    });
+  if (Array.isArray(payload.employees) && payload.employees.length > 0) {
+    // Batch write: build the full set of employee rows in memory and write
+    // them in one setValues() call instead of one appendRow() per person.
+    const empRows = payload.employees
+      .filter(emp => emp && emp.name)
+      .map(emp => [eventId, String(emp.name).trim(), String(emp.department || '').trim()]);
+    if (empRows.length > 0) {
+      const startRow = empSheet.getLastRow() + 1;
+      empSheet.getRange(startRow, 1, empRows.length, 3).setValues(empRows);
+    }
   }
 
   saveFuelPrices_(eventId, payload.eventName, payload.fuelPrices);
+
+  cacheRemove_(CACHE_KEY_EVENTS_LIST);
 
   return {
     ok: true,
@@ -433,29 +507,39 @@ function apiUpdateEvent(payload) {
   const startCol = headers.indexOf('start_date');
   const endCol = headers.indexOf('end_date');
 
-  events.getRange(rowIndex + 1, nameCol + 1).setValue(String(payload.eventName).trim());
-  events.getRange(rowIndex + 1, ownerCol + 1).setValue(String(payload.ownerName).trim());
-  if (venueCol > -1) events.getRange(rowIndex + 1, venueCol + 1).setValue(String(payload.venue || '').trim());
-  events.getRange(rowIndex + 1, startCol + 1).setValue(payload.startDate || '');
-  events.getRange(rowIndex + 1, endCol + 1).setValue(payload.endDate || payload.startDate || '');
+  // Batch write: edit the row's values in memory (preserving every other
+  // column untouched), then write the whole row back with a single
+  // setValues() call instead of up to 5 separate setValue() round-trips.
+  const updatedRow = data[rowIndex].slice();
+  updatedRow[nameCol] = String(payload.eventName).trim();
+  updatedRow[ownerCol] = String(payload.ownerName).trim();
+  if (venueCol > -1) updatedRow[venueCol] = String(payload.venue || '').trim();
+  updatedRow[startCol] = payload.startDate || '';
+  updatedRow[endCol] = payload.endDate || payload.startDate || '';
+  events.getRange(rowIndex + 1, 1, 1, updatedRow.length).setValues([updatedRow]);
 
   // ลบรายชื่อพนักงานเดิม แล้วอัปเดตชุดใหม่ลงไป
+  // PERFORMANCE: same batching pattern as saveFuelPrices_ — read once,
+  // filter out this event's old rows in memory, append the new set, and
+  // write everything back with a single setValues() call instead of one
+  // deleteRow()/appendRow() per employee.
   const empSheet = getSheet(SHEET_EVENT_EMPLOYEES);
   const empData = empSheet.getDataRange().getValues();
   const empHeaders = empData[0];
   const empIdCol = empHeaders.indexOf('event_id');
-  const rowsToDelete = [];
-  
-  for (let r = 1; r < empData.length; r++) {
-    if (empData[r][empIdCol] === payload.eventId) rowsToDelete.push(r + 1);
-  }
-  rowsToDelete.reverse().forEach(r => empSheet.deleteRow(r));
+  const otherEmpRows = empData.slice(1).filter(row => row[empIdCol] !== payload.eventId);
 
-  if (Array.isArray(payload.employees)) {
-    payload.employees.forEach(emp => {
-      if (!emp || !emp.name) return;
-      empSheet.appendRow([payload.eventId, String(emp.name).trim(), String(emp.department || '').trim()]);
-    });
+  const newEmpRows = Array.isArray(payload.employees)
+    ? payload.employees
+        .filter(emp => emp && emp.name)
+        .map(emp => [payload.eventId, String(emp.name).trim(), String(emp.department || '').trim()])
+    : [];
+
+  const finalEmpRows = otherEmpRows.concat(newEmpRows);
+  const empLastRow = empSheet.getLastRow();
+  if (empLastRow > 1) empSheet.getRange(2, 1, empLastRow - 1, empHeaders.length).clearContent();
+  if (finalEmpRows.length > 0) {
+    empSheet.getRange(2, 1, finalEmpRows.length, empHeaders.length).setValues(finalEmpRows);
   }
 
   // Photo persistence guarantee: saveFuelPrices_ only re-uploads receipts
@@ -465,16 +549,32 @@ function apiUpdateEvent(payload) {
   // the client omitted them on purpose (user removed them in the UI).
   saveFuelPrices_(payload.eventId, payload.eventName, payload.fuelPrices);
 
+  cacheRemove_(CACHE_KEY_EVENTS_LIST);
+  cacheRemove_('event_info_' + payload.eventId);
+  cacheRemove_('roster_' + payload.eventId);
+
   return { ok: true, eventId: payload.eventId };
 }
 
 // ---------- API: รายการกิจกรรมทั้งหมด ----------
+const CACHE_KEY_EVENTS_LIST = 'events_list_v1';
+
 function apiListAllEvents() {
+  const cached = cacheGetJson_(CACHE_KEY_EVENTS_LIST);
+  if (cached) return cached;
+
   const events = sheetToObjects(getSheet(SHEET_EVENTS));
   const employees = sheetToObjects(getSheet(SHEET_EVENT_EMPLOYEES));
 
+  // Count staff per event in a single pass instead of re-filtering the
+  // full employee list once per event (O(n) instead of O(events × employees),
+  // which matters once an org has built up many events/staff over time).
+  const staffCountByEvent = {};
+  employees.forEach(e => {
+    staffCountByEvent[e.event_id] = (staffCountByEvent[e.event_id] || 0) + 1;
+  });
+
   const list = events.map(ev => {
-    const staffCount = employees.filter(e => e.event_id === ev.event_id).length;
     return {
       eventId: ev.event_id,
       eventName: ev.event_name,
@@ -483,19 +583,25 @@ function apiListAllEvents() {
       startDate: dateStr(ev.start_date),
       endDate: dateStr(ev.end_date),
       formLink: ev.form_link || (ScriptApp.getService().getUrl() + '?page=form&event=' + ev.event_id),
-      staffCount: staffCount,
+      staffCount: staffCountByEvent[ev.event_id] || 0,
       createdAt: ev.created_at
     };
   }).sort((a, b) => (new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
 
-  return { ok: true, events: list };
+  const result = { ok: true, events: list };
+  cacheSetJson_(CACHE_KEY_EVENTS_LIST, result, 45);
+  return result;
 }
 
 // ---------- API: ดึงข้อมูลกิจกรรมและรายชื่อพนักงานสำหรับ Auto-complete ----------
 function apiGetEventInfo(payload) {
   if (!payload || !payload.eventId) return { ok: false, error: 'ไม่ได้ระบุรหัสกิจกรรม' };
-  
+
   const eventId = payload.eventId;
+  const cacheKey = 'event_info_' + eventId;
+  const cached = cacheGetJson_(cacheKey);
+  if (cached) return cached;
+
   const events = sheetToObjects(getSheet(SHEET_EVENTS));
   const ev = events.find(e => e.event_id === eventId);
   if (!ev) return { ok: false, error: 'ไม่พบกิจกรรมนี้ในระบบ (Event ID ไม่ถูกต้อง)' };
@@ -504,19 +610,24 @@ function apiGetEventInfo(payload) {
     .filter(x => x.event_id === eventId)
     .map(x => ({ name: x.employee_name, department: x.department }));
 
-  return {
+  const result = {
     ok: true,
     event: {
       eventId: ev.event_id, eventName: ev.event_name, ownerName: ev.owner_name, venue: ev.venue || '',
       startDate: dateStr(ev.start_date), endDate: dateStr(ev.end_date)
     },
     employees: employees,
-    // Per-day Gasohol 91 price + (if any) its receipt image, pre-fetched as
-    // Base64 — used by index.html to pre-populate the edit form, and by
-    // form.html both for the personal-vehicle auto-calculation and for
-    // attaching the day's fuel receipt into the generated PDF.
+    // Per-day Gasohol 91 price (receipt IMAGES are intentionally excluded
+    // here — see getEventFuelPrices_ — and fetched on demand instead) —
+    // used by index.html to pre-populate the edit form, and by form.html
+    // for the personal-vehicle auto-calculation.
     fuelPrices: getEventFuelPrices_(eventId)
   };
+  // This endpoint fires on every single form.html page load, so caching it
+  // briefly means every concurrent staff member opening the same event's
+  // form link gets served instantly instead of re-scanning both sheets.
+  cacheSetJson_(cacheKey, result, 30);
+  return result;
 }
 
 // ---------- API: ดึงสถานะการส่งเอกสารของพนักงานทุกคนในกิจกรรม ----------
@@ -524,6 +635,10 @@ function apiGetEventRoster(payload) {
   if (!payload || !payload.eventId) return { ok: false, error: 'ไม่ได้ระบุรหัสกิจกรรม' };
 
   const eventId = payload.eventId;
+  const cacheKey = 'roster_' + eventId;
+  const cached = cacheGetJson_(cacheKey);
+  if (cached) return cached;
+
   const events = sheetToObjects(getSheet(SHEET_EVENTS));
   const ev = events.find(e => e.event_id === eventId);
   if (!ev) return { ok: false, error: 'ไม่พบกิจกรรมนี้' };
@@ -576,7 +691,7 @@ function apiGetEventRoster(payload) {
     };
   });
 
-  return {
+  const result = {
     ok: true,
     event: {
       eventId: ev.event_id, eventName: ev.event_name, ownerName: ev.owner_name, venue: ev.venue || '',
@@ -584,6 +699,12 @@ function apiGetEventRoster(payload) {
     },
     roster: rows
   };
+  // Short TTL — long enough to absorb a burst of admins/browsers refreshing
+  // the same event's roster panel, short enough that a fresh submission
+  // never stays hidden for long even if the explicit cacheRemove_ below
+  // were ever missed.
+  cacheSetJson_(cacheKey, result, 20);
+  return result;
 }
 
 // ---------- API: บันทึก / แก้ไข การส่งเอกสารเบิกจ่าย ----------
@@ -713,6 +834,10 @@ function apiSubmitExpense(payload) {
     submissions.appendRow(rowData);
   }
 
+  // The roster panel (index.html) must always reflect a just-submitted
+  // claim immediately — never wait out the cache TTL.
+  cacheRemove_('roster_' + payload.eventId);
+
   return { ok: true, submissionId: submissionId, status: status, pdfUrl: pdfUrl, resubmitted: isResubmit };
 }
 
@@ -774,6 +899,15 @@ function apiGetFileAsBase64(payload) {
   const att = driveFileToBase64Attachment_(payload.url);
   if (!att) return { ok: false, error: 'ไม่สามารถอ่านไฟล์นี้ได้ (อาจถูกลบ หรือไม่มีสิทธิ์เข้าถึง)' };
   return { ok: true, base64: att.base64, fileName: att.fileName, mimeType: att.mimeType };
+}
+
+// ---------- API: ดึงรูปใบเสร็จราคาน้ำมัน (แบบ Base64) เฉพาะตอนที่ต้องใช้จริง ----------
+// Deliberately separate from apiGetEventInfo (see getEventFuelPrices_ above)
+// so the common "just load the form/event" path never pays for Drive
+// image fetches it doesn't need yet.
+function apiGetFuelReceiptImages(payload) {
+  if (!payload || !payload.eventId) return { ok: false, error: 'ไม่ได้ระบุรหัสกิจกรรม' };
+  return { ok: true, fuelPrices: getEventFuelPricesWithImages_(payload.eventId) };
 }
 
 // ---------- API: ราคาน้ำมันอ้างอิง ----------
