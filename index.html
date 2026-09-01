@@ -151,6 +151,15 @@
   .lightbox-overlay img{max-width:100%; max-height:100%; border-radius:8px; box-shadow:0 10px 40px rgba(0,0,0,.4); cursor:default;}
   .lightbox-close{position:fixed; top:18px; right:22px; background:transparent; border:none; color:#fff; font-size:26px; cursor:pointer; z-index:2001; line-height:1;}
 
+  /* 🚧 Exit confirmation modal */
+  .exit-modal-overlay{display:none; position:fixed; inset:0; background:rgba(10,12,9,.55); z-index:2100; align-items:center; justify-content:center; padding:20px;}
+  .exit-modal-overlay.show{display:flex;}
+  .exit-modal-box{background:#fff; border-radius:14px; max-width:400px; width:100%; padding:22px 22px 18px; box-shadow:0 14px 45px rgba(0,0,0,.3);}
+  .exit-modal-title{font-size:17px; font-weight:700; color:var(--brand-dark); margin-bottom:10px;}
+  .exit-modal-message{font-size:14px; color:var(--text); line-height:1.6; margin-bottom:20px;}
+  .exit-modal-actions{display:flex; justify-content:flex-end; gap:10px;}
+  .exit-modal-actions .btn-exit-danger{background:var(--danger); color:#fff;}
+
   /* ===== ⛽ Buffer (optional, pre-event) fuel date rows ===== */
   .fuel-day-mandatory{font-size:10px; color:#fff; background:var(--brand); border-radius:5px; padding:1px 6px; white-space:nowrap; font-weight:700;}
   .fuel-day-buffer{font-size:10px; color:#8a6d00; background:#fdf3e2; border-radius:5px; padding:1px 6px; white-space:nowrap; font-weight:700;}
@@ -180,7 +189,7 @@
 
   <div id="createView">
     <div class="back-row">
-      <button class="btn btn-outline" onclick="showListView()">← กลับหน้าหลัก</button>
+      <button class="btn btn-outline" onclick="guardedExit(showListView)">← กลับหน้าหลัก</button>
       <h1 style="margin:0;">🛠️ สร้างกิจกรรมใหม่</h1>
     </div>
     <div class="msg err" id="createMsgErr"></div>
@@ -188,24 +197,24 @@
     <div class="card">
       <div class="field">
         <label>ชื่อ Event <span class="req">*</span></label>
-        <input id="eventName" placeholder="เช่น อบรมการตลาดประจำปี 2569">
+        <input id="eventName" placeholder="เช่น อบรมการตลาดประจำปี 2569" oninput="markFormDirty()">
       </div>
       <div class="field">
         <label>ชื่อผู้สร้าง Event <span class="req">*</span></label>
-        <input id="ownerName" placeholder="เช่น สมหญิง มีสุข">
+        <input id="ownerName" placeholder="เช่น สมหญิง มีสุข" oninput="markFormDirty()">
       </div>
       <div class="field">
         <label>สถานที่จัดงาน</label>
-        <input id="venue" placeholder="เช่น โรงแรม ABC, ห้องประชุมชั้น 5">
+        <input id="venue" placeholder="เช่น โรงแรม ABC, ห้องประชุมชั้น 5" oninput="markFormDirty()">
       </div>
       <div class="grid2">
         <div class="field">
           <label>วันที่เริ่ม Event <span class="req">*</span></label>
-          <input id="startDate" type="date" onchange="renderFuelInputs('create')">
+          <input id="startDate" type="date" onchange="markFormDirty(); renderFuelInputs('create')">
         </div>
         <div class="field">
           <label>วันที่สิ้นสุด Event</label>
-          <input id="endDate" type="date" onchange="renderFuelInputs('create')">
+          <input id="endDate" type="date" onchange="markFormDirty(); renderFuelInputs('create')">
           <div class="hint">ถ้าเป็นกิจกรรมวันเดียว เว้นว่างไว้ได้</div>
         </div>
       </div>
@@ -214,7 +223,7 @@
           <label>รายชื่อ Staff ที่เกี่ยวข้องกับกิจกรรมนี้ <span class="req">*</span></label>
           <button type="button" class="btn btn-small btn-import" onclick="openImportModal('employeeList')">📋 นำเข้าจาก Excel</button>
         </div>
-        <textarea id="employeeList" placeholder="พิมพ์ 1 คนต่อบรรทัด รูปแบบ: ชื่อ นามสกุล - แผนก"></textarea>
+        <textarea id="employeeList" placeholder="พิมพ์ 1 คนต่อบรรทัด รูปแบบ: ชื่อ นามสกุล - แผนก" oninput="markFormDirty()"></textarea>
         <div class="hint">พิมพ์ "ชื่อ นามสกุล - แผนก" แล้วกด Enter ขึ้นบรรทัดใหม่ทีละคน หรือกด "นำเข้าจาก Excel" เพื่อวางข้อมูลจาก Excel โดยตรง</div>
       </div>
       <div class="field">
@@ -230,7 +239,7 @@
 
   <div id="editView">
     <div class="back-row">
-      <button class="btn btn-outline" onclick="showListView()">← กลับหน้าหลัก</button>
+      <button class="btn btn-outline" onclick="guardedExit(showListView)">← กลับหน้าหลัก</button>
       <h1 style="margin:0;">✏️ แก้ไขรายละเอียดกิจกรรม</h1>
     </div>
     <div class="msg err" id="editMsgErr"></div>
@@ -238,24 +247,24 @@
     <div class="card">
       <div class="field">
         <label>ชื่อ Event <span class="req">*</span></label>
-        <input id="editEventName">
+        <input id="editEventName" oninput="markFormDirty()">
       </div>
       <div class="field">
         <label>ชื่อผู้สร้าง Event <span class="req">*</span></label>
-        <input id="editOwnerName">
+        <input id="editOwnerName" oninput="markFormDirty()">
       </div>
       <div class="field">
         <label>สถานที่จัดงาน</label>
-        <input id="editVenue">
+        <input id="editVenue" oninput="markFormDirty()">
       </div>
       <div class="grid2">
         <div class="field">
           <label>วันที่เริ่ม Event <span class="req">*</span></label>
-          <input id="editStartDate" type="date" onchange="renderFuelInputs('edit')">
+          <input id="editStartDate" type="date" onchange="markFormDirty(); renderFuelInputs('edit')">
         </div>
         <div class="field">
           <label>วันที่สิ้นสุด Event</label>
-          <input id="editEndDate" type="date" onchange="renderFuelInputs('edit')">
+          <input id="editEndDate" type="date" onchange="markFormDirty(); renderFuelInputs('edit')">
         </div>
       </div>
       <div class="field">
@@ -263,7 +272,7 @@
           <label>รายชื่อ Staff ที่เกี่ยวข้องกับกิจกรรมนี้ <span class="req">*</span></label>
           <button type="button" class="btn btn-small btn-import" onclick="openImportModal('editEmployeeList')">📋 นำเข้าจาก Excel</button>
         </div>
-        <textarea id="editEmployeeList"></textarea>
+        <textarea id="editEmployeeList" oninput="markFormDirty()"></textarea>
       </div>
       <div class="field">
         <div class="fuel-price-header">
@@ -371,6 +380,15 @@
     <button type="button" class="lightbox-close" onclick="closeImageLightbox(event)">✕</button>
     <img id="imgLightboxImg" src="" alt="ตัวอย่างรูปภาพ" onclick="event.stopPropagation()">
   </div>
+
+  <!-- 🚧 Exit confirmation modal (unsaved changes / files still processing) -->
+  <div class="exit-modal-overlay" id="exitModalOverlay">
+    <div class="exit-modal-box">
+      <div class="exit-modal-title" id="exitModalTitle"></div>
+      <div class="exit-modal-message" id="exitModalMessage"></div>
+      <div class="exit-modal-actions" id="exitModalActions"></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -409,6 +427,109 @@ function closeImageLightbox(evt){
   document.body.style.overflow = '';
 }
 
+/* ===================================================================
+   🚧 CUSTOM EXIT CONFIRMATION MODAL (Create/Edit Event)
+   Two variants:
+   - 'processing': a fuel-price receipt file is still being read — a hard
+     stop, single "เข้าใจแล้ว" button, no way to proceed from here.
+   - 'unsaved': the Create/Edit Event form has edits that were never
+     saved — asks the admin to confirm before actually leaving.
+=================================================================== */
+let _exitModalCancelCallback = null;
+
+function showExitModal(variant, onConfirm, onCancel){
+  const titleEl = document.getElementById('exitModalTitle');
+  const msgEl = document.getElementById('exitModalMessage');
+  const actionsEl = document.getElementById('exitModalActions');
+  actionsEl.innerHTML = '';
+  _exitModalCancelCallback = onCancel || null;
+
+  if(variant === 'processing'){
+    titleEl.textContent = '⏳ กำลังอัปโหลดไฟล์หลักฐาน...';
+    msgEl.textContent = 'ไฟล์หลักฐานของคุณกำลังถูกประมวลผลและอัปโหลดอยู่ กรุณารอให้ระบบประมวลผลเสร็จสิ้นก่อนออกจากหน้านี้';
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button';
+    okBtn.className = 'btn';
+    okBtn.textContent = 'เข้าใจแล้ว';
+    okBtn.onclick = closeExitModal;
+    actionsEl.appendChild(okBtn);
+  } else { // 'unsaved'
+    titleEl.textContent = '⚠️ ยืนยันการออกจากหน้านี้?';
+    msgEl.textContent = 'คุณมีข้อมูลหรือรายการเบิกเงินที่ยังไม่ได้กดบันทึก หากออกจากหน้านี้ ข้อมูลทั้งหมดที่คุณกรอกไว้จะไม่ถูกบันทึก';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn btn-outline';
+    cancelBtn.textContent = 'กรอกข้อมูลต่อ';
+    cancelBtn.onclick = function(){
+      closeExitModal();
+      if(typeof _exitModalCancelCallback === 'function') _exitModalCancelCallback();
+    };
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'btn btn-exit-danger';
+    confirmBtn.textContent = 'ยืนยันออกจากหน้า';
+    confirmBtn.onclick = function(){
+      closeExitModal();
+      if(typeof onConfirm === 'function') onConfirm();
+    };
+
+    actionsEl.appendChild(cancelBtn);
+    actionsEl.appendChild(confirmBtn);
+  }
+
+  document.getElementById('exitModalOverlay').classList.add('show');
+}
+
+function closeExitModal(){
+  document.getElementById('exitModalOverlay').classList.remove('show');
+}
+
+// Central guard for any internal "leave this view" action (the "← กลับ
+// หน้าหลัก" buttons on Create/Edit Event, and the browser back button —
+// see the popstate handler below). Files still processing takes priority
+// as a hard block; unsaved changes asks for confirmation; otherwise
+// proceeds immediately.
+function guardedExit(proceedFn, cancelFn){
+  if(isProcessingFiles){
+    showExitModal('processing');
+    return;
+  }
+  if(isFormDirty){
+    showExitModal('unsaved', proceedFn, cancelFn);
+    return;
+  }
+  proceedFn();
+}
+
+// Browser tab close / refresh — the one exit path a custom modal can
+// never intercept, so this uses the native beforeunload confirmation
+// instead. Fires if either guard condition is true.
+window.addEventListener('beforeunload', function(e){
+  if(isProcessingFiles || isFormDirty){
+    e.preventDefault();
+    e.returnValue = '';
+    return '';
+  }
+});
+
+// Browser back/forward button — the most common "internal navigation"
+// path someone would use to leave Create/Edit Event without clicking the
+// explicit "← กลับหน้าหลัก" button. A sentinel history entry lets the
+// first back-press fire popstate while control still stays with us, so
+// we can show the custom modal instead of silently letting the
+// navigation happen.
+let _allowNextPopstate = false;
+history.pushState({ formExitGuard: true }, '');
+window.addEventListener('popstate', function(){
+  if(_allowNextPopstate){ _allowNextPopstate = false; return; }
+  guardedExit(
+    function(){ _allowNextPopstate = true; history.back(); },
+    function(){ history.pushState({ formExitGuard: true }, ''); }
+  );
+});
+
 function showListView(){
   document.getElementById('createView').style.display = 'none';
   document.getElementById('editView').style.display = 'none';
@@ -419,6 +540,7 @@ function showCreateView(){
   document.getElementById('createMsgErr').style.display = 'none';
   document.getElementById('listView').style.display = 'none';
   document.getElementById('createView').style.display = 'block';
+  isFormDirty = false; // a freshly opened Create Event form has nothing unsaved yet
 }
 function showEditViewEl(){
   document.getElementById('editMsgErr').style.display = 'none';
@@ -555,6 +677,20 @@ let allEvents = [];
 let rosterCache = {};
 
 /* ===================================================================
+   🚧 UNSAVED-CHANGES / IN-PROGRESS-UPLOAD EXIT GUARD (Create/Edit Event)
+   isFormDirty: true once the admin has actually edited something in the
+   Create or Edit Event view (typed a field, changed dates, added/removed
+   a fuel-price receipt, etc.) — reset to false whenever one of those
+   views is freshly opened, and after a successful save, so navigating
+   away right after saving never triggers a warning.
+   isProcessingFiles: true only while a just-picked fuel-price receipt
+   file is actively being read client-side (handleFuelReceiptFile).
+=================================================================== */
+let isFormDirty = false;
+let isProcessingFiles = false;
+function markFormDirty(){ isFormDirty = true; }
+
+/* ===================================================================
    ⛽ DYNAMIC DAILY FUEL PRICE + RECEIPT INPUTS
    Renders one price+receipt row per day in the event's date range, for
    both the Create and Edit event forms. State is kept in a plain object
@@ -623,6 +759,7 @@ function addBufferFuelDate(mode){
     showToast('⚠️ กรุณาเลือกวันที่เริ่ม Event ก่อน', 'err');
     return;
   }
+  markFormDirty();
   const end = document.getElementById(endId) ? document.getElementById(endId).value : '';
   const mandatoryDays = dateRangeArray(start, end);
   const buffers = bufferDatesFor(mode);
@@ -639,6 +776,7 @@ function addBufferFuelDate(mode){
 // Removes a previously-added optional buffer date (mandatory event-date
 // rows have no remove control and can never be deleted this way).
 function removeBufferFuelDate(mode, date){
+  markFormDirty();
   setBufferDatesFor(mode, bufferDatesFor(mode).filter(d => d !== date));
   const stateObj = fuelStateFor(mode);
   delete stateObj[date];
@@ -709,6 +847,7 @@ function renderFuelInputs(mode){
 }
 
 function updateFuelPriceValue(mode, date, value){
+  markFormDirty();
   const stateObj = fuelStateFor(mode);
   if(!stateObj[date]) stateObj[date] = { price:'', receipt:null };
   stateObj[date].price = value;
@@ -717,17 +856,22 @@ function updateFuelPriceValue(mode, date, value){
 function handleFuelReceiptFile(evt, mode, date){
   const file = evt.target.files && evt.target.files[0];
   if(!file) return;
+  markFormDirty();
+  isProcessingFiles = true;
   const reader = new FileReader();
   reader.onload = (e) => {
     const stateObj = fuelStateFor(mode);
     if(!stateObj[date]) stateObj[date] = { price:'', receipt:null };
     stateObj[date].receipt = { base64: e.target.result, fileName: file.name, mimeType: file.type };
+    isProcessingFiles = false;
     renderFuelInputs(mode);
   };
+  reader.onerror = () => { isProcessingFiles = false; };
   reader.readAsDataURL(file);
 }
 
 function removeFuelReceipt(mode, date){
+  markFormDirty();
   const stateObj = fuelStateFor(mode);
   if(stateObj[date]) stateObj[date].receipt = null;
   renderFuelInputs(mode);
@@ -1487,6 +1631,7 @@ function confirmImport(){
 
   const existing = ta.value.trim();
   ta.value = existing ? existing + '\n' + lines.join('\n') : lines.join('\n');
+  markFormDirty();
 
   closeImportModal();
   showToast(`✅ เพิ่มรายชื่อ ${rows.length} คนแล้ว — ตรวจสอบรายชื่อก่อนบันทึก`, 'ok');
@@ -1545,6 +1690,11 @@ async function createNewEvent(){
     createBufferDates = [];
     renderFuelInputs('create');
 
+    // Successfully saved — nothing left unsaved, so navigating away now
+    // proceeds smoothly without the exit guard stepping in.
+    isFormDirty = false;
+    isProcessingFiles = false;
+
     await loadEvents();
     showListView();
     showToast('✅ สร้างกิจกรรมสำเร็จ: ' + eventName, 'ok');
@@ -1563,6 +1713,7 @@ function editEvent(eventId){
   const ev = allEvents.find(e=>e.eventId===eventId);
   if(!ev) return;
   editingEventId = eventId;
+  isFormDirty = false; // a freshly opened Edit Event form has nothing unsaved yet
 
   // Bump the token so a slow response for a previously-opened event can't
   // clobber this (possibly different) event's form once it resolves late.
@@ -1690,6 +1841,10 @@ async function saveEditEvent(){
       delete rosterCache[editingEventId];
       editFuelPrices = {};
       editBufferDates = [];
+      // Successfully saved — nothing left unsaved, so navigating away now
+      // proceeds smoothly without the exit guard stepping in.
+      isFormDirty = false;
+      isProcessingFiles = false;
       await loadEvents();
       showListView();
       showToast('✅ บันทึกการแก้ไขสำเร็จ', 'ok');
