@@ -131,6 +131,8 @@
   .fuel-thumb{position:relative; display:inline-flex; align-items:center; gap:6px; background:#f1f4f0; border-radius:8px; padding:4px 8px 4px 4px;}
   .fuel-thumb img{height:38px; width:38px; object-fit:cover; border-radius:6px;}
   .fuel-thumb .rm{cursor:pointer; color:var(--danger); font-weight:700; font-size:13px; padding:0 3px;}
+  .fuel-thumb-loading{padding:4px 10px;}
+  .thumb-loading-text{font-size:11.5px; color:var(--muted); font-style:italic;}
   .existing-badge{font-size:10px; color:#6b7a63; background:#e2ebdd; border-radius:5px; padding:1px 5px; white-space:nowrap;}
 
   /* ===== 📦 Roster bulk PDF -> ZIP export ===== */
@@ -328,7 +330,7 @@
       <div class="modal-body">
         <div class="field" style="margin-bottom:0;">
           <label>วางข้อมูลที่คัดลอกจาก Excel (2 คอลัมน์: ชื่อ-นามสกุล และ แผนก)</label>
-          <textarea id="importRawText" placeholder="Somchai Jaidee (JingJai)&#9;Marketing&#10;สมชาย ใจดี&#9;IT" oninput="handleImportRawInput()"></textarea>
+          <textarea id="importRawText" placeholder="Navisa Thanasuttawong (Noinae)&#9;Marketing&#10;สมชาย ใจดี&#9;IT" oninput="handleImportRawInput()"></textarea>
           <label class="import-header-toggle">
             <input type="checkbox" id="importSkipHeader" onchange="parseImportPreview()">
             แถวแรกเป็นหัวตาราง (เช่น "ชื่อ / แผนก") ให้ข้ามแถวนี้
@@ -674,9 +676,15 @@ function renderFuelInputs(mode){
   container.innerHTML = addBufferBtnHtml + allDays.map((d, idx) => {
     const isBuffer = !mandatorySet.has(d);
     const entry = stateObj[d] || { price:'', receipt:null };
-    const thumb = entry.receipt
-      ? `<div class="fuel-preview-list"><span class="fuel-thumb">${entry.receipt.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${entry.receipt.base64}"><button type="button" class="view-img-link" onclick="openImageLightbox('${entry.receipt.base64}')">🔍 ดูรูปภาพ</button><span class="rm" onclick="removeFuelReceipt('${mode}','${d}')">✕</span></span></div>`
-      : '';
+    let thumb = '';
+    if(entry.receipt && entry.receipt.isExisting && !entry.receipt.base64){
+      // Existing receipt confirmed on file (existingUrl is already set —
+      // see loadFuelPricesIntoState) but its Base64 image hasn't arrived
+      // from the background fetch yet.
+      thumb = `<div class="fuel-preview-list"><span class="fuel-thumb fuel-thumb-loading"><span class="existing-badge">เดิม</span><span class="thumb-loading-text">กำลังโหลดรูป...</span><span class="rm" onclick="removeFuelReceipt('${mode}','${d}')">✕</span></span></div>`;
+    } else if(entry.receipt){
+      thumb = `<div class="fuel-preview-list"><span class="fuel-thumb">${entry.receipt.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${entry.receipt.base64}"><button type="button" class="view-img-link" onclick="openImageLightbox('${entry.receipt.base64}')">🔍 ดูรูปภาพ</button><span class="rm" onclick="removeFuelReceipt('${mode}','${d}')">✕</span></span></div>`;
+    }
     return `
       <div class="fuel-day-row">
         <div class="fuel-day-label">วันที่ ${idx+1}: ${d}
@@ -752,10 +760,26 @@ function loadFuelPricesIntoState(mode, fuelPrices){
   Object.keys(stateObj).forEach(k => delete stateObj[k]);
   (fuelPrices || []).forEach(fp => {
     if(!fp || !fp.date) return;
+    // IMPORTANT: build the "existing receipt" placeholder from
+    // fp.receiptUrl immediately, regardless of whether fp.receiptImage
+    // (the actual Base64 photo) has loaded yet — apiGetEventInfo returns
+    // receiptUrl right away but always sends receiptImage:null (images
+    // load separately, in the background — see the getFuelReceiptImages
+    // call in editEvent()). If this only set `receipt` once the image
+    // arrived, saving the event before that background fetch finished
+    // would send receipt:null for every date, and the backend would
+    // silently WIPE the previously-saved receiptUrl from the database —
+    // even though the file was still sitting in Drive the whole time.
     stateObj[fp.date] = {
       price: fp.price || '',
-      receipt: (fp.receiptImage && fp.receiptImage.base64)
-        ? { base64: fp.receiptImage.base64, fileName: fp.receiptImage.fileName, mimeType: fp.receiptImage.mimeType, isExisting:true, existingUrl: fp.receiptUrl }
+      receipt: fp.receiptUrl
+        ? {
+            isExisting: true,
+            existingUrl: fp.receiptUrl,
+            base64: (fp.receiptImage && fp.receiptImage.base64) || null,
+            fileName: (fp.receiptImage && fp.receiptImage.fileName) || '',
+            mimeType: (fp.receiptImage && fp.receiptImage.mimeType) || ''
+          }
         : null
     };
   });
@@ -1582,8 +1606,8 @@ function editEvent(eventId){
         if(!imgRes.ok || !Array.isArray(imgRes.fuelPrices)) return;
         const stateObj = fuelStateFor('edit');
         imgRes.fuelPrices.forEach(fp=>{
-          if(fp.receiptImage && stateObj[fp.date]){
-            stateObj[fp.date].receipt = Object.assign({}, fp.receiptImage, {isExisting:true, existingUrl: fp.receiptUrl});
+          if(fp.receiptImage && stateObj[fp.date] && stateObj[fp.date].receipt){
+            Object.assign(stateObj[fp.date].receipt, fp.receiptImage, { isExisting:true, existingUrl: fp.receiptUrl });
           }
         });
         renderFuelInputs('edit');
@@ -1635,6 +1659,24 @@ async function saveEditEvent(){
   const originalText = btn.textContent;
 
   if(msg) msg.style.display = 'none';
+
+  // Safety net: an existing fuel receipt (isExisting) still showing
+  // "กำลังโหลดรูป..." means its background image fetch hasn't finished (or
+  // failed) yet. Its existingUrl is already preserved regardless (see
+  // loadFuelPricesIntoState), so saving now would NOT actually lose the
+  // receipt — but block anyway and ask the admin to wait a moment, so a
+  // failed background fetch is never mistaken for "no receipt on file"
+  // and doesn't get silently re-saved without ever being investigated.
+  const editFuelState = fuelStateFor('edit');
+  const stillLoadingDates = Object.keys(editFuelState).filter(d => {
+    const r = editFuelState[d].receipt;
+    return r && r.isExisting && !r.base64;
+  });
+  if(stillLoadingDates.length > 0){
+    showToast('⏳ ใบเสร็จราคาน้ำมันบางวันยังโหลดไม่เสร็จ กรุณารอสักครู่แล้วลองบันทึกอีกครั้ง', 'err');
+    return;
+  }
+
   btn.disabled = true;
   btn.textContent = '⏳ กำลังบันทึก...';
 
