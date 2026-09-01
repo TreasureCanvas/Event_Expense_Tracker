@@ -182,6 +182,8 @@ function routeAction(action, payload) {
       return apiSubmitExpense(payload);
     case 'getMySubmission':
       return apiGetMySubmission(payload);
+    case 'getSubmissionAttachmentImages':
+      return apiGetSubmissionAttachmentImages(payload);
     case 'getFuelPrice':
       return apiGetFuelPrice();
     case 'getFileBase64':
@@ -213,6 +215,30 @@ function sheetToObjects(sheet) {
     headers.forEach((h, i) => obj[h] = row[i]);
     return obj;
   });
+}
+
+// Same result as sheetToObjects(sheet).filter(r => r[idColumn] === idValue),
+// but skips building a JS object for every row in the sheet — only rows
+// that actually match get turned into objects. Matters for sheets like
+// Submissions that accumulate rows across every event over time: a
+// single-event lookup (e.g. "does this person already have a
+// submission?") shouldn't pay the allocation cost of every OTHER event's
+// rows just to throw them away a moment later.
+function sheetRowsMatching_(sheet, idColumn, idValue) {
+  if (!sheet) return [];
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) return [];
+  const headers = values[0];
+  const idCol = headers.indexOf(idColumn);
+  if (idCol === -1) return [];
+  const out = [];
+  for (let r = 1; r < values.length; r++) {
+    if (values[r][idCol] !== idValue) continue;
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = values[r][i]);
+    out.push(obj);
+  }
+  return out;
 }
 
 // ---------- Response caching (CacheService) ----------
@@ -787,6 +813,23 @@ function apiSubmitExpense(payload) {
       out.attachmentUrls = keptUrls;
       delete out.attachments;
       delete out.existingAttachments; // preview-only field, never persisted
+
+      // Diagnostic safety net: if the client sent attachments for this
+      // segment but NONE of them resulted in a kept/uploaded URL, log it
+      // loudly. This is the exact signature of a receipt silently getting
+      // lost on resubmit (e.g. an existing attachment whose Base64 never
+      // loaded and also failed to carry its existingUrl through) — should
+      // never happen, but if it ever does again this makes it visible in
+      // the Apps Script execution log instead of failing silently.
+      if (allAttachments.length > 0 && keptUrls.length === 0) {
+        Logger.log(
+          'WARNING: attachment loss detected — event=' + payload.eventId +
+          ' employee=' + payload.employeeName + ' trip=' + (ti + 1) + ' seg=' + (si + 1) +
+          ' hadAttachments=' + allAttachments.length + ' keptUrls=0. Raw attachments: ' +
+          JSON.stringify(allAttachments.map(a => ({ isExisting: a && a.isExisting, existingUrl: a && a.existingUrl, hasBase64: !!(a && a.base64) })))
+        );
+      }
+
       return out;
     });
     return Object.assign({}, trip, { segments: segments });
@@ -835,8 +878,11 @@ function apiSubmitExpense(payload) {
   }
 
   // The roster panel (index.html) must always reflect a just-submitted
-  // claim immediately — never wait out the cache TTL.
+  // claim immediately — never wait out the cache TTL. Same for this
+  // employee's own apiGetMySubmission lookup, in case they resubmit and
+  // immediately re-select their name again.
   cacheRemove_('roster_' + payload.eventId);
+  cacheRemove_('mysub_' + payload.eventId + '_' + String(payload.employeeName).trim());
 
   return { ok: true, submissionId: submissionId, status: status, pdfUrl: pdfUrl, resubmitted: isResubmit };
 }
@@ -847,45 +893,89 @@ function apiGetMySubmission(payload) {
     return { ok: false, error: 'ระบุข้อมูลไม่สมบูรณ์' };
   }
 
-  const subs = sheetToObjects(getSheet(SHEET_SUBMISSIONS));
-  const sub = subs.find(
-    s => s.event_id === payload.eventId && String(s.employee_name).trim() === String(payload.employeeName).trim()
-  );
-  if (!sub) return { ok: true, exists: false };
+  const employeeName = String(payload.employeeName).trim();
+  const cacheKey = 'mysub_' + payload.eventId + '_' + employeeName;
+  const cached = cacheGetJson_(cacheKey);
+  if (cached) return cached;
+
+  // Only scans/allocates rows belonging to THIS event, not the whole
+  // Submissions sheet — see sheetRowsMatching_. This call fires on every
+  // single "type/select my name" action, in BOTH the "found" and "not
+  // found yet" cases, so it needs to stay fast even for a brand-new
+  // employee who has never submitted anything.
+  const eventSubs = sheetRowsMatching_(getSheet(SHEET_SUBMISSIONS), 'event_id', payload.eventId);
+  const sub = eventSubs.find(s => String(s.employee_name).trim() === employeeName);
+  if (!sub) {
+    const notFoundResult = { ok: true, exists: false };
+    cacheSetJson_(cacheKey, notFoundResult, 15);
+    return notFoundResult;
+  }
 
   let details = { purpose: '', fuelRefPrice: '', trips: [] };
   try {
     details = JSON.parse(sub.trip_details_json);
   } catch (err) { }
 
-  // Pull previously-uploaded receipt images back down from Drive as Base64
-  // so the edit form can (a) show a real <img> preview of what was already
-  // submitted, and (b) feed them straight into the same seg.attachments
-  // array the PDF generator already knows how to render — no client-side
-  // Drive fetch, no CORS, no broken thumbnails.
-  const trips = (details.trips || []).map(trip => {
-    const segments = (trip.segments || []).map(seg => {
-      const urls = Array.isArray(seg.attachmentUrls) ? seg.attachmentUrls : [];
-      const existingAttachments = urls
-        .map(url => driveFileToBase64Attachment_(url))
-        .filter(att => att !== null);
-      return Object.assign({}, seg, { existingAttachments: existingAttachments });
-    });
-    return Object.assign({}, trip, { segments: segments });
-  });
-
-  return {
-    ok: true, 
+  // FAST PATH — this used to also fetch+Base64-encode every receipt image
+  // from Drive right here, one Drive round-trip per attachment, EVERY
+  // single time someone typed/selected their own name (to check for an
+  // existing submission to edit). That made this the single slowest
+  // action in the whole app once a person had more than a couple of
+  // photos attached. The images themselves are only actually needed for
+  // (a) thumbnail previews and (b) PDF regeneration on resubmit — neither
+  // has to block the form from appearing. So this now returns instantly
+  // with just the raw attachmentUrls, and the client fetches the real
+  // Base64 images in a background follow-up call (see
+  // apiGetSubmissionAttachmentImages) and merges them in once ready.
+  const result = {
+    ok: true,
     exists: true,
     data: {
       department: sub.department || '',
       purpose: details.purpose || '',
       fuelRefPrice: details.fuelRefPrice || '',
-      trips: trips,
+      trips: details.trips || [],
       status: sub.submission_status,
       updatedAt: sub.updated_at
     }
   };
+  cacheSetJson_(cacheKey, result, 15);
+  return result;
+}
+
+// ---------- API: ดึงรูปหลักฐานเดิม (แบบ Base64) เฉพาะตอนที่ต้องใช้จริง ----------
+// Deliberately separate from apiGetMySubmission (see above) so selecting a
+// name never blocks on Drive fetches it doesn't need yet. Returns a flat
+// { url: {base64,fileName,mimeType} } lookup map covering every receipt
+// attached anywhere in that person's existing submission, so the client
+// can merge them in with a single pass over its own segments regardless
+// of which day/segment each URL belongs to.
+function apiGetSubmissionAttachmentImages(payload) {
+  if (!payload || !payload.eventId || !payload.employeeName) {
+    return { ok: false, error: 'ระบุข้อมูลไม่สมบูรณ์' };
+  }
+  const employeeName = String(payload.employeeName).trim();
+  const eventSubs = sheetRowsMatching_(getSheet(SHEET_SUBMISSIONS), 'event_id', payload.eventId);
+  const sub = eventSubs.find(s => String(s.employee_name).trim() === employeeName);
+  if (!sub) return { ok: true, images: {} };
+
+  let details = { trips: [] };
+  try {
+    details = JSON.parse(sub.trip_details_json);
+  } catch (err) { }
+
+  const images = {};
+  (details.trips || []).forEach(trip => {
+    (trip.segments || []).forEach(seg => {
+      (Array.isArray(seg.attachmentUrls) ? seg.attachmentUrls : []).forEach(url => {
+        if (!url || images[url]) return; // skip duplicate URLs across segments
+        const att = driveFileToBase64Attachment_(url);
+        if (att) images[url] = att;
+      });
+    });
+  });
+
+  return { ok: true, images: images };
 }
 
 // ---------- API: ดึงไฟล์ใดๆ ใน Drive กลับมาเป็น Base64 ----------
