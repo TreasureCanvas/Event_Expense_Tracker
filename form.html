@@ -97,6 +97,8 @@
   .attach-thumb img{height:38px; width:38px; object-fit:cover; border-radius:6px;}
   .attach-thumb a{font-size:12px; color:var(--brand-dark);}
   .attach-thumb .rm{cursor:pointer; color:var(--danger); font-weight:700; font-size:13px; padding:0 3px;}
+  .attach-thumb-loading{padding:4px 10px;}
+  .thumb-loading-text{font-size:11.5px; color:var(--muted); font-style:italic;}
   .existing-badge{font-size:10px; color:#6b7a63; background:#e2ebdd; border-radius:5px; padding:1px 5px; white-space:nowrap;}
   .loading-status{display:none; align-items:center; gap:7px; margin-top:7px; font-size:12.5px; color:var(--brand-dark);}
   .loading-status.show{display:flex;}
@@ -136,6 +138,7 @@
   .inline-toast.show{display:block;}
   .inline-toast.visible{opacity:1;}
   .hint{font-size:12px; color:var(--muted); margin-top:3px;}
+  .fuel-warn{font-size:12.5px; color:#8a5a00; background:#fff6e0; border:1px solid #ffd98a; border-radius:6px; padding:9px 11px; margin:8px 0; font-weight:600; line-height:1.5;}
   /* ===== 🔍 Image preview lightbox ===== */
   .view-img-link{font-size:11.5px; color:var(--brand); font-weight:600; text-decoration:none; cursor:pointer; white-space:nowrap; background:none; border:none; padding:0; font-family:inherit;}
   .view-img-link:hover{text-decoration:underline;}
@@ -424,6 +427,11 @@ let eventName = '';
 // when the person actually switches to a *different* member (not on every
 // blur), and lets us restore a clean default when they clear the field.
 let lastLoadedEmployeeName = '';
+// Tracks the in-flight (or most recently finished) background fetch of
+// existing-receipt Base64 images for the currently loaded submission (see
+// loadSubmissionAttachmentImages). generatePdfBlob() awaits this before
+// building a PDF so a resubmit can never embed a still-loading image.
+let submissionImagesLoadPromise = null;
 
 // Per-day Gasohol 91 price (+ receipt image, for the PDF) as entered by
 // the event admin in index.html. Loaded once from apiGetEventInfo and used
@@ -512,17 +520,19 @@ function tripsArrayToDays(trips){
 
 // Ensures every segment coming back from a previously submitted report has
 // the full set of fields the form/PDF generator expect. Existing receipts
-// arrive from the server (apiGetMySubmission) already converted to Base64
-// as `seg.existingAttachments` — we fold those straight into the normal
-// `attachments` array (tagged isExisting/existingUrl) so both the preview
-// thumbnails and the PDF generator can treat "old" and "newly-picked"
-// receipts identically, through a single code path.
+// now arrive from the server (apiGetMySubmission) as plain URLs only — the
+// actual Base64 image data streams in afterward via a background call to
+// getSubmissionAttachmentImages (see onEmployeeChange) — so each one starts
+// as a lightweight loading placeholder (isExisting + existingUrl, base64
+// null) and gets filled in once the real image arrives, instead of the
+// whole form waiting on every old photo to be re-fetched from Drive first.
 function normalizeLoadedSegments(segments){
   if(!segments || !segments.length) return [newSegment()];
   return segments.map(seg => {
-    const existing = Array.isArray(seg.existingAttachments) ? seg.existingAttachments : [];
+    const urls = Array.isArray(seg.attachmentUrls) ? seg.attachmentUrls : [];
+    const attachments = urls.map(url => ({ isExisting:true, existingUrl:url, base64:null, fileName:'', mimeType:'' }));
     return Object.assign(newSegment(), seg, {
-      attachments: existing.slice(), // previously submitted receipts, shown as normal previews
+      attachments: attachments,
       // Superseded by `attachments` above — each existing receipt now
       // carries its own `existingUrl`, so we don't also keep the raw URL
       // list here (that would make the backend see it twice on resubmit).
@@ -623,6 +633,7 @@ async function loadEventInfo(){
 function resetFormForNewEmployee(){
   document.getElementById('department').value = '';
   state.days = [ newDay() ];
+  submissionImagesLoadPromise = null;
   ['Err','Ok','Warn'].forEach(t=>{ const el=document.getElementById('msg'+t); if(el) el.style.display='none'; });
 }
 
@@ -670,20 +681,56 @@ async function onEmployeeChange(){
   try{
     const res = await callApi('getMySubmission', { eventId: EVENT_ID, employeeName: name });
     if(res.ok && res.exists){
-      // The receipts themselves are the slow part (server fetches each one
-      // back from Drive and converts it to Base64) — by the time we get
-      // here that work is already done, but flashing this message briefly
-      // gives an honest account of what just happened before we render.
-      setEmployeeLoadStatus('กำลังดึงรูปภาพหลักฐาน...');
       document.getElementById('department').value = res.data.department || document.getElementById('department').value;
       state.days = (res.data.trips && res.data.trips.length) ? tripsArrayToDays(res.data.trips) : [ newDay() ];
       showMsg('warn', `พบเอกสารที่เคยส่งไว้แล้ว (สถานะล่าสุด: ${res.data.status}) — ระบบดึงข้อมูลเดิมมาให้แก้ไข การกด "ยืนยันส่งเอกสาร" จะบันทึกทับเวอร์ชันเดิม`);
+      // Old receipt photos are the slow part (each one is a separate Drive
+      // fetch) — rather than block the form on all of them, render
+      // immediately with lightweight "กำลังโหลดรูป..." placeholders and
+      // stream the real thumbnails in afterward in the background.
+      submissionImagesLoadPromise = loadSubmissionAttachmentImages(name);
     }
     // If no existing submission was found, the form is already reset to a
     // clean, blank state above — nothing further to do.
   }catch(err){ /* keep the clean, reset form shown so far */ }
   setEmployeeLoadStatus(null);
   render();
+}
+
+// Fetches the real Base64 images for every existing-receipt placeholder
+// currently in state.days (see normalizeLoadedSegments) and patches them
+// in once they arrive, re-rendering so the "กำลังโหลดรูป..." placeholders
+// are replaced with real thumbnails. generatePdfBlob() awaits the promise
+// this returns before building a PDF, so a resubmit can never embed a
+// still-loading (null) image even if triggered mid-fetch.
+async function loadSubmissionAttachmentImages(employeeName){
+  try{
+    const res = await callApi('getSubmissionAttachmentImages', { eventId: EVENT_ID, employeeName });
+    // The person may have already switched to a different employee name
+    // by the time this slow background fetch resolves — if so, discard
+    // the result instead of patching images into what is now someone
+    // else's loaded segments.
+    if(employeeName !== lastLoadedEmployeeName) return;
+    if(!res || !res.ok || !res.images) return;
+    let changed = false;
+    state.days.forEach(day=>{
+      ['outboundSegments','returnSegments'].forEach(key=>{
+        day[key].forEach(seg=>{
+          (seg.attachments||[]).forEach(att=>{
+            if(att.isExisting && !att.base64 && att.existingUrl && res.images[att.existingUrl]){
+              Object.assign(att, res.images[att.existingUrl], { isExisting:true, existingUrl: att.existingUrl });
+              changed = true;
+            }
+          });
+        });
+      });
+    });
+    if(changed) render();
+  }catch(err){
+    // Non-fatal — thumbnails just stay as loading placeholders; the
+    // person can still fill in/submit the rest of the form normally.
+    console.error('Failed to load existing attachment images:', err);
+  }
 }
 
 /* ---------- RENDER TRIPS ---------- */
@@ -771,10 +818,20 @@ function renderSegment(di,key,seg,si,dayDate){
           onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>`;
   } else if(typeCfg.kind==='car'){
     const fuelEntry = getFuelPriceEntryForDate(dayDate);
-    const fuelNote = fuelEntry && fuelEntry.price > 0
+    const hasFuelPrice = fuelEntry && Number(fuelEntry.price) > 0;
+    const fuelNote = hasFuelPrice
       ? `ราคาน้ำมันอ้างอิงวันที่ ${dayDate || '-'}: ${Number(fuelEntry.price).toFixed(2)} บาท/ลิตร${fuelEntry.date !== dayDate ? ` (ใช้ราคาล่าสุดของวันที่ ${fuelEntry.date})` : ''}`
-      : 'ยังไม่มีข้อมูลราคาน้ำมันสำหรับวันที่นี้ในระบบ — กรุณาติดต่อผู้ดูแลกิจกรรมให้เพิ่มราคาน้ำมันของวันนี้';
+      : '';
+    // If there's simply no fuel-price data on file for this date yet, the
+    // (distance ÷ 15) × price formula has nothing to multiply by, so it
+    // correctly computes 0.00 — which looks exactly like "the system
+    // isn't calculating". Surface that clearly, up front, instead of a
+    // barely-visible hint at the bottom, and tell the person they can
+    // still type the amount in manually while it's missing.
+    const missingPriceWarning = !hasFuelPrice ? `
+      <div class="fuel-warn">⚠️ ยังไม่มีข้อมูลราคาน้ำมันสำหรับวันที่ ${dayDate || 'นี้'} ในระบบ — จำนวนเงินจะยังคงเป็น 0.00 บาท และไม่คำนวณให้อัตโนมัติ จนกว่าผู้ดูแลกิจกรรมจะเพิ่มราคาน้ำมันของวันนี้ ระหว่างนี้สามารถกรอกจำนวนเงินเองในช่องด้านล่างได้</div>` : '';
     body = `
+      ${missingPriceWarning}
       <div class="grid2">
         <div class="field"><label>จาก (ต้นทาง) <span class="req">*</span></label>
           <input value="${seg.origin}" oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)" placeholder="เช่น ออฟฟิศ"></div>
@@ -788,7 +845,7 @@ function renderSegment(di,key,seg,si,dayDate){
         <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
           oninput="segAmountInput(${di},'${key}',${si},this.value)"
           onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>
-      <div class="hint">สูตร: (ระยะทาง ÷ 15) × ราคาน้ำมันแก๊สโซฮอลล์91 ณ วันเดินทาง — ${fuelNote}</div>`;
+      ${hasFuelPrice ? `<div class="hint">สูตร: (ระยะทาง ÷ 15) × ราคาน้ำมันแก๊สโซฮอลล์91 ณ วันเดินทาง — ${fuelNote}</div>` : ''}`;
   } else if(seg.type==='PARKING'){
     body = `
       <div class="field"><label>จำนวนเงิน (บาท) <span class="req">*</span></label>
@@ -805,15 +862,15 @@ function renderSegment(di,key,seg,si,dayDate){
     body = `
       <div class="grid2">
         <div class="field"><label>จาก (ต้นทาง) <span style="color:var(--muted); font-weight:400;"></span></label>
-          <input value="${seg.origin}" oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)" placeholder="เช่น ทางพิเศษเฉลิมมหานคร"></div>
+          <input value="${seg.origin}" oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)" placeholder="ไม่บังคับ เช่น ทางพิเศษเฉลิมมหานคร"></div>
         <div class="field"><label>ไป (ปลายทาง) <span style="color:var(--muted); font-weight:400;"></span></label>
-          <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder=เช่น ทางพิเศษเฉลิมมหานคร"></div>
+          <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder="ไม่บังคับ เช่น ทางพิเศษเฉลิมมหานคร"></div>
       </div>
       <div class="field"><label>จำนวนเงิน (บาท) <span class="req">*</span></label>
         <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
           oninput="segAmountInput(${di},'${key}',${si},this.value)"
           onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>
-      <div class="hint">ต้นทาง/ปลายทาง — กรอกจำนวนเงินและแนบใบเสร็จค่าทางด่วน</div>`;
+      <div class="hint">ต้นทาง/ปลายทางไม่บังคับ — กรอกจำนวนเงินและแนบใบเสร็จค่าทางด่วน</div>`;
   } else {
     const otherField = seg.type==='OTHER' ? `
       <div class="field"><label>รายละเอียดเพิ่มเติม (ระบุประเภทการเดินทาง) <span class="req">*</span></label>
@@ -833,11 +890,18 @@ function renderSegment(di,key,seg,si,dayDate){
   }
 
   // All receipts — whether just picked in this session or pulled back from
-  // a previous submission as Base64 — now live in seg.attachments, so they
-  // all get a real <img> thumbnail preview here. Existing ones get a small
-  // "เดิม" badge so employees can tell what was already submitted.
-  const thumbs = (seg.attachments||[]).map((a,ai)=>`
-      <span class="attach-thumb">${a.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${a.base64}"><button type="button" class="view-img-link" onclick="openImageLightbox('${a.base64}')">🔍 ดูรูปภาพ</button><span class="rm" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</span></span>`).join('');
+  // a previous submission — live in seg.attachments. Freshly-picked ones
+  // and already-loaded existing ones get a real <img> thumbnail; existing
+  // ones still waiting on their background image fetch (see
+  // onEmployeeChange/loadSubmissionAttachmentImages) show a lightweight
+  // loading placeholder instead, so the segment renders instantly rather
+  // than waiting on every old photo to come back from Drive first.
+  const thumbs = (seg.attachments||[]).map((a,ai)=>{
+    if(a.isExisting && !a.base64){
+      return `<span class="attach-thumb attach-thumb-loading"><span class="existing-badge">เดิม</span><span class="thumb-loading-text">กำลังโหลดรูป...</span><span class="rm" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</span></span>`;
+    }
+    return `<span class="attach-thumb">${a.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${a.base64}"><button type="button" class="view-img-link" onclick="openImageLightbox('${a.base64}')">🔍 ดูรูปภาพ</button><span class="rm" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</span></span>`;
+  }).join('');
 
   // Parking, Toll, and Personal Vehicle require at least one attached
   // Parking, Toll, Personal Vehicle, and Grab/Lineman/Bolt all require at
@@ -1018,14 +1082,21 @@ function updateTotals(){
 
 function fmt(n){ return (Number(n)||0).toLocaleString('th-TH',{minimumFractionDigits:2, maximumFractionDigits:2}); }
 
-function segmentLine(seg){
+function segmentLine(seg, dateStr){
   const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
   const amt = fmt(seg.amount);
   if(typeCfg.kind==='none'){
     return `เดินทางด้วย ${typeCfg.label} (ไม่มีการเบิกค่าใช้จ่าย) ราคา ${amt} บาท`;
   }
   if(typeCfg.kind==='car'){
-    return `เดินทางด้วยรถยนต์ส่วนบุคคล จาก ${seg.origin||'-'} ไป ${seg.destination||'-'} ระยะทาง ${Number(seg.distanceKm||0).toFixed(2)} กม. ราคา ${amt} บาท`;
+    // Detailed fuel-calculation formula placed after the destination and
+    // before the final amount, e.g.:
+    // "เดินทางด้วยรถยนต์ส่วนตัว จาก ออฟฟิศ - ไป สถานที่จัดงาน 80.00/15x35.62 = 189.97 บาท"
+    // Distance, fuel price, and amount are all strictly forced to 2 decimals.
+    const distance = Number(seg.distanceKm||0).toFixed(2);
+    const price = getFuelPriceForDate(dateStr).toFixed(2);
+    const amount = (Number(seg.amount)||0).toFixed(2);
+    return `เดินทางด้วยรถยนต์ส่วนตัว จาก ${seg.origin||'-'} - ไป ${seg.destination||'-'} ${distance}/15x${price} = ${amount} บาท`;
   }
   if(seg.type==='PARKING'){
     return `เดินทางด้วย ${typeCfg.label} ราคา ${amt} บาท`;
@@ -1062,7 +1133,7 @@ function buildSummaryText(total){
     lines.push('=== ขาไป ===');
     day.outboundSegments.forEach(seg=>{
       outTotal += (parseFloat(seg.amount)||0);
-      lines.push(segmentLine(seg));
+      lines.push(segmentLine(seg, day.date));
     });
     lines.push(`ยอดรวม: ${fmt(outTotal)} บาท`);
 
@@ -1070,7 +1141,7 @@ function buildSummaryText(total){
     lines.push('=== ขากลับ ===');
     day.returnSegments.forEach(seg=>{
       retTotal += (parseFloat(seg.amount)||0);
-      lines.push(segmentLine(seg));
+      lines.push(segmentLine(seg, day.date));
     });
     lines.push(`ยอดรวม: ${fmt(retTotal)} บาท`);
     lines.push('');
@@ -1192,7 +1263,7 @@ function buildPrintArea(total){
   const wrap = document.getElementById('pDaysWrap');
   wrap.innerHTML = '';
 
-  function sectionTable(title, segments){
+  function sectionTable(title, segments, dateStr){
     let subtotal = 0;
     let rows = '';
     segments.forEach((seg,i)=>{
@@ -1200,11 +1271,21 @@ function buildPrintArea(total){
       const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
       const typeLabel = (seg.type==='OTHER' && seg.otherDescription) ? `อื่นๆ (${seg.otherDescription})` : typeCfg.label;
       const tollEmpty = seg.type==='TOLL' && !seg.origin && !seg.destination;
-      const detail = (seg.type==='PARKING' || tollEmpty || typeCfg.kind==='none')
-        ? '-'
-        : (typeCfg.kind==='car'
-          ? `${seg.origin||'-'} → ${seg.destination||'-'} (${Number(seg.distanceKm||0).toFixed(2)} กม.)`
-          : `${seg.origin||'-'} → ${seg.destination||'-'}`);
+      let detail;
+      if(seg.type==='PARKING' || tollEmpty || typeCfg.kind==='none'){
+        detail = '-';
+      } else if(typeCfg.kind==='car'){
+        // Detailed fuel-calculation formula placed after the destination
+        // and before the final amount, right inside this table cell —
+        // e.g. "จาก ออฟฟิศ - ไป สถานที่จัดงาน 80.00/15x35.62 = 189.97 บาท".
+        // Distance, fuel price, and amount are all strictly 2 decimals.
+        const distance = Number(seg.distanceKm||0).toFixed(2);
+        const price = getFuelPriceForDate(dateStr).toFixed(2);
+        const amount = (Number(seg.amount)||0).toFixed(2);
+        detail = `จาก ${seg.origin||'-'} - ไป ${seg.destination||'-'} ${distance}/15x${price} = ${amount} บาท`;
+      } else {
+        detail = `${seg.origin||'-'} → ${seg.destination||'-'}`;
+      }
       rows += `<tr><td>${i+1}</td><td>${typeLabel}</td><td>${detail}</td><td class="amt">${(Number(seg.amount)||0).toFixed(2)}</td></tr>`;
     });
     return {
@@ -1218,8 +1299,8 @@ function buildPrintArea(total){
   state.days.forEach((day,di)=>{
     const dateLabel = formatThaiDate(day.date);
     const dayLabel = state.days.length>1 ? `วันที่ ${di+1}${dateLabel ? ' — '+dateLabel : ''}` : (dateLabel || 'รายละเอียดการเดินทาง');
-    const out = sectionTable('ขาไป', day.outboundSegments);
-    const ret = sectionTable('ขากลับ', day.returnSegments);
+    const out = sectionTable('ขาไป', day.outboundSegments, day.date);
+    const ret = sectionTable('ขากลับ', day.returnSegments, day.date);
     const dayDiv = document.createElement('div');
     dayDiv.className = 'day-block';
     dayDiv.dataset.dayIndex = di;
@@ -1280,14 +1361,18 @@ function getImageNaturalSize(dataUrl){
 }
 
 // ---- Existing (already-uploaded) receipt images ----
-// These no longer need a client-side fetch: apiGetMySubmission already
-// returns them pre-converted to Base64 in seg.existingAttachments, which
-// normalizeLoadedSegments() folds straight into seg.attachments. That means
-// the PDF generator (and the preview thumbnails) can treat "existing" and
-// "newly-picked" receipts through the exact same code path below, with no
-// CORS/Drive-fetch step and nothing that can fail at PDF-export time.
+// normalizeLoadedSegments() folds each existing receipt's URL straight
+// into seg.attachments as a lightweight isExisting/existingUrl placeholder
+// (base64 starts null); loadSubmissionAttachmentImages() then fetches the
+// real Base64 in the background and patches it in once ready — see
+// onEmployeeChange. generatePdfBlob() awaits that fetch (via
+// submissionImagesLoadPromise) before this loop runs, so by the time we
+// get here every attachment's base64 is guaranteed to be populated and
+// "existing" vs "newly-picked" receipts go through the exact same code
+// path below either way.
 
 async function generatePdfBlob(){
+  if(submissionImagesLoadPromise) await submissionImagesLoadPromise;
   await ensureFuelReceiptImagesLoaded();
   const total = updateTotals();
   buildPrintArea(total);
