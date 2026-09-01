@@ -23,6 +23,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  // Uploaded PDF evidence files are rendered page-by-page into images (via
+  // pdf.js) so each page can be captioned and scaled exactly like a photo
+  // in the evidence section — this requires pointing pdf.js at its worker
+  // script, which does the actual page-decoding off the main thread.
+  if(window.pdfjsLib){
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+</script>
 
 <style>
   /* ===== 🎨 ธีมสีหลักของทั้งหน้า - แก้ตรงนี้ที่เดียว ===== */
@@ -98,6 +108,8 @@
   .attach-thumb a{font-size:12px; color:var(--brand-dark);}
   .attach-thumb .rm{cursor:pointer; color:var(--danger); font-weight:700; font-size:13px; padding:0 3px;}
   .attach-thumb-loading{padding:4px 10px;}
+  .pdf-thumb-icon{font-size:18px; line-height:1;}
+  .pdf-thumb-name{font-size:11.5px; color:var(--text); max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .thumb-loading-text{font-size:11.5px; color:var(--muted); font-style:italic;}
   .existing-badge{font-size:10px; color:#6b7a63; background:#e2ebdd; border-radius:5px; padding:1px 5px; white-space:nowrap;}
   .loading-status{display:none; align-items:center; gap:7px; margin-top:7px; font-size:12.5px; color:var(--brand-dark);}
@@ -494,6 +506,20 @@ async function ensureFuelReceiptImagesLoaded(){
 
 function newSegment(){ return { type:'', origin:'', destination:'', distanceKm:'', amount:0, otherDescription:'', attachments:[], attachmentUrls:[] }; }
 function newDay(date){ return { date: date || '', outboundSegments:[newSegment()], returnSegments:[newSegment()] }; }
+
+// True for any attachment that's a PDF file (evidence documents like an
+// itemized e-receipt) rather than a photo — these get a filename+icon
+// thumbnail instead of an <img> preview, and are merged onto the end of
+// the generated PDF at export time instead of being rendered as an image.
+function isPdfAttachment(att){
+  if(!att) return false;
+  if(att.mimeType === 'application/pdf') return true;
+  return /^data:application\/pdf/i.test(att.base64 || '');
+}
+
+function escapeAttr(str){
+  return String(str==null?'':str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 
 function daysToTripsArray(days){
   const arr = [];
@@ -912,7 +938,8 @@ function renderSegment(di,key,seg,si,dayDate){
 
   // All receipts — whether just picked in this session or pulled back from
   // a previous submission — live in seg.attachments. Freshly-picked ones
-  // and already-loaded existing ones get a real <img> thumbnail; existing
+  // and already-loaded existing ones get a real <img> thumbnail (or a PDF
+  // icon + filename if the file is a PDF — see isPdfAttachment); existing
   // ones still waiting on their background image fetch (see
   // onEmployeeChange/loadSubmissionAttachmentImages) show a lightweight
   // loading placeholder instead, so the segment renders instantly rather
@@ -920,6 +947,9 @@ function renderSegment(di,key,seg,si,dayDate){
   const thumbs = (seg.attachments||[]).map((a,ai)=>{
     if(a.isExisting && !a.base64){
       return `<span class="attach-thumb attach-thumb-loading"><span class="existing-badge">เดิม</span><span class="thumb-loading-text">กำลังโหลดรูป...</span><span class="rm" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</span></span>`;
+    }
+    if(isPdfAttachment(a)){
+      return `<span class="attach-thumb"><span class="pdf-thumb-icon">📄</span>${a.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<span class="pdf-thumb-name" title="${escapeAttr(a.fileName||'')}">${escapeAttr(a.fileName||'PDF')}</span><button type="button" class="view-img-link" onclick="window.open('${a.base64}','_blank')">📄 ดูไฟล์ PDF</button><span class="rm" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</span></span>`;
     }
     return `<span class="attach-thumb">${a.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${a.base64}"><button type="button" class="view-img-link" onclick="openImageLightbox('${a.base64}')">🔍 ดูรูปภาพ</button><span class="rm" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</span></span>`;
   }).join('');
@@ -940,7 +970,7 @@ function renderSegment(di,key,seg,si,dayDate){
   const attachHtml = typeCfg.kind === 'none' ? '' : `
     <div class="attach-box">
       <label>${attachLabel}${requiresReceipt ? ' <span class="req">*</span>' : ''}</label>
-      <input type="file" accept="image/*" multiple onchange="handleFiles(event, ${di}, '${key}', ${si})">
+      <input type="file" accept="image/*,application/pdf" multiple onchange="handleFiles(event, ${di}, '${key}', ${si})">
       ${thumbs ? `<div class="preview-list">${thumbs}</div>` : ''}
     </div>`;
 
@@ -1054,13 +1084,21 @@ function refreshCarFaresAll(){
 // Compresses/resizes a freshly-picked receipt photo before it ever enters
 // the form state — this is what keeps uploads, the Drive round-trip, and
 // PDF generation fast even for full-resolution phone camera shots (often
-// ~5MB) by shrinking them down to a web-friendly size up front.
+// ~5MB) by shrinking them down to a web-friendly size up front. PDF
+// evidence files are left untouched (no compression applies) and are
+// merged onto the end of the generated PDF at export time instead of
+// being rendered as an image — see generatePdfBlob().
 function compressImageForUpload(file){
   const MAX_DIM = 1280;
   const JPEG_QUALITY = 0.8;
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
   return new Promise((resolve)=>{
     const reader = new FileReader();
     reader.onload = (e)=>{
+      if(isPdf){
+        resolve({ base64: e.target.result, fileName: file.name, mimeType: 'application/pdf' });
+        return;
+      }
       const img = new Image();
       img.onload = ()=>{
         let { width, height } = img;
@@ -1478,14 +1516,57 @@ async function generatePdfBlob(){
   }
 
   // Evidence photos are shown at roughly half the page width, centered,
-  // instead of stretched edge-to-edge across the full A4 page.
+  // instead of stretched edge-to-edge across the full A4 page. Rendered
+  // PDF pages use the full content width instead (see PDF_PAGE_WIDTH_RATIO
+  // below) — they're already document-shaped, so unlike a photo they
+  // benefit from being shown as large as fits rather than deliberately
+  // shrunk down.
   const EVIDENCE_IMG_WIDTH_RATIO = 0.5;
+  const PDF_PAGE_WIDTH_RATIO = 1.0;
 
-  async function placeOriginalPhoto(att, caption){
+  // Shared placement primitive: draws a caption label directly above a
+  // piece of evidence (an image or a rendered PDF page), scaled to fit
+  // within the standard A4 printable margins (contentWidth/maxBlockHeight
+  // — i.e. the page minus its margins), auto-shrinking further if the
+  // natural aspect ratio would otherwise overflow the page height.
+  //
+  // Caption + evidence are kept together as ONE atomic unit — the
+  // equivalent of CSS `page-break-inside: avoid` for this canvas-based PDF
+  // pipeline (html2canvas/jsPDF don't honor real CSS pagination, so the
+  // "stay together" guarantee is enforced here in JS instead): if the pair
+  // doesn't fit in the remaining space on the current page, a new page
+  // starts BEFORE either one is drawn, so the caption sentence can never
+  // end up separated from its evidence across a page break.
+  async function placeEvidenceBlock(caption, imgDataUrl, format, naturalWidth, naturalHeight, widthRatio){
     const labelCanvas = await captureCaptionLabel(caption);
     const labelImgData = labelCanvas.toDataURL('image/jpeg', 0.92);
     const labelHeight = (labelCanvas.height * contentWidth) / labelCanvas.width;
 
+    let w = contentWidth * widthRatio;
+    let h = (naturalHeight * w) / naturalWidth;
+    const maxContentH = maxBlockHeight - labelHeight - BLOCK_GAP * 2;
+    if(h > maxContentH){ h = maxContentH; w = (naturalWidth * h) / naturalHeight; }
+    const xOffset = margin + (contentWidth - w) / 2; // center horizontally
+
+    const combinedHeight = labelHeight + BLOCK_GAP + h;
+    if(forceNewPage || (!firstBlock && cursorY + combinedHeight > pageHeight - margin)){
+      doc.addPage(); cursorY = margin; forceNewPage = false;
+    }
+
+    doc.addImage(labelImgData, 'JPEG', margin, cursorY, contentWidth, labelHeight);
+    cursorY += labelHeight + BLOCK_GAP;
+    firstBlock = false;
+
+    try{
+      doc.addImage(imgDataUrl, format, xOffset, cursorY, w, h);
+      cursorY += h + BLOCK_GAP;
+    }catch(err){
+      const noteCanvas = await captureCaptionLabel('⚠️ ไม่สามารถแสดงรูปนี้ในเอกสารได้ (ไฟล์ภาพรูปแบบไม่รองรับ เช่น HEIC) - โปรดแนบเป็น JPG/PNG แทน');
+      placeImage(noteCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (noteCanvas.height * contentWidth) / noteCanvas.width);
+    }
+  }
+
+  async function placeOriginalPhoto(att, caption){
     const shouldCompress = document.getElementById('compressImages').checked;
     let photoData = att.base64;
     let format = guessImageFormat(att.mimeType, att.base64);
@@ -1500,44 +1581,65 @@ async function generatePdfBlob(){
       naturalSize = await getImageNaturalSize(att.base64);
     }
 
-    let w = contentWidth * EVIDENCE_IMG_WIDTH_RATIO;
-    let h = (naturalSize.height * w) / naturalSize.width;
-    const maxPhotoH = maxBlockHeight - labelHeight - BLOCK_GAP * 2;
-    if(h > maxPhotoH){ h = maxPhotoH; w = (naturalSize.width * h) / naturalSize.height; }
-    const xOffset = margin + (contentWidth - w) / 2; // center horizontally
+    await placeEvidenceBlock(caption, photoData, format, naturalSize.width, naturalSize.height, EVIDENCE_IMG_WIDTH_RATIO);
+  }
 
-    // Caption + photo are kept together as ONE atomic unit — the
-    // equivalent of CSS `page-break-inside: avoid` for this canvas-based
-    // PDF pipeline (html2canvas/jsPDF don't honor real CSS pagination, so
-    // the "stay together" guarantee is enforced here in JS instead): if
-    // the pair doesn't fit in the remaining space on the current page, a
-    // new page starts BEFORE either one is drawn, so the caption sentence
-    // can never end up separated from its image across a page break.
-    const combinedHeight = labelHeight + BLOCK_GAP + h;
-    if(forceNewPage || (!firstBlock && cursorY + combinedHeight > pageHeight - margin)){
-      doc.addPage(); cursorY = margin; forceNewPage = false;
+  // Renders every page of an uploaded PDF evidence file into its own
+  // image (via pdf.js), so each page can be captioned and placed inline
+  // in the evidence flow exactly like a photo — auto-scaled to fit within
+  // the A4 printable margins (see PDF_PAGE_WIDTH_RATIO/placeEvidenceBlock)
+  // instead of overflowing or clipping.
+  async function placePdfEvidence(att, caption){
+    const bytes = dataUriToUint8Array(att.base64);
+    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    const RENDER_SCALE = 2; // crisp enough for print without ballooning file size
+    for(let pageNum = 1; pageNum <= pdf.numPages; pageNum++){
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale: RENDER_SCALE });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      const pageCaption = pdf.numPages > 1 ? `${caption} (PDF หน้า ${pageNum}/${pdf.numPages})` : `${caption} (PDF)`;
+      await placeEvidenceBlock(pageCaption, canvas.toDataURL('image/jpeg', 0.9), 'JPEG', canvas.width, canvas.height, PDF_PAGE_WIDTH_RATIO);
     }
+  }
 
-    doc.addImage(labelImgData, 'JPEG', margin, cursorY, contentWidth, labelHeight);
-    cursorY += labelHeight + BLOCK_GAP;
-    firstBlock = false;
-
-    try{
-      doc.addImage(photoData, format, xOffset, cursorY, w, h);
-      cursorY += h + BLOCK_GAP;
-    }catch(err){
-      const noteCanvas = await captureCaptionLabel('⚠️ ไม่สามารถแสดงรูปนี้ในเอกสารได้ (ไฟล์ภาพรูปแบบไม่รองรับ เช่น HEIC) - โปรดแนบเป็น JPG/PNG แทน');
+  // Places one evidence-queue entry, whichever kind it is: a still-missing
+  // receipt just gets its caption note, a PDF gets every page rendered and
+  // placed in sequence, everything else goes through the normal photo path.
+  async function placeEvidenceItem({ att, caption, isPdf }){
+    if(!att || !att.base64){
+      const noteCanvas = await captureCaptionLabel(caption);
       placeImage(noteCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (noteCanvas.height * contentWidth) / noteCanvas.width);
+      return;
     }
+    if(isPdf){
+      try{
+        await placePdfEvidence(att, caption);
+      }catch(err){
+        console.error('Failed to render PDF evidence "' + (att.fileName||'') + '": ' + err);
+        const noteCanvas = await captureCaptionLabel(caption + ' (⚠️ ไม่สามารถแสดงไฟล์ PDF นี้ได้ในเอกสาร กรุณาตรวจสอบไฟล์)');
+        placeImage(noteCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (noteCanvas.height * contentWidth) / noteCanvas.width);
+      }
+      return;
+    }
+    await placeOriginalPhoto(att, caption);
   }
 
   try{
     await placeCapturedBlock(document.getElementById('pHeaderBlock'), 0.92);
 
-    // Evidence photos (travel receipts + daily fuel receipts) are no
-    // longer placed inline per-day — they're collected here in order and
-    // placed as one section AFTER the Grand Total bar instead (see below).
-    const evidenceQueue = [];
+    // Evidence photos (travel receipts) and rendered PDF evidence pages
+    // are no longer placed inline per-day — they're collected here in
+    // order and placed as one section AFTER the Grand Total bar instead
+    // (see below). Fuel-price receipts (uploaded by the event admin, not
+    // the staff member) are collected into their own separate queue so
+    // they can be placed as a distinct FINAL sub-section, after every
+    // travel-evidence item — never interleaved day-by-day the way they
+    // used to be.
+    const travelEvidenceQueue = [];
+    const fuelEvidenceQueue = [];
 
     for(const dayBlockEl of Array.from(document.querySelectorAll('#pDaysWrap > .day-block'))){
       await placeCapturedBlock(dayBlockEl, 0.92);
@@ -1569,10 +1671,13 @@ async function generatePdfBlob(){
         // segment — files picked in this session AND receipts pulled back
         // from a previous submission (already Base64, tagged isExisting by
         // normalizeLoadedSegments/driveFileToBase64Attachment_). One loop,
-        // one render path, no Drive fetch at export time.
+        // one render path, no Drive fetch at export time. PDF attachments
+        // stay in the SAME queue, in their original position — they get
+        // rendered page-by-page and placed inline via placeEvidenceItem,
+        // not appended separately at the end.
         for(const att of (seg.attachments||[])){
           const caption = `📎 หลักฐาน${att.isExisting ? ' (ไฟล์เดิม)' : ''}: ${dirLabel} — ${typeAndRoute}`;
-          evidenceQueue.push({ att, caption });
+          travelEvidenceQueue.push({ att, caption, isPdf: isPdfAttachment(att) });
         }
       }
 
@@ -1590,9 +1695,17 @@ async function generatePdfBlob(){
           const fallbackNote = fuelEntry.date !== day.date ? ` (อ้างอิงราคาวันที่ ${fuelEntry.date} เนื่องจากไม่มีราคาของวันนี้)` : '';
           const caption = `⛽ ใบเสร็จราคาน้ำมันแก๊สโซฮอล์ 91 วันที่ ${formatThaiDate(day.date)}: ${Number(fuelEntry.price||0).toFixed(2)} บาท/ลิตร${fallbackNote}`;
           if(fuelEntry.receiptImage && fuelEntry.receiptImage.base64){
-            evidenceQueue.push({ att: fuelEntry.receiptImage, caption });
+            fuelEvidenceQueue.push({ att: fuelEntry.receiptImage, caption, isPdf: false });
+          } else if(fuelEntry.receiptUrl){
+            // A receipt WAS uploaded by the event admin (receiptUrl is set)
+            // but the Base64 fetch for it failed or never completed — this
+            // is different from "nobody ever attached one" and worth
+            // surfacing distinctly so it's obvious this needs checking in
+            // Drive rather than just re-uploading a receipt that already
+            // exists.
+            fuelEvidenceQueue.push({ att: null, caption: caption + ' (⚠️ มีใบเสร็จแนบไว้ในระบบ แต่ดึงรูปมาแสดงไม่สำเร็จ กรุณาตรวจสอบไฟล์ใน Drive หรือแนบใบเสร็จใหม่อีกครั้งในหน้าแก้ไข Event)' });
           } else {
-            evidenceQueue.push({ att: null, caption: caption + ' (ไม่มีใบเสร็จแนบในระบบ)' });
+            fuelEvidenceQueue.push({ att: null, caption: caption + ' (ไม่มีใบเสร็จแนบในระบบ)' });
           }
         }
       }
@@ -1602,21 +1715,31 @@ async function generatePdfBlob(){
 
     // ===== Evidence section — strictly AFTER the Grand Total bar, and
     // ALWAYS starting on a brand new page (mandatory page-break-before),
-    // regardless of how much room is left on the current page. =====
-    if(evidenceQueue.length > 0){
+    // regardless of how much room is left on the current page. Document
+    // order from here: (1) travel evidence — images and scaled PDF pages,
+    // in original day/segment order, each with its caption directly above
+    // it — then (2) a distinct final sub-section for admin-uploaded fuel
+    // price evidence. =====
+    if(travelEvidenceQueue.length > 0 || fuelEvidenceQueue.length > 0){
       doc.addPage();
       cursorY = margin;
       forceNewPage = false;
 
-      const titleCanvas = await captureSectionTitle('📎 หลักฐานประกอบการเบิกจ่าย (ใบเสร็จ/รูปถ่าย)');
-      placeImage(titleCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (titleCanvas.height * contentWidth) / titleCanvas.width);
+      if(travelEvidenceQueue.length > 0){
+        const titleCanvas = await captureSectionTitle('📎 หลักฐานประกอบการเบิกจ่าย (ใบเสร็จ/รูปถ่าย)');
+        placeImage(titleCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (titleCanvas.height * contentWidth) / titleCanvas.width);
 
-      for(const { att, caption } of evidenceQueue){
-        if(att && att.base64){
-          await placeOriginalPhoto(att, caption);
-        } else {
-          const noteCanvas = await captureCaptionLabel(caption);
-          placeImage(noteCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (noteCanvas.height * contentWidth) / noteCanvas.width);
+        for(const item of travelEvidenceQueue){
+          await placeEvidenceItem(item);
+        }
+      }
+
+      if(fuelEvidenceQueue.length > 0){
+        const fuelTitleCanvas = await captureSectionTitle('⛽ หลักฐานราคาน้ำมัน (แนบโดยผู้ดูแลกิจกรรม)');
+        placeImage(fuelTitleCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (fuelTitleCanvas.height * contentWidth) / fuelTitleCanvas.width);
+
+        for(const item of fuelEvidenceQueue){
+          await placeEvidenceItem(item);
         }
       }
     }
@@ -1627,6 +1750,16 @@ async function generatePdfBlob(){
   }
 
   return doc;
+}
+
+// Converts a base64 data URI (e.g. "data:application/pdf;base64,....")
+// into raw bytes, for handing to pdf.js.
+function dataUriToUint8Array(dataUri){
+  const base64 = (dataUri.split(',')[1] || dataUri);
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for(let i=0; i<binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }
 
 function pdfFileName(){
