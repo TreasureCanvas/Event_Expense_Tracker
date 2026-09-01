@@ -504,6 +504,27 @@ function daysToTripsArray(days){
   return arr;
 }
 
+// Strips the (potentially large) base64 image data from any attachment
+// already flagged isExisting before the trip details go into the submit
+// payload — the server only ever needs existingUrl for those (see
+// apiSubmitExpense), never re-uploads them, and the base64 was only ever
+// fetched client-side for local preview/PDF-embedding purposes. Sending it
+// back up serves no purpose and needlessly bloats the request, which
+// matters most on a resubmit with several existing photos.
+function stripExistingBase64ForSubmit(trips){
+  return trips.map(trip => ({
+    ...trip,
+    segments: (trip.segments||[]).map(seg => ({
+      ...seg,
+      attachments: (seg.attachments||[]).map(att =>
+        att && att.isExisting
+          ? { isExisting:true, existingUrl: att.existingUrl }
+          : att
+      )
+    }))
+  }));
+}
+
 function tripsArrayToDays(trips){
   const days = [];
   for(let k=0; k<trips.length; k+=2){
@@ -1237,6 +1258,18 @@ function validate(){
             : 'กรุณาแนบรูปภาพแคปหน้าจอ Google Maps สำหรับรถยนต์ส่วนตัว';
           errors.push(`${tag}: ${receiptWarning}`); ok=false;
         }
+
+        // Safety net: an existing receipt (isExisting) that still has no
+        // base64 means its background fetch either hasn't finished yet or
+        // failed outright (e.g. the original Drive file is missing/moved).
+        // Block submission here rather than letting it through silently —
+        // the URL would still technically be preserved either way, but the
+        // person needs to actually SEE that something is wrong with an old
+        // photo instead of unknowingly resubmitting with a broken receipt.
+        const stillLoadingOrBroken = (seg.attachments||[]).some(a => a.isExisting && !a.base64);
+        if(stillLoadingOrBroken){
+          errors.push(`${tag}: รูปเดิมบางไฟล์ยังโหลดไม่เสร็จหรือไม่พบไฟล์ในระบบ กรุณารอสักครู่แล้วลองใหม่ (ถ้ายังไม่หายให้ลองลบและแนบไฟล์นี้ใหม่)`); ok=false;
+        }
       });
     });
   });
@@ -1517,9 +1550,20 @@ async function generatePdfBlob(){
       ];
       for(const { seg, dirLabel } of segmentsWithDir){
         const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
-        const typeLabel = (seg.type==='OTHER' && seg.otherDescription) ? `อื่นๆ (${seg.otherDescription})` : typeCfg.label;
-        const tollEmpty = seg.type==='TOLL' && !seg.origin && !seg.destination;
-        const routeSuffix = (seg.type==='PARKING' || tollEmpty) ? '' : ` (${seg.origin||'-'} → ${seg.destination||'-'})`;
+        let typeAndRoute;
+        if(typeCfg.kind==='car'){
+          // Same formula pattern as the trip table / copy-summary text:
+          // "จาก [Origin] - ไป [Destination] [Distance]/15x[FuelPrice] = [Amount] บาท"
+          const distance = Number(seg.distanceKm||0).toFixed(2);
+          const price = getFuelPriceForDate(day.date).toFixed(2);
+          const amount = (Number(seg.amount)||0).toFixed(2);
+          typeAndRoute = `จาก ${seg.origin||'-'} - ไป ${seg.destination||'-'} ${distance}/15x${price} = ${amount} บาท`;
+        } else {
+          const typeLabel = (seg.type==='OTHER' && seg.otherDescription) ? `อื่นๆ (${seg.otherDescription})` : typeCfg.label;
+          const tollEmpty = seg.type==='TOLL' && !seg.origin && !seg.destination;
+          const routeSuffix = (seg.type==='PARKING' || tollEmpty) ? '' : ` (${seg.origin||'-'} → ${seg.destination||'-'})`;
+          typeAndRoute = `${typeLabel}${routeSuffix}`;
+        }
 
         // seg.attachments now uniformly holds every receipt for this
         // segment — files picked in this session AND receipts pulled back
@@ -1527,7 +1571,7 @@ async function generatePdfBlob(){
         // normalizeLoadedSegments/driveFileToBase64Attachment_). One loop,
         // one render path, no Drive fetch at export time.
         for(const att of (seg.attachments||[])){
-          const caption = `📎 หลักฐาน${att.isExisting ? ' (ไฟล์เดิม)' : ''}: ${dirLabel} — ${typeLabel}${routeSuffix}`;
+          const caption = `📎 หลักฐาน${att.isExisting ? ' (ไฟล์เดิม)' : ''}: ${dirLabel} — ${typeAndRoute}`;
           evidenceQueue.push({ att, caption });
         }
       }
@@ -1666,7 +1710,13 @@ async function submitForm(){
       summaryText: buildSummaryText(total),
       pdfBase64: pdfBase64,
       pdfFileName: pdfFileName(),
-      tripDetails: daysToTripsArray(state.days)
+      // Already-uploaded receipts only need their existingUrl sent back —
+      // the server already has the file, so their (potentially large)
+      // base64 data (fetched purely for local preview/PDF-embedding) is
+      // stripped here rather than resent. Keeps the submit payload small
+      // and avoids ever risking a request-size limit on a resubmit with
+      // many existing photos.
+      tripDetails: stripExistingBase64ForSubmit(daysToTripsArray(state.days))
     };
 
     const res = await callApi('submitExpense', payload);
