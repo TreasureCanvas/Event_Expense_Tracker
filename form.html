@@ -439,6 +439,7 @@ let eventName = '';
 // when the person actually switches to a *different* member (not on every
 // blur), and lets us restore a clean default when they clear the field.
 let lastLoadedEmployeeName = '';
+
 // Tracks the in-flight (or most recently finished) background fetch of
 // existing-receipt Base64 images for the currently loaded submission (see
 // loadSubmissionAttachmentImages). generatePdfBlob() awaits this before
@@ -496,6 +497,11 @@ async function ensureFuelReceiptImagesLoaded(){
       eventFuelPrices.forEach(fp => {
         if(imageByDate[fp.date] !== undefined) fp.receiptImage = imageByDate[fp.date];
       });
+    } else {
+      // The call reached the server but came back unsuccessful (or with
+      // an unexpected shape) — log the actual response so this is
+      // diagnosable instead of silently leaving every receipt un-loaded.
+      console.error('getFuelReceiptImages returned an unexpected response:', res);
     }
   }catch(err){
     // Non-fatal — the PDF will just note "no receipt on file" for that
@@ -783,6 +789,7 @@ async function loadSubmissionAttachmentImages(employeeName){
 /* ---------- RENDER TRIPS ---------- */
 function addDay(){ state.days.push(newDay()); render(); }
 function removeDay(di){ if(state.days.length<=1) return; state.days.splice(di,1); render(); }
+
 function dayUpdate(di,field,value){
   state.days[di][field] = value;
   if(field==='date'){
@@ -1873,7 +1880,20 @@ const API_ACTION_TO_FUNCTION = {
   getEventInfo: 'apiGetEventInfo',
   getFuelPrice: 'apiGetFuelPrice',
   getMySubmission: 'apiGetMySubmission',
-  submitExpense: 'apiSubmitExpense'
+  submitExpense: 'apiSubmitExpense',
+  // These three were added in later rounds (fuel-receipt lazy-loading,
+  // existing-attachment lazy-loading) but never registered here. Since
+  // callApi() only uses the google.script.run bridge when fnName is
+  // truthy, a missing entry silently falls through to a plain fetch()
+  // call instead — which fails when this page is served through Apps
+  // Script's own HtmlService (a sandboxed iframe whose CSP blocks
+  // cross-origin fetch() to script.google.com), even though
+  // google.script.run itself would have worked fine. This is the most
+  // likely cause of "the fuel receipt image never loads": the call was
+  // silently taking the wrong transport and failing every time.
+  getFuelReceiptImages: 'apiGetFuelReceiptImages',
+  getSubmissionAttachmentImages: 'apiGetSubmissionAttachmentImages',
+  getFileBase64: 'apiGetFileAsBase64'
 };
 
 function callApi(action, payload){
