@@ -153,6 +153,7 @@
   .lightbox img{max-width:92vw; max-height:86vh; border-radius:8px; background:#fff;}
   .lightbox button{position:absolute; top:calc(16px + env(safe-area-inset-top,0px)); right:16px; min-height:44px; padding:0 16px; border-radius:10px; border:1px solid #fff; background:transparent; color:#fff; font:inherit; font-weight:700; cursor:pointer;}
   a.ph{display:flex; align-items:center; justify-content:center; text-decoration:none; color:var(--brand-text); font-weight:600;}
+  #syncNote:empty{display:none;}
 </style>
 </head>
 <body>
@@ -166,7 +167,7 @@
    Event Expense Tracker — หน้า Admin (index.html)
    ⚠️ ใส่ Web App URL ของ Google Apps Script ที่บรรทัด API_URL ด้านล่าง
    ===================================================================== */
-const API_URL = 'https://script.google.com/macros/s/AKfycbwpocNSNrJea93nQsKLAZrYHhyHtBsgEpgo5E6t2L4zJyBN1jCj7yYq-D5kyt1ZwHE/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbwmrjHdnyF4r89xnA3w35zat7x5XWO7Y7c732kG7oy9RV6eQW75ykyjjrhZHAK0CIU/exec';
 
 const h = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const fmt = n => (Number(n) || 0).toLocaleString('th-TH', { minimumFractionDigits:2, maximumFractionDigits:2 });
@@ -197,6 +198,32 @@ async function callApi(action, payload){
   }
   return data;
 }
+
+/* ---------- local cache (show last data instantly, refresh in the background) ---------- */
+const LC = {
+  get(k){ try{ return JSON.parse(localStorage.getItem('eetC:' + k) || 'null'); }catch(e){ return null; } },
+  set(k, data){ const v = JSON.stringify({ at: Date.now(), data });
+    try{ localStorage.setItem('eetC:' + k, v); }catch(e){ LC.prune(); try{ localStorage.setItem('eetC:' + k, v); }catch(e2){} } },
+  del(...ks){ ks.forEach(k => { try{ localStorage.removeItem('eetC:' + k); }catch(e){} }); },
+  fresh(k, ms){ const c = LC.get(k); return c && (Date.now() - c.at) < (ms || 30000) ? c : null; },
+  prune(){ try{ Object.keys(localStorage).filter(x => x.startsWith('eetC:roster:') || x.startsWith('eetC:info:')).forEach(x => localStorage.removeItem(x)); }catch(e){} },
+  clearAll(){ try{ Object.keys(localStorage).filter(x => x.startsWith('eetC:')).forEach(x => localStorage.removeItem(x)); }catch(e){} }
+};
+const inflight = {};
+function fetchShared(key, fn){ // one request per key at a time (prefetch + click share it)
+  if(!inflight[key]) inflight[key] = fn().finally(() => { delete inflight[key]; });
+  return inflight[key];
+}
+function invalidateEvent(id){ LC.del('events', 'roster:' + id, 'info:' + id); UI.events = null; }
+let NAV = 0;
+const driveId = u => { const m = /\/d\/([\w-]{10,})/.exec(u || '') || /[?&]id=([\w-]{10,})/.exec(u || ''); return m ? m[1] : ''; };
+const driveThumb = (u, w) => { const id = driveId(u); return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w${w || 400}` : ''; };
+function preserveFocus(fn){
+  const a = document.activeElement, id = a && a.id, pos = a && typeof a.selectionStart === 'number' ? a.selectionStart : null;
+  fn();
+  if(id){ const el = document.getElementById(id); if(el && el !== document.activeElement){ el.focus(); if(pos != null && el.setSelectionRange) try{ el.setSelectionRange(pos, pos); }catch(e){} } }
+}
+function syncNote(text){ const el = document.getElementById('syncNote'); if(el) el.textContent = text || ''; }
 
 /* ---------- state ---------- */
 const UI = { q:'', filter:'all', rq:'', rfilter:'all', sel:new Set(), exportSel:new Set(), ex:{ q:'', from:'', to:'' }, form:null, openDays:{}, events:null, roster:null, drawer:null };
@@ -242,11 +269,12 @@ function shell(content, nav){
     <main>${content}</main>`;
 }
 function setApp(html){ document.getElementById('app').innerHTML = html; }
-function logout(){ try{ localStorage.removeItem('eetAdminKey'); }catch(e){} viewLogin(); }
+function logout(){ try{ localStorage.removeItem('eetAdminKey'); }catch(e){} LC.clearAll(); viewLogin(); }
 function loadFailHtml(what){
   return `<section class="card" style="text-align:center;padding:48px 24px;align-items:center"><b style="font-size:18px">โหลด${what}ไม่สำเร็จ</b><span class="muted">อินเทอร์เน็ตหลุด หรือระบบไม่ตอบสนอง ข้อมูลในระบบไม่ได้หาย</span><button type="button" class="btn btn-primary" onclick="route()">ลองโหลดอีกครั้ง</button></section>`;
 }
 async function route(){
+  NAV++;
   closeDrawer(true);
   if(!adminKey()) return viewLogin();
   const r = (location.hash || '#events').slice(1);
@@ -285,25 +313,43 @@ async function login(){
 }
 
 /* ---------- A2 events list ---------- */
-const eventsHead = () => `<div class="row between" style="align-items:flex-end"><div><h1>กิจกรรมทั้งหมด</h1></div>
+const eventsHead = () => `<div class="row between" style="align-items:flex-end"><div><h1>กิจกรรมทั้งหมด</h1><p class="sub small" id="syncNote" aria-live="polite"></p></div>
   <div class="row"><a class="btn" href="#export">Export Excel หลายกิจกรรม</a><a class="btn btn-primary" href="#new">+ สร้างกิจกรรม</a></div></div>`;
+function mapEvents(list){
+  return list.map(e => ({ id:e.eventId, name:e.eventName, owner:e.ownerName, venue:e.venue, start:e.startDate, end:e.endDate, closeAt:e.closeAt || '', isClosed:!!e.isClosed,
+    n:e.staffCount || 0, sent:e.submittedCount || 0, total:e.totalAmount || 0, formLink:e.formLink }));
+}
+async function fetchEvents(){
+  return fetchShared('events', async () => {
+    const res = await callApi('listAllEvents', {});
+    if(!res || !res.ok) throw new Error(res && res.error || 'load');
+    LC.set('events', res.events);
+    UI.events = mapEvents(res.events);
+    return UI.events;
+  });
+}
 async function loadEvents(force){
   if(UI.events && !force) return UI.events;
-  const res = await callApi('listAllEvents', {});
-  if(!res || !res.ok) throw new Error(res && res.error || 'load');
-  UI.events = res.events.map(e => ({ id:e.eventId, name:e.eventName, owner:e.ownerName, venue:e.venue, start:e.startDate, end:e.endDate, closeAt:e.closeAt || '', isClosed:!!e.isClosed,
-    n:e.staffCount || 0, sent:e.submittedCount || 0, total:e.totalAmount || 0, formLink:e.formLink }));
-  return UI.events;
+  return fetchEvents();
 }
 async function viewEvents(){
-  setApp(shell(eventsHead() + `<div class="card">${[1,2,3].map(() => '<div class="row"><div class="grow" style="display:flex;flex-direction:column;gap:8px"><div class="skel" style="width:60%;height:16px"></div><div class="skel" style="width:40%"></div></div><div class="skel" style="width:90px;height:20px"></div></div>').join('<hr style="border:none;border-top:1px solid #EEEEEA;margin:6px 0">')}</div>`, 'events'));
-  try{ await loadEvents(true); }
-  catch(err){ if(String(err.message) === 'UNAUTHORIZED') throw err; setApp(shell(eventsHead() + loadFailHtml('รายการกิจกรรม'), 'events')); return; }
+  const nav = NAV, cached = LC.get('events');
+  if(cached){ UI.events = mapEvents(cached.data); renderEventList(); syncNote('กำลังอัปเดตข้อมูลล่าสุด…'); }
+  else setApp(shell(eventsHead() + `<div class="card">${[1,2,3].map(() => '<div class="row"><div class="grow" style="display:flex;flex-direction:column;gap:8px"><div class="skel" style="width:60%;height:16px"></div><div class="skel" style="width:40%"></div></div><div class="skel" style="width:90px;height:20px"></div></div>').join('<hr style="border:none;border-top:1px solid #EEEEEA;margin:6px 0">')}</div>`, 'events'));
+  try{ await fetchEvents(); }
+  catch(err){
+    if(String(err.message) === 'UNAUTHORIZED') throw err;
+    if(nav !== NAV) return;
+    if(cached){ syncNote('อัปเดตไม่สำเร็จ — แสดงข้อมูลล่าสุดที่มี'); return; }
+    setApp(shell(eventsHead() + loadFailHtml('รายการกิจกรรม'), 'events')); return;
+  }
+  if(nav !== NAV) return;
   if(!UI.events.length){
     setApp(shell(eventsHead() + `<section class="card dashed" style="text-align:center;padding:48px 24px;align-items:center"><b style="font-size:20px">ยังไม่มีกิจกรรม</b><span class="muted">สร้างกิจกรรมแรก ใส่รายชื่อพนักงาน แล้วระบบจะให้ลิงก์ฟอร์มไปส่งต่อ</span><a class="btn btn-primary" href="#new">+ สร้างกิจกรรมแรก</a></section>`, 'events'));
     return;
   }
-  renderEventList();
+  preserveFocus(renderEventList);
+  syncNote('');
 }
 function renderEventList(){
   const all = UI.events;
@@ -314,7 +360,7 @@ function renderEventList(){
   const cards = list.map(ev => {
     const deadline = ev.closeAt ? (ev.isClosed ? '<span class="chip">ปิดรับแล้ว</span>' : `<span class="chip">ปิดรับ ${h(thDT(ev.closeAt))}</span>`) : '';
     const state = ev.n && ev.sent === ev.n ? '<span class="chip ok">ครบแล้ว</span>' : `<span class="chip warn">ยังไม่ส่ง ${ev.n - ev.sent}</span>`;
-    return `<article class="ev-card"><div class="ev-main"><a class="ev-name" href="#event-${h(ev.id)}">${h(ev.name)}</a>
+    return `<article class="ev-card" onmouseenter="prefetchRoster('${h(ev.id)}')" ontouchstart="prefetchRoster('${h(ev.id)}')" onfocusin="prefetchRoster('${h(ev.id)}')"><div class="ev-main"><a class="ev-name" href="#event-${h(ev.id)}">${h(ev.name)}</a>
       <span class="muted small">${h(thDate(ev.start))}${ev.end && ev.end !== ev.start ? '–' + h(thDate(ev.end)) : ''} · ${h(ev.venue || '-')} · ผู้สร้าง: ${h(ev.owner)}</span>
       <span class="row" style="gap:8px;margin-top:2px"><b class="small">ส่งแล้ว ${ev.sent}/${ev.n} คน</b>${state}${deadline}</span></div>
       <div class="ev-amt"><div class="muted small">ยอดรวม</div><b>฿ ${fmt(ev.total)}</b></div>
@@ -342,7 +388,10 @@ async function viewForm(id){
   let f = { id:null, name:'', owner:'', venue:'', start:'', end:'', closeDate:'', closeTime:'18:00', staff:[], fuel:[], bulk:'', errors:{}, submitted:{} };
   if(id){
     let info, roster;
-    try{ [info, roster] = await Promise.all([callApi('getEventInfo', { eventId:id }), callApi('getEventRoster', { eventId:id })]); }
+    const fi = LC.fresh('info:' + id, 60000), fr = LC.fresh('roster:' + id, 60000);
+    try{ [info, roster] = await Promise.all([
+      fi ? fi.data : fetchShared('info:' + id, async () => { const r = await callApi('getEventInfo', { eventId:id }); if(r && r.ok) LC.set('info:' + id, r); return r; }),
+      fr ? fr.data : fetchRoster(id) ]); }
     catch(err){ if(String(err.message) === 'UNAUTHORIZED') throw err; setApp(shell(loadFailHtml('ข้อมูลกิจกรรม'), 'events')); return; }
     if(!info || !info.ok){ setApp(shell(loadFailHtml('ข้อมูลกิจกรรม'), 'events')); return; }
     const ev = info.event;
@@ -350,7 +399,7 @@ async function viewForm(id){
     f = { id, name:ev.eventName, owner:ev.ownerName, venue:ev.venue || '', start:ev.startDate, end:ev.endDate && ev.endDate !== ev.startDate ? ev.endDate : '',
           closeDate:(ev.closeAt || '').split('T')[0], closeTime:(ev.closeAt || '').split('T')[1] || '18:00',
           staff:(info.employees || []).map(e => ({ name:e.name, dept:e.department || '' })),
-          fuel:(info.fuelPrices || []).map(fp => ({ date:fp.date, price: fp.price || '', receiptUrl: fp.receiptUrl || '', preview:null, upload:null, extra: !evDays.includes(fp.date) })),
+          fuel:(info.fuelPrices || []).map(fp => ({ date:fp.date, price: fp.price || '', receiptUrl: fp.receiptUrl || '', preview: driveThumb(fp.receiptUrl, 200) || null, upload:null, extra: !evDays.includes(fp.date) })),
           bulk:'', errors:{}, submitted:{} };
     ((roster && roster.roster) || []).forEach(r => { if(r.submitted) f.submitted[r.employeeName] = r.totalAmount; });
   }
@@ -359,15 +408,7 @@ async function viewForm(id){
   let draft = null; try{ draft = JSON.parse(localStorage.getItem(draftKey(id)) || 'null'); }catch(e){}
   f.draftFound = draft;
   renderForm();
-  if(id && f.fuel.some(x => x.receiptUrl)){
-    try{
-      const r = await callApi('getFuelReceiptImages', { eventId:id });
-      if(r && r.ok && UI.form === f){
-        (r.fuelPrices || []).forEach(fp => { const row = f.fuel.find(x => x.date === fp.date); if(row && fp.receiptImage && fp.receiptImage.base64) row.preview = fp.receiptImage.base64; });
-        renderForm();
-      }
-    }catch(e){}
-  }
+
 }
 function syncFuelDays(){
   const f = UI.form, days = daysBetween(f.start, f.end);
@@ -411,7 +452,7 @@ function renderForm(){
         ? `<div class="row" style="gap:8px;flex-wrap:nowrap"><input type="date" id="fuelDate${i}" aria-label="วันที่ของวันสำรอง" value="${h(x.date)}" class="${!x.date && E.fuel ? 'invalid' : ''}" style="max-width:190px" onchange="setFuelDate(${i}, this.value)"><span class="chip warn">วันสำรอง</span></div>`
         : `${h(thDate(x.date))} <span class="chip">วันงาน</span>`}</td>
       <td><input aria-label="ราคาน้ำมัน ${h(x.date)}" type="number" step="0.01" min="0" value="${h(x.price)}" placeholder="0.00" style="max-width:140px" oninput="UI.form.fuel[${i}].price=this.value; touch()"></td>
-      <td><div class="row" style="gap:8px">${img ? `<button type="button" class="thumb" style="padding:0;cursor:zoom-in" onclick="openLightbox(UI.form.fuel[${i}].upload ? UI.form.fuel[${i}].upload.base64 : UI.form.fuel[${i}].preview)"><img src="${img}" alt="ใบเสร็จ"></button>` : (has ? '<span class="thumb">กำลังโหลด…</span>' : '')}
+      <td><div class="row" style="gap:8px">${img ? `<button type="button" class="thumb" style="padding:0;cursor:zoom-in" onclick="openLightbox(UI.form.fuel[${i}].upload ? UI.form.fuel[${i}].upload.base64 : driveThumb(UI.form.fuel[${i}].receiptUrl, 1600))"><img src="${img}" alt="ใบเสร็จ" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'ดูไม่ได้'}))"></button>` : (has ? '<span class="thumb">กำลังโหลด…</span>' : '')}
         <label class="file-btn">${ICON.clip}${has ? 'เปลี่ยน' : 'อัปโหลดใบเสร็จ'}<input type="file" accept="image/*" onchange="fuelReceipt(${i}, this)"></label>
         ${has ? `<button type="button" class="btn btn-danger btn-sm" onclick="UI.form.fuel[${i}].upload=null; UI.form.fuel[${i}].receiptUrl=''; UI.form.fuel[${i}].preview=null; renderForm(); touch()">ลบใบเสร็จ</button>` : ''}
         ${x.extra ? `<button type="button" class="btn btn-danger btn-sm" onclick="UI.form.fuel.splice(${i},1); renderForm(); touch()">ลบวันนี้</button>` : ''}</div></td></tr>`;
@@ -562,8 +603,9 @@ async function saveEvent(){
     const res = f.id ? await callApi('updateEvent', { eventId:f.id, ...payload }) : await callApi('createEvent', payload);
     if(!res || !res.ok){ btn.disabled = false; btn.textContent = 'บันทึกกิจกรรม'; toast('บันทึกไม่สำเร็จ: ' + (res && res.error || 'ไม่ทราบสาเหตุ'), null, null, 8000); return; }
     try{ localStorage.removeItem(draftKey(f.id)); }catch(e){}
-    clearTimeout(draftT); UI.form = null; UI.events = null;
+    clearTimeout(draftT); UI.form = null;
     const id = f.id || res.eventId;
+    invalidateEvent(id);
     location.hash = '#event-' + id;
     toast(f.id ? 'บันทึกการแก้ไขแล้ว' : 'สร้างกิจกรรมแล้ว · คัดลอกลิงก์ฟอร์มส่งให้พนักงานได้เลย', null, null, 6000);
   }catch(err){
@@ -574,16 +616,41 @@ async function saveEvent(){
 }
 
 /* ---------- A4 event detail / roster ---------- */
-async function viewEvent(id){
-  UI.sel = new Set(); UI.rq = ''; UI.rfilter = 'all';
-  setApp(shell(`<div class="card">${[1,2,3,4].map(() => '<div class="row"><div class="skel" style="width:24px"></div><div class="skel" style="width:30%"></div><div class="skel" style="width:20%"></div><div class="skel" style="width:15%"></div></div>').join('')}</div>`, 'events'));
-  let res;
-  try{ res = await callApi('getEventRoster', { eventId:id }); }
-  catch(err){ if(String(err.message) === 'UNAUTHORIZED') throw err; setApp(shell(loadFailHtml('ข้อมูลกิจกรรม'), 'events')); return; }
-  if(!res || !res.ok){ setApp(shell(`<section class="card"><b>${h(res && res.error || 'ไม่พบกิจกรรมนี้')}</b><a href="#events">กลับไปหน้ารายการกิจกรรม</a></section>`, 'events')); return; }
+function fetchRoster(id){
+  return fetchShared('roster:' + id, async () => {
+    const res = await callApi('getEventRoster', { eventId:id });
+    if(res && res.ok) LC.set('roster:' + id, res);
+    return res;
+  });
+}
+function prefetchRoster(id){ if(!LC.fresh('roster:' + id) && !inflight['roster:' + id]) fetchRoster(id).catch(() => {}); }
+function prefetchInfo(id){ if(!LC.fresh('info:' + id) && !inflight['info:' + id]) fetchShared('info:' + id, async () => { const r = await callApi('getEventInfo', { eventId:id }); if(r && r.ok) LC.set('info:' + id, r); return r; }).catch(() => {}); }
+function setRoster(id, res, keepSel){
   const listEv = (UI.events || []).find(e => e.id === id);
-  UI.roster = { id, event: res.event, rows: res.roster || [], formLink: (listEv && listEv.formLink) || location.origin + '/form.html?event=' + encodeURIComponent(id), fuel:null };
-  renderEvent();
+  const prevN = UI.roster && UI.roster.id === id ? UI.roster.rows.length : -1;
+  const fuel = UI.roster && UI.roster.id === id ? UI.roster.fuel : null;
+  UI.roster = { id, event: res.event, rows: res.roster || [], formLink: (listEv && listEv.formLink) || location.origin + '/form.html?event=' + encodeURIComponent(id), fuel };
+  if(!keepSel || prevN !== UI.roster.rows.length) UI.sel = new Set();
+}
+async function viewEvent(id){
+  const nav = NAV; UI.rq = ''; UI.rfilter = 'all'; UI.sel = new Set();
+  const cached = LC.get('roster:' + id);
+  if(cached){ setRoster(id, cached.data); renderEvent(); syncNote('กำลังอัปเดตข้อมูลล่าสุด…'); }
+  else setApp(shell(`<div class="card">${[1,2,3,4].map(() => '<div class="row"><div class="skel" style="width:24px"></div><div class="skel" style="width:30%"></div><div class="skel" style="width:20%"></div><div class="skel" style="width:15%"></div></div>').join('')}</div>`, 'events'));
+  if(cached && Date.now() - cached.at < 20000 && !inflight['roster:' + id]){ syncNote(''); return; } // just prefetched
+  let res;
+  try{ res = await fetchRoster(id); }
+  catch(err){
+    if(String(err.message) === 'UNAUTHORIZED') throw err;
+    if(nav !== NAV) return;
+    if(cached){ syncNote('อัปเดตไม่สำเร็จ — แสดงข้อมูลล่าสุดที่มี'); return; }
+    setApp(shell(loadFailHtml('ข้อมูลกิจกรรม'), 'events')); return;
+  }
+  if(nav !== NAV) return;
+  if(!res || !res.ok){ LC.del('roster:' + id); setApp(shell(`<section class="card"><b>${h(res && res.error || 'ไม่พบกิจกรรมนี้')}</b><a href="#events">กลับไปหน้ารายการกิจกรรม</a></section>`, 'events')); return; }
+  setRoster(id, res, true);
+  preserveFocus(renderEvent);
+  syncNote('');
 }
 function rosterStats(){ const rows = UI.roster.rows; const sent = rows.filter(r => r.submitted); return { n: rows.length, sent: sent.length, total: sent.reduce((t, r) => t + (Number(r.totalAmount) || 0), 0) }; }
 function renderEvent(){
@@ -599,9 +666,9 @@ function renderEvent(){
       <td class="num">${r.submitted ? `<button type="button" class="btn btn-sm" onclick="openDrawer(${i})">ดู</button>` : ''}</td></tr>`).join('');
   const nobody = s.sent === 0;
   setApp(shell(`<div class="crumb"><a href="#events">กิจกรรมทั้งหมด</a> / รายละเอียดกิจกรรม</div>
-    <div class="row between" style="align-items:flex-start"><div style="flex:1 1 400px;min-width:0"><h1>${h(ev.eventName)}</h1>
+    <div class="row between" style="align-items:flex-start"><div style="flex:1 1 400px;min-width:0"><h1>${h(ev.eventName)}</h1><p class="sub small" id="syncNote" aria-live="polite"></p>
       <p class="sub">${h(thDate(ev.startDate))}${ev.endDate && ev.endDate !== ev.startDate ? '–' + h(thDate(ev.endDate)) : ''} · ${h(ev.venue || '-')} · ผู้สร้าง: ${h(ev.ownerName)}${ev.closeAt ? (closed ? ' · <b>ปิดรับแล้วเมื่อ ' + h(thDT(ev.closeAt)) + '</b>' : ' · ส่งได้ถึง ' + h(thDT(ev.closeAt))) : ''}</p></div>
-      <div class="row" style="gap:8px">${closed ? `<button type="button" class="btn btn-primary" onclick="extendDeadline()">ขยายเวลา</button>` : ''}<a class="btn" href="#edit-${h(R.id)}">แก้ไขกิจกรรม</a></div></div>
+      <div class="row" style="gap:8px">${closed ? `<button type="button" class="btn btn-primary" onclick="extendDeadline()">ขยายเวลา</button>` : ''}<a class="btn" href="#edit-${h(R.id)}" onmouseenter="prefetchInfo('${h(R.id)}')" onfocus="prefetchInfo('${h(R.id)}')" ontouchstart="prefetchInfo('${h(R.id)}')">แก้ไขกิจกรรม</a></div></div>
     ${nobody ? '<div class="banner info"><div><b>ยังไม่มีใครส่งใบเบิก</b> — คัดลอกลิงก์ด้านล่างส่งให้พนักงาน</div></div>' : ''}
     <section class="card" style="padding:20px"><div class="row" style="align-items:flex-end"><div class="fld" style="flex:1 1 420px"><label for="lnk">ลิงก์ฟอร์มสำหรับพนักงาน</label><input id="lnk" readonly value="${h(R.formLink)}" style="background:var(--bg)"></div><button type="button" class="btn btn-primary" onclick="copyLink('${h(R.id)}')">คัดลอกลิงก์</button></div></section>
     <div class="grid g4"><div class="stat"><span class="muted small">พนักงานทั้งหมด</span><b>${s.n} คน</b></div><div class="stat"><span class="muted small">ส่งแล้ว</span><b>${s.sent} คน</b></div>
@@ -790,17 +857,16 @@ async function doExtend(){
       closeAt: d + 'T' + t, employees:(info.employees || []).map(e => ({ name:e.name, department:e.department || '' })),
       fuelPrices:(info.fuelPrices || []).map(fp => ({ date:fp.date, price:fp.price, receipt: fp.receiptUrl ? { isExisting:true, existingUrl:fp.receiptUrl } : null })) });
     if(!res || !res.ok) throw new Error(res && res.error || 'save');
-    closeModal(); UI.events = null; await viewEvent(UI.roster.id); toast('ขยายเวลาแล้ว · ส่งได้ถึง ' + thDT(d + 'T' + t));
+    closeModal(); invalidateEvent(UI.roster.id); await viewEvent(UI.roster.id); toast('ขยายเวลาแล้ว · ส่งได้ถึง ' + thDT(d + 'T' + t));
   }catch(err){ if(String(err.message) === 'UNAUTHORIZED') return; btn.disabled = false; btn.textContent = 'ขยายเวลา'; toast('ขยายเวลาไม่สำเร็จ: ' + err.message, null, null, 8000); }
 }
 
 /* ---------- A5 submission drawer (evidence by day, history, restore) ---------- */
-function openDrawer(i){ UI.openDays = { 0:true }; UI.drawer = { i, versions:null, images:null }; renderDrawer(); loadDrawerExtras(); }
+function openDrawer(i){ UI.openDays = { 0:true }; UI.drawer = { i, versions:null }; renderDrawer(); loadDrawerExtras(); }
 function closeDrawer(silent){ document.getElementById('drawerRoot').innerHTML = ''; if(!silent) UI.drawer = null; }
 async function loadDrawerExtras(){
   const dr = UI.drawer, row = UI.roster.rows[dr.i];
   callApi('getSubmissionHistory', { eventId:UI.roster.id, employeeName:row.employeeName }).then(r => { if(UI.drawer === dr){ dr.versions = (r && r.ok) ? r.versions : []; renderDrawer(); } }).catch(() => { if(UI.drawer === dr){ dr.versions = []; renderDrawer(); } });
-  callApi('getSubmissionAttachmentImages', { eventId:UI.roster.id, employeeName:row.employeeName }).then(r => { if(UI.drawer === dr){ dr.images = (r && r.ok) ? (r.images || {}) : {}; renderDrawer(); } }).catch(() => { if(UI.drawer === dr){ dr.images = {}; renderDrawer(); } });
   dr.fuel = await eventFuelPrices(); if(UI.drawer === dr) renderDrawer();
 }
 function renderDrawer(){
@@ -812,8 +878,9 @@ function renderDrawer(){
       list.map((s, k) => `<tr><td class="muted" style="width:24px">${k + 1}</td><td style="width:160px"><b>${h(typeLabel(s))}</b></td><td class="muted">${h(segDetail(s, d.date, fp))}</td><td class="num">${fmt(s.amount)}</td></tr>`).join('');
     const files = [...d.out.map((s, k) => ({ s, l:'ขาไป ต่อ ' + (k + 1) })), ...d.ret.map((s, k) => ({ s, l:'ขากลับ ต่อ ' + (k + 1) }))].flatMap(({ s, l }) => (s.attachmentUrls || []).map(u => ({ u, l, t:typeLabel(s) })));
     const total = [...d.out, ...d.ret].reduce((a, s) => a + (Number(s.amount) || 0), 0), open = !!UI.openDays[i];
-    const fig = f => { const a = dr.images && dr.images[f.u];
-      const ph = !dr.images ? '<span class="ph">กำลังโหลด…</span>' : (a && /^data:image\//.test(a.base64) ? `<button type="button" class="ph" style="padding:0;cursor:zoom-in;overflow:hidden" onclick="openLightbox(UI.drawer.images['${h(f.u)}'].base64)"><img src="${a.base64}" alt="" style="width:100%;height:100%;object-fit:cover"></button>` : `<a class="ph" href="${h(f.u)}" target="_blank" rel="noopener">${a ? 'PDF' : 'เปิดใน Drive'}</a>`);
+    const fig = f => { const t = driveThumb(f.u, 400);
+      const ph = t ? `<button type="button" class="ph" style="padding:0;cursor:zoom-in;overflow:hidden" onclick="openLightbox('${h(driveThumb(f.u, 1600))}')"><img src="${h(t)}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.closest('.ph').outerHTML='<a class=&quot;ph&quot; href=&quot;${h(f.u)}&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;>เปิดใน Drive</a>'"></button>`
+                   : `<a class="ph" href="${h(f.u)}" target="_blank" rel="noopener">เปิดใน Drive</a>`;
       return `<figure class="ev-fig">${ph}<figcaption>${h(f.l)}<br>${h(f.t)}</figcaption></figure>`; };
     return `<div class="day-sec"><button type="button" class="day-toggle" aria-expanded="${open}" onclick="UI.openDays[${i}]=!UI.openDays[${i}]; renderDrawer()">
       <span class="row" style="gap:10px"><span class="muted" aria-hidden="true">${open ? '▾' : '▸'}</span><b style="font-size:16px">วันที่ ${i + 1} · ${h(thDate(d.date))}</b><span class="muted small">${d.out.length + d.ret.length} รายการ · หลักฐาน ${files.length} ไฟล์</span></span><b>฿ ${fmt(total)}</b></button>
@@ -839,8 +906,8 @@ async function restoreVersion(k){
   try{
     const res = await callApi('restoreVersion', { eventId:UI.roster.id, employeeName:row.employeeName, key:v.key });
     if(!res || !res.ok){ toast('กู้คืนไม่สำเร็จ: ' + (res && res.error || ''), null, null, 8000); return; }
-    const name = row.employeeName; UI.events = null;
-    const r = await callApi('getEventRoster', { eventId:UI.roster.id });
+    const name = row.employeeName; invalidateEvent(UI.roster.id);
+    const r = await fetchRoster(UI.roster.id);
     if(r && r.ok){ UI.roster.rows = r.roster; UI.roster.event = r.event; }
     const ni = UI.roster.rows.findIndex(x => x.employeeName === name);
     renderEvent(); if(ni > -1) openDrawer(ni);
@@ -850,6 +917,7 @@ async function restoreVersion(k){
 
 /* ---------- A6 export ---------- */
 async function viewExport(){
+  if(!UI.events){ const c = LC.get('events'); if(c){ UI.events = mapEvents(c.data); renderExport(); fetchEvents().then(() => { if(location.hash === '#export') preserveFocus(renderExport); }).catch(() => {}); return; } }
   if(!UI.events){
     setApp(shell(`<div class="card"><div class="skel" style="width:50%;height:18px"></div><div class="skel"></div><div class="skel"></div></div>`, 'export'));
     try{ await loadEvents(true); }catch(err){ if(String(err.message) === 'UNAUTHORIZED') throw err; setApp(shell(loadFailHtml('รายการกิจกรรม'), 'export')); return; }
