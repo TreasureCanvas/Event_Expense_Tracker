@@ -174,7 +174,17 @@ const fmt = n => (Number(n) || 0).toLocaleString('th-TH', { minimumFractionDigit
 const pad = n => String(n).padStart(2, '0');
 const isoD = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 const iso = off => { const d = new Date(); d.setDate(d.getDate() + off); return isoD(d); };
-const thDate = s => { if(!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' }); };
+// Dates may arrive as 'YYYY-MM-DD' or, from an older Apps Script, 'DD/MM/YYYY'.
+const toISO = v => {
+  if(!v) return '';
+  const s = String(v).trim();
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+  if(m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s);
+  if(m){ let y = +m[3]; if(y > 2400) y -= 543; return `${y}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
+  return s;
+};
+const thDate = s => { if(!s) return ''; s = toISO(s); const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' }); };
 const thDT = s => s ? thDate(s.split('T')[0]) + ' ' + (s.split('T')[1] || '') : '';
 const safeName = s => String(s || '').replace(/[\\/:*?"<>|]/g, '_');
 const ICON = {
@@ -201,8 +211,8 @@ async function callApi(action, payload){
 
 /* ---------- local cache (show last data instantly, refresh in the background) ---------- */
 const LC = {
-  get(k){ try{ return JSON.parse(localStorage.getItem('eetC:' + k) || 'null'); }catch(e){ return null; } },
-  set(k, data){ const v = JSON.stringify({ at: Date.now(), data });
+  get(k){ try{ const v = JSON.parse(localStorage.getItem('eetC:' + k) || 'null'); return v && v.v === 3 ? v : null; }catch(e){ return null; } },
+  set(k, data){ const v = JSON.stringify({ v: 3, at: Date.now(), data });
     try{ localStorage.setItem('eetC:' + k, v); }catch(e){ LC.prune(); try{ localStorage.setItem('eetC:' + k, v); }catch(e2){} } },
   del(...ks){ ks.forEach(k => { try{ localStorage.removeItem('eetC:' + k); }catch(e){} }); },
   fresh(k, ms){ const c = LC.get(k); return c && (Date.now() - c.at) < (ms || 30000) ? c : null; },
@@ -313,16 +323,30 @@ async function login(){
 }
 
 /* ---------- A2 events list ---------- */
-const eventsHead = () => `<div class="row between" style="align-items:flex-end"><div><h1>กิจกรรมทั้งหมด</h1><p class="sub small" id="syncNote" aria-live="polite"></p></div>
+const oldBackendBanner = () => UI.oldBackend ? `<div class="banner warn" role="alert"><div><b>Apps Script ที่ใช้งานอยู่ยังเป็นเวอร์ชันเก่า</b> — บางข้อมูล (เช่น เวลาปิดรับ, ประวัติการส่ง) จะยังไม่ทำงาน<br>
+  แก้: เปิด Apps Script → Deploy → <b>Manage deployments</b> → ไอคอนดินสอ (Edit) → Version: <b>New version</b> → Deploy แล้วรีเฟรชหน้านี้</div></div>` : '';
+const eventsHead = () => oldBackendBanner() + `<div class="row between" style="align-items:flex-end"><div><h1>กิจกรรมทั้งหมด</h1><p class="sub small" id="syncNote" aria-live="polite"></p></div>
   <div class="row"><a class="btn" href="#export">Export Excel หลายกิจกรรม</a><a class="btn btn-primary" href="#new">+ สร้างกิจกรรม</a></div></div>`;
 function mapEvents(list){
-  return list.map(e => ({ id:e.eventId, name:e.eventName, owner:e.ownerName, venue:e.venue, start:e.startDate, end:e.endDate, closeAt:e.closeAt || '', isClosed:!!e.isClosed,
-    n:e.staffCount || 0, sent:e.submittedCount || 0, total:e.totalAmount || 0, formLink:e.formLink }));
+  return list.map(e => ({ id:e.eventId, name:e.eventName, owner:e.ownerName, venue:e.venue, start:toISO(e.startDate), end:toISO(e.endDate), closeAt:e.closeAt || '', isClosed:!!e.isClosed,
+    n:e.staffCount || 0, sent:e.submittedCount || 0, total:e.totalAmount || 0, formLink:e.formLink, counted: typeof e.submittedCount === 'number' }));
+}
+const API_VERSION_EXPECTED = '2026-11-v3';
+async function fillCountsFromRosters(list){
+  // Older Apps Script versions don't send submitted counts — count from the rosters instead.
+  try{
+    const r = await callApi('getRosters', { eventIds: list.map(e => e.eventId) });
+    if(!r || !r.ok) return;
+    list.forEach(e => { const ro = r.rosters && r.rosters[e.eventId]; if(ro && ro.ok){ const sent = (ro.roster || []).filter(x => x.submitted);
+      e.submittedCount = sent.length; e.totalAmount = Math.round(sent.reduce((t, x) => t + (Number(x.totalAmount) || 0), 0) * 100) / 100; e.staffCount = (ro.roster || []).length; } });
+  }catch(e){ if(String(e.message) === 'UNAUTHORIZED') throw e; }
 }
 async function fetchEvents(){
   return fetchShared('events', async () => {
     const res = await callApi('listAllEvents', {});
     if(!res || !res.ok) throw new Error(res && res.error || 'load');
+    UI.oldBackend = res.apiVersion !== API_VERSION_EXPECTED;
+    if(res.events.some(e => typeof e.submittedCount !== 'number')) await fillCountsFromRosters(res.events);
     LC.set('events', res.events);
     UI.events = mapEvents(res.events);
     return UI.events;
@@ -395,6 +419,7 @@ async function viewForm(id){
     catch(err){ if(String(err.message) === 'UNAUTHORIZED') throw err; setApp(shell(loadFailHtml('ข้อมูลกิจกรรม'), 'events')); return; }
     if(!info || !info.ok){ setApp(shell(loadFailHtml('ข้อมูลกิจกรรม'), 'events')); return; }
     const ev = info.event;
+    ev.startDate = toISO(ev.startDate); ev.endDate = toISO(ev.endDate);
     const evDays = daysBetween(ev.startDate, ev.endDate);
     f = { id, name:ev.eventName, owner:ev.ownerName, venue:ev.venue || '', start:ev.startDate, end:ev.endDate && ev.endDate !== ev.startDate ? ev.endDate : '',
           closeDate:(ev.closeAt || '').split('T')[0], closeTime:(ev.closeAt || '').split('T')[1] || '18:00',
@@ -629,6 +654,7 @@ function setRoster(id, res, keepSel){
   const listEv = (UI.events || []).find(e => e.id === id);
   const prevN = UI.roster && UI.roster.id === id ? UI.roster.rows.length : -1;
   const fuel = UI.roster && UI.roster.id === id ? UI.roster.fuel : null;
+  if(res.event){ res.event.startDate = toISO(res.event.startDate); res.event.endDate = toISO(res.event.endDate); }
   UI.roster = { id, event: res.event, rows: res.roster || [], formLink: (listEv && listEv.formLink) || location.origin + '/form.html?event=' + encodeURIComponent(id), fuel };
   if(!keepSel || prevN !== UI.roster.rows.length) UI.sel = new Set();
 }
@@ -853,6 +879,7 @@ async function doExtend(){
     const info = await callApi('getEventInfo', { eventId: UI.roster.id });
     if(!info || !info.ok) throw new Error(info && info.error || 'load');
     const ev = info.event;
+    ev.startDate = toISO(ev.startDate); ev.endDate = toISO(ev.endDate);
     const res = await callApi('updateEvent', { eventId: UI.roster.id, eventName:ev.eventName, ownerName:ev.ownerName, venue:ev.venue || '', startDate:ev.startDate, endDate:ev.endDate || ev.startDate,
       closeAt: d + 'T' + t, employees:(info.employees || []).map(e => ({ name:e.name, department:e.department || '' })),
       fuelPrices:(info.fuelPrices || []).map(fp => ({ date:fp.date, price:fp.price, receipt: fp.receiptUrl ? { isExisting:true, existingUrl:fp.receiptUrl } : null })) });
