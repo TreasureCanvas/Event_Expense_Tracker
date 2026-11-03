@@ -24,6 +24,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
 <script>
   // Uploaded PDF evidence files are rendered page-by-page into images (via
   // pdf.js) so each page can be captioned and scaled exactly like a photo
@@ -192,67 +193,299 @@
   #printArea .sign-area{display:grid; grid-template-columns:1fr 1fr; gap:40px; margin-top:56px;}
   #printArea .sign-line{border-top:1px solid #888; padding-top:6px; font-size:12px; color:#686868; text-align:center;}
   .req{color:var(--danger);}
+
+  /* ===== Stability patch: long text + small screens ===== */
+  .grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid2 > *, .segment-head > *, .day-header > * { min-width: 0; }
+  label, .hint, .sub, .fuel-warn, .msg, .trip-section-title { overflow-wrap: anywhere; }
+  .segment-head { gap: 8px; }
+  .type-dropdown { flex: 1 1 auto; max-width: 100%; }
+  .type-dropdown summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .type-options { max-width: min(360px, 90vw); }
+  .total-box, .amount-line, .trip-total-line { flex-wrap: wrap; gap: 4px 12px; }
+  .total-box .num { overflow-wrap: anywhere; }
+  .attach-thumb { max-width: 100%; }
+  #printArea table { table-layout: fixed; }
+  #printArea th:nth-child(1) { width: 32px; }
+  #printArea th:nth-child(2) { width: 130px; }
+  #printArea th:nth-child(4) { width: 90px; }
+  #printArea td { overflow-wrap: anywhere; }
+  @media (max-width: 600px) {
+    body { padding: 10px; }
+    .grid2 { grid-template-columns: 1fr; }
+    .card { padding: 14px; }
+    .footer-actions .btn { flex: 1 1 100%; }
+  }
+</style>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  /* ===== UI v3 — matches the design board. Colours live in :root below. ===== */
+  :root{
+    --brand:#FE6D43; --brand-text:#B4451F; --brand-soft:#FFF1E8;
+    --ink:#1E1E1E; --muted:#5F5F5A; --line:#D9D9D6; --fill:#ECECE8; --bg:#F5F5F3; --surface:#FFFFFF;
+    --ok:#1B6B3C; --ok-bg:#E3F4E8; --warn:#8A4B00; --warn-bg:#FFF1DE; --err:#A61B1B; --err-bg:#FDECEC; --info-bg:#EDEDEA;
+    --brand-dark:#1E1E1E; --text:#1E1E1E; --border:#D9D9D6; --danger:#A61B1B;
+  }
+  body{background:var(--bg); color:var(--ink); font-family:'IBM Plex Sans Thai','Sarabun',system-ui,sans-serif; font-size:15px; line-height:1.55; margin:0;}
+  .wrap{max-width:820px; margin:0 auto; padding:40px 32px 64px;}
+  .sr-only{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap;}
+  .muted{color:var(--muted);} .small{font-size:13px;}
+  .grow{flex:1 1 0;}
+  .ic{fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; flex:none;}
+  .ic-muted{stroke:var(--muted);}
+  a{color:var(--brand-text);} a:hover{color:#8A3416;}
+  :focus-visible{outline:2px solid var(--brand); outline-offset:2px;}
+
+  .page-head{display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; margin-bottom:20px;}
+  .page-head h1{margin:0; font-size:26px; color:var(--ink);}
+  .page-head .sub{margin:4px 0 0; color:var(--muted); overflow-wrap:anywhere;}
+  .draft-status{font-size:13px; color:var(--ok); font-weight:600; white-space:nowrap;}
+  #pageBanner:empty, #msgArea:empty, #validationBox:empty{display:none;}
+  #pageBanner, #msgArea, #validationBox{margin-bottom:16px;}
+
+  .stack{display:flex; flex-direction:column; gap:20px;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:24px; box-shadow:none; margin:0;}
+  .card h2{margin:0 0 16px; font-size:18px; color:var(--ink); display:flex; align-items:center; gap:10px;}
+  .card h2 .badge{display:inline-flex; width:28px; height:28px; padding:0; border-radius:999px; background:var(--brand); color:#fff; font-size:14px; font-weight:700; align-items:center; justify-content:center;}
+  .card.fatal{max-width:520px; margin:60px auto 0; display:flex; flex-direction:column; gap:14px;}
+  .card.fatal h2{margin:0;}
+
+  label{display:block; font-size:14px; font-weight:600; margin:0; color:var(--ink);}
+  .req{color:var(--err);}
+  input, select, textarea{font:inherit; color:var(--ink);}
+  input:not([type=checkbox]):not([type=file]), select{width:100%; box-sizing:border-box; min-height:44px; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface); font-size:15px;}
+  input:focus, select:focus, textarea:focus{outline:none; border-color:var(--ink); box-shadow:0 0 0 1px var(--ink);}
+  input.invalid{border:2px solid var(--err) !important; box-shadow:none;}
+  input:disabled{background:var(--fill); color:var(--muted);}
+  .grid2{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px;}
+  .fld{display:flex; flex-direction:column; gap:6px; min-width:0;}
+  .fld > label{font-size:13px; color:var(--muted);}
+  .card .fld > label{font-size:14px; color:var(--ink);}
+  .seg .fld > label{font-size:13px; color:var(--muted);}
+  .fld-err{color:var(--err); font-size:13px; display:none;}
+  .suffix-wrap{position:relative;}
+  .suffix-wrap input{padding-right:46px !important;}
+  .suffix{position:absolute; right:12px; top:50%; transform:translateY(-50%); color:var(--muted); font-size:14px; pointer-events:none;}
+  .loading-status{display:none; align-items:center; gap:8px; font-size:13px; color:var(--muted);}
+  .loading-status.show{display:flex;}
+
+  /* buttons — white semi-bold text on brand orange (decision D4) */
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:0 18px; border-radius:10px; border:1px solid var(--line); background:var(--surface); color:var(--ink); font:inherit; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap;}
+  .btn:disabled{opacity:.6; cursor:default;}
+  .btn-primary{background:var(--brand); border-color:var(--brand); color:#fff;}
+  .btn-primary:hover:not(:disabled){background:#E85A31; border-color:#E85A31;}
+  .btn-outline{background:var(--surface); border-color:var(--line);}
+  .btn-outline:hover{border-color:var(--ink);}
+  .btn-ghost{background:transparent; border-color:transparent;}
+  .btn-danger{background:transparent; border-color:var(--err); color:var(--err);}
+  .btn-lg{min-height:48px; padding:0 28px; font-size:15px;}
+  .btn-sm{min-height:36px; padding:0 12px;}
+  .btn-block{width:100%;}
+  .btn-copy{border:2px solid var(--ink);}
+  .btn-dashed{width:100%; min-height:44px; border:1.5px dashed #BDBDB7; border-radius:10px; background:transparent; font:inherit; font-size:14px; font-weight:600; color:var(--ink); cursor:pointer;}
+  .btn-dashed:hover{border-color:var(--ink);}
+  .icon-btn{width:44px; height:44px; flex:none; display:flex; align-items:center; justify-content:center; border:1px solid transparent; border-radius:10px; background:transparent; cursor:pointer; color:var(--ink);}
+  .icon-btn.danger{color:var(--err);}
+  .icon-btn:hover{background:var(--bg);}
+  .link-danger{min-height:44px; padding:0 8px; border:none; background:none; color:var(--err); font:inherit; font-size:14px; font-weight:600; cursor:pointer;}
+
+  /* banners */
+  .banner{border-radius:12px; padding:14px 16px; display:flex; flex-direction:column; gap:10px; overflow-wrap:anywhere;}
+  .banner-err{background:var(--err-bg); color:var(--err);}
+  .banner-warn{background:var(--warn-bg); color:var(--warn);}
+  .banner-ok{background:var(--ok-bg); color:var(--ok);}
+  .banner-info{background:var(--info-bg); color:var(--ink);}
+  .banner-actions{display:flex; gap:8px; flex-wrap:wrap;}
+  .err-list{margin:6px 0 0; padding-left:20px;}
+  .err-list a{color:var(--err);}
+
+  /* locked sections (S1: choose a name first) */
+  .lock-note{display:none; color:var(--muted); margin:0;}
+  #formArea.is-locked #sec2, #formArea.is-locked #sec3, #formArea.is-all-locked #sec1{background:#FAFAF8; border-style:dashed;}
+  #formArea.is-locked #sec2 .lock-note, #formArea.is-locked #sec3 .lock-note{display:block;}
+  #formArea.is-locked #sec2 .unlock-only, #formArea.is-locked #sec3 .unlock-only, #formArea.is-locked .total-box{display:none;}
+  #formArea.is-locked #sec2 h2, #formArea.is-locked #sec3 h2{color:var(--muted);}
+  #formArea.is-sending #sec1, #formArea.is-sending #sec2, #formArea.is-sending .total-box{opacity:.45; pointer-events:none;}
+  .skeleton{display:none; flex-direction:column; gap:10px;}
+  .skeleton div{height:14px; border-radius:6px; background:var(--fill);}
+  #formArea.is-loading #sec1 .skeleton{display:flex;}
+  #formArea.is-loading #sec1 .grid2{display:none;}
+
+  /* section 2: days & segments */
+  .day{border:1px solid var(--line); border-radius:14px; background:#F7F7F5; padding:16px; display:flex; flex-direction:column; gap:18px; margin-bottom:16px;}
+  .day-head{display:flex; align-items:center; gap:14px; flex-wrap:wrap;}
+  .day-head h3{margin:0; font-size:18px;}
+  .day-head input[type=date]{width:auto; font-weight:600;}
+  .day-divider{height:1px; background:var(--line);}
+  .dir{display:flex; flex-direction:column; gap:10px;}
+  .dir-head{display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap;}
+  .dir-head h4{margin:0; font-size:16px;}
+  .dir-head b{color:var(--ink);}
+  .seg{border:1px solid var(--line); border-radius:12px; background:var(--surface);}
+  .seg.has-error{border:2px solid var(--err);}
+  .seg-head{position:relative; display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; padding:12px 16px; background:#FAFAF8; border-bottom:1px solid var(--line); border-radius:12px 12px 0 0;}
+  .seg-head:last-child{border-bottom:none; border-radius:12px;}
+  .seg-no{height:44px; display:flex; align-items:center; font-size:13px; font-weight:700; color:var(--muted); white-space:nowrap;}
+  .type-picker{position:relative; flex:1 1 240px; min-width:0; max-width:360px;}
+  .type-btn{width:100%; min-height:44px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface); font:inherit; font-weight:600; color:var(--ink); cursor:pointer; text-align:left;}
+  .type-btn span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .type-btn.empty{color:var(--muted);}
+  .type-btn.open{border:2px solid var(--ink);}
+  .type-menu{position:absolute; left:0; top:calc(100% + 6px); z-index:30; width:560px; max-width:calc(100vw - 48px); box-sizing:border-box; padding:8px; background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 28px rgba(0,0,0,.16); display:flex; flex-direction:column; gap:6px;}
+  .tm-search{position:relative; display:flex; align-items:center;}
+  .tm-search .ic{position:absolute; left:12px;}
+  .tm-search input{min-height:40px !important; padding-left:36px !important; background:var(--bg) !important;}
+  .tm-cols{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;}
+  .tm-head{padding:8px 10px 4px; font-size:12px; font-weight:700; color:var(--muted);}
+  .tm-opt{width:100%; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:7px 10px; border:none; border-radius:8px; background:transparent; font:inherit; color:var(--ink); text-align:left; cursor:pointer;}
+  .tm-opt:hover{background:var(--bg);}
+  .tm-opt.active{background:var(--ink); color:#fff; font-weight:600;}
+  .amt-fld{width:168px; flex:none;}
+  .seg-body{padding:14px 16px 16px; display:flex; flex-direction:column; gap:14px;}
+  .seg-note{margin:0; font-size:13px; color:var(--muted);}
+  .route{display:grid; grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr); gap:10px; align-items:start;}
+  .route.has-km{grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr) 150px;}
+  .route-arrow{height:44px; margin-top:26px; display:flex; align-items:center; justify-content:center;}
+  .attach{display:flex; flex-direction:column; gap:8px;}
+  .attach-label{font-size:13px; font-weight:600; color:var(--muted);}
+  .attach-row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-start;}
+  .attach-add{height:64px; padding:0 16px; border:1.5px dashed #BDBDB7; border-radius:10px; background:var(--surface); display:flex; align-items:center; gap:8px; font-size:14px; font-weight:600; color:var(--ink); cursor:pointer;}
+  .attach-add:hover{border-color:var(--ink);}
+  .attach-add input{position:absolute; width:1px; height:1px; opacity:0;}
+  .thumb{position:relative; width:64px; height:64px; border-radius:8px; border:1px solid var(--line); background:var(--fill); overflow:hidden; display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--muted); text-align:center;}
+  .thumb-view{padding:0; border:none; background:none; width:100%; height:100%; cursor:zoom-in;}
+  .thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+  .thumb-rm{position:absolute; top:2px; right:2px; width:22px; height:22px; border-radius:999px; border:none; background:rgba(30,30,30,.75); color:#fff; font-size:11px; cursor:pointer; line-height:22px; padding:0;}
+  .thumb-badge{position:absolute; left:2px; bottom:2px; font-size:10px; font-weight:700; background:var(--ok-bg); color:var(--ok); border-radius:999px; padding:0 6px;}
+  .thumb-pdf{flex-direction:column; gap:2px; padding:4px; box-sizing:border-box;}
+  .thumb-pdf-icon{font-weight:700; color:var(--err);}
+  .thumb-name{font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:56px;}
+  .thumb-loading{font-size:10px; padding:4px;}
+
+  /* total + section 3 */
+  .total-box{background:var(--ink); color:#fff; border-radius:14px; padding:16px 20px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin:0;}
+  .total-box .num{font-size:24px; font-weight:700; overflow-wrap:anywhere;}
+  textarea.summary-preview{width:100%; box-sizing:border-box; min-height:260px; padding:12px; border:1px solid var(--line); border-radius:10px; background:#FAFAF8; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; line-height:1.6; white-space:pre; overflow-x:auto; resize:vertical;}
+  .copy-row{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:10px 0 0;}
+  .copy-hint{display:none; font-size:14px; color:var(--ok); font-weight:600;}
+  .actions{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; border-top:1px solid var(--line); padding-top:16px; margin-top:16px;}
+  .send-fail .actions{border-top:none; padding-top:0; margin-top:12px;}
+  .send-fail{border-top:1px solid var(--line); padding-top:16px; margin-top:16px;}
+  .sending{display:flex; align-items:center; gap:12px;}
+  .spin{fill:none; stroke-width:3; stroke-linecap:round; animation:spin .9s linear infinite; flex:none;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* dropdown list for names / stations */
+  .combo-box{position:absolute; z-index:60; margin:0; padding:6px; list-style:none; box-sizing:border-box; max-height:320px; overflow:auto; background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 28px rgba(0,0,0,.16); display:none; font-size:15px;}
+  .combo-box li{padding:9px 12px; border-radius:8px; display:flex; justify-content:space-between; align-items:center; gap:12px; cursor:pointer;}
+  .combo-box li:hover{background:var(--bg);}
+  .combo-box li.active{background:var(--ink); color:#fff;}
+  .combo-box li.active .combo-sub{color:#E0E0DC;}
+  .combo-sub{display:flex; gap:8px; align-items:center; font-size:13px; color:var(--muted); white-space:nowrap;}
+  .combo-tag{font-size:11px; font-weight:700; border-radius:999px; padding:1px 8px; background:var(--ok-bg); color:var(--ok);}
+  .combo-box li.active .combo-tag{background:#3A3A3A; color:#fff;}
+  .combo-box li.combo-empty{color:var(--muted); cursor:default; display:block; font-size:14px;}
+  .combo-box li.combo-empty:hover{background:none;}
+
+  /* modal + toast */
+  .modal-overlay{position:fixed; inset:0; z-index:100; background:rgba(20,20,20,.45); display:flex; align-items:flex-start; justify-content:center; padding:96px 20px 20px; overflow:auto;}
+  .modal{width:100%; max-width:480px; background:var(--surface); border-radius:14px; padding:28px; box-shadow:0 16px 40px rgba(0,0,0,.25); display:flex; flex-direction:column; gap:14px;}
+  .modal h2{margin:0; font-size:21px;}
+  .modal-body p{margin:0 0 6px;}
+  .modal-actions{display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap;}
+  .modal-actions.stacked{flex-direction:column;}
+  .modal-actions.split > .btn{flex:1 1 180px;}
+  .success{text-align:left;}
+  .success-mark{width:56px; height:56px; border-radius:999px; background:var(--ok-bg); color:var(--ok); display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:700; align-self:center;}
+  .success h2{text-align:center;}
+  .kv{display:grid; grid-template-columns:auto 1fr; gap:6px 16px; margin:0; background:var(--bg); border-radius:12px; padding:14px 16px;}
+  .kv dt{color:var(--muted); font-size:14px;} .kv dd{margin:0; font-weight:700;}
+  .undo-toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(20px); z-index:90; display:flex; align-items:center; gap:16px; background:var(--ink); color:#fff; border-radius:12px; padding:12px 16px; box-shadow:0 12px 32px rgba(0,0,0,.25); opacity:0; pointer-events:none; transition:opacity .2s, transform .2s; max-width:calc(100vw - 32px);}
+  .undo-toast.show{opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0);}
+  .undo-toast button{min-height:36px; padding:0 14px; border-radius:8px; border:1px solid #fff; background:transparent; color:#fff; font:inherit; font-weight:700; cursor:pointer;}
+
+  @media (max-width: 640px){
+    .wrap{padding:20px 14px 48px;}
+    .grid2{grid-template-columns:1fr;}
+    .card{padding:16px;}
+    .route, .route.has-km{grid-template-columns:1fr;}
+    .route-arrow{display:none;}
+    .amt-fld{width:100%;}
+    .type-picker{max-width:none;}
+    .tm-cols{grid-template-columns:1fr;}
+  }
+</style>
+<style>
+  .spin-sm{width:14px; height:14px; border-radius:50%; border:2px solid var(--fill); border-top-color:var(--ink); animation:spin .7s linear infinite; flex:none;}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>📋 ใบเบิกค่าเดินทาง (เชื่อมโยงกิจกรรม)</h1>
-  <p class="sub" id="eventLabel">กำลังโหลดข้อมูลกิจกรรม...</p>
+  <header class="page-head">
+    <div>
+      <h1>ใบเบิกค่าเดินทาง</h1>
+      <p class="sub" id="eventLabel">กำลังโหลดข้อมูลกิจกรรม…</p>
+    </div>
+    <span class="draft-status" id="draftStatus" role="status"></span>
+  </header>
 
-  <div class="msg err" id="msgErr"></div>
-  <div class="msg ok" id="msgOk"></div>
-  <div class="msg warn" id="msgWarn"></div>
+  <div id="pageBanner"></div>
+  <div id="msgArea"></div>
+  <div id="validationBox"></div>
 
-  <!-- META -->
-  <div class="card">
-    <h2><span class="badge">1</span> ข้อมูลผู้เบิก</h2>
-    <div class="grid2">
-      <div class="field">
-        <label>ชื่อผู้เบิก (ชื่อ-นามสกุล) <span class="req">*</span></label>
-        <input id="employeeName" list="employeeSuggestions" placeholder="เช่น สมชาย ใจดี" onchange="onEmployeeChange()">
-        <datalist id="employeeSuggestions"></datalist>
-        <div class="loading-status" id="employeeLoadStatus"><span class="spinner"></span><span id="employeeLoadStatusText"></span></div>
+  <div id="formArea" class="stack is-locked">
+    <!-- 1 · who is claiming -->
+    <section class="card" id="sec1">
+      <h2><span class="badge">1</span> ข้อมูลผู้เบิก</h2>
+      <div class="skeleton" aria-hidden="true"><div style="width:40%"></div><div style="width:100%; height:44px; border-radius:10px"></div></div>
+      <div class="grid2">
+        <div class="fld">
+          <label for="employeeName">ชื่อผู้เบิก (ชื่อ-นามสกุล) <span class="req">*</span></label>
+          <input id="employeeName" autocomplete="off" placeholder="พิมพ์เพื่อค้นหาชื่อ" aria-describedby="nameError"
+                 onfocus="nameFocus(this)" oninput="nameInput(this)" onkeydown="comboKey(event)" onblur="nameBlur(this)">
+          <div class="fld-err" id="nameError" role="alert"></div>
+          <div class="loading-status" id="employeeLoadStatus"><span class="spin-sm" aria-hidden="true"></span><span id="employeeLoadStatusText"></span></div>
+        </div>
+        <div class="fld">
+          <label for="department">แผนก/ฝ่าย <span class="req">*</span></label>
+          <input id="department" placeholder="เติมให้อัตโนมัติเมื่อเลือกชื่อ" oninput="scheduleDraftSave()">
+        </div>
       </div>
-      <div class="field">
-        <label>แผนก/ฝ่าย <span class="req">*</span></label>
-        <input id="department" placeholder="เช่น ฝ่ายการตลาด">
+    </section>
+
+    <!-- 2 · trips -->
+    <section class="card" id="sec2">
+      <h2><span class="badge">2</span> รายการเดินทาง</h2>
+      <p class="lock-note">เลือกชื่อของคุณด้านบนก่อน ส่วนนี้จะเปิดให้กรอก</p>
+      <div class="unlock-only" id="tripsContainer"></div>
+    </section>
+
+    <div class="total-box">
+      <span>ยอดรวมทั้งหมด</span>
+      <span class="num" id="grandTotal">0.00 บาท</span>
+    </div>
+
+    <!-- 3 · review & send -->
+    <section class="card" id="sec3">
+      <h2><span class="badge">3</span> ตรวจสอบก่อนส่งเอกสาร</h2>
+      <p class="lock-note">จะเปิดให้ตรวจสอบหลังกรอกรายการเดินทาง</p>
+      <div class="unlock-only">
+        <label for="summaryPreview">สรุปสำหรับคัดลอกเก็บไว้/ส่งต่อ</label>
+        <textarea class="summary-preview" id="summaryPreview" readonly style="margin-top:6px"></textarea>
+        <div class="copy-row">
+          <button type="button" class="btn btn-copy" id="copySummaryBtn" onclick="copySummary()"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" class="ic"><rect x="6" y="6" width="9" height="10" rx="2"></rect><path d="M12 6 V4 a1.5 1.5 0 0 0 -1.5 -1.5 H5 a1.5 1.5 0 0 0 -1.5 1.5 V11 a1.5 1.5 0 0 0 1.5 1.5 H6"></path></svg> คัดลอกข้อความสรุป</button>
+          <span class="copy-hint" id="copyHint" role="status">วางใน LINE หรือ Excel ได้เลย</span>
+        </div>
+        <div id="actionArea"></div>
+        <div class="inline-toast" id="fileSizeToast"></div>
       </div>
-    </div>
+    </section>
   </div>
-
-  <!-- TRIPS: one block per day, each with ขาไป + ขากลับ -->
-  <div class="card">
-    <h2><span class="badge">2</span> รายการเดินทาง</h2>
-    <div id="tripsContainer"></div>
-  </div>
-
-  <!-- TOTAL -->
-  <div class="total-box">
-    <span>ยอดรวมทั้งหมด</span>
-    <span class="num" id="grandTotal">0.00 บาท</span>
-  </div>
-
-  <!-- OUTPUT -->
-  <div class="card">
-    <h2><span class="badge">3</span> ตรวจสอบก่อนส่งเอกสาร</h2>
-    <label>สรุปสำหรับคัดลอกเก็บไว้/ส่งต่อ</label>
-    <textarea class="summary-preview" id="summaryPreview" readonly></textarea>
-    <div class="footer-actions" style="margin-top:8px;">
-      <button class="btn btn-outline" id="copySummaryBtn" onclick="copySummary()">📋 คัดลอกข้อความสรุป</button>
-    </div>
-    <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:600; cursor:pointer;">
-      <input type="checkbox" id="compressImages" checked style="width:auto;">
-      🗜️ ย่อรูปหลักฐานให้ไฟล์ PDF เล็กลง (ย่อขนาดภาพ ไม่ใช่บีบคุณภาพ — ยังคมชัด อ่านได้ปกติ, เหมาะสำหรับส่งอีเมล)
-    </label>
-    <div class="hint">ค่าเริ่มต้น: ย่อรูป (ไฟล์เล็กลงมาก คุณภาพยังชัดเจนอ่านได้ปกติ) — เอาติ๊กออกถ้าต้องการฝังรูปคุณภาพต้นฉบับเต็ม (ไฟล์จะใหญ่ขึ้นมาก)</div>
-    <div class="footer-actions" style="margin-top:14px;">
-      <button class="btn btn-outline" id="downloadPdfBtn" onclick="downloadPdf()">⬇️ ดาวน์โหลด PDF</button>
-      <button class="btn btn-primary" id="submitFormBtn" onclick="submitForm()">✅ ยืนยันส่งเอกสาร</button>
-    </div>
-    <div class="inline-toast" id="fileSizeToast"></div>
-  </div>
-  <div style="text-align:center; color:var(--muted); font-size:11px; margin-top:20px;">Build: 2026-08-11-v11 (form.html)</div>
 </div>
+
+<div id="modalRoot"></div>
+<div class="undo-toast" id="undoToast" role="status"></div>
 
 <!-- 🔍 Image preview lightbox -->
 <div class="lightbox-overlay" id="imgLightbox" onclick="closeImageLightbox()">
@@ -662,33 +895,9 @@ function stationDatalistOptions(line){
 }
 
 /* ---------- INIT ---------- */
-async function loadEventInfo(){
-  if(!EVENT_ID){
-    document.getElementById('eventLabel').textContent = '';
-    showMsg('err','ลิงก์นี้ไม่มีรหัสกิจกรรม (?event=EV-xxxx) กรุณาใช้ลิงก์ที่สตาฟส่งให้เท่านั้น');
-    return;
-  }
-  try{
-    const res = await callApi('getEventInfo', { eventId: EVENT_ID });
-    if(!res.ok){ showMsg('err', res.error); document.getElementById('eventLabel').textContent=''; return; }
-    eventName = res.event.eventName;
-    document.getElementById('eventLabel').textContent = 'กิจกรรม: ' + eventName;
-    employeeList = res.employees || [];
-    document.getElementById('employeeSuggestions').innerHTML =
-      employeeList.map(e=>`<option value="${e.name}">`).join('');
-    eventFuelPrices = res.fuelPrices || [];
-    refreshCarFaresAll();
-  }catch(err){
-    showMsg('err','เชื่อมต่อระบบหลังบ้านไม่สำเร็จ: '+err+' (ตรวจสอบว่าตั้งค่า API_URL ในโค้ดถูกต้องแล้ว)');
-  }
-}
 
-function resetFormForNewEmployee(){
-  document.getElementById('department').value = '';
-  state.days = [ newDay() ];
-  submissionImagesLoadPromise = null;
-  ['Err','Ok','Warn'].forEach(t=>{ const el=document.getElementById('msg'+t); if(el) el.style.display='none'; });
-}
+
+
 
 // Small inline spinner + status text shown right under the employee-name
 // field while a previous submission (and its receipt images) is being
@@ -705,50 +914,7 @@ function setEmployeeLoadStatus(text){
   }
 }
 
-async function onEmployeeChange(){
-  const name = document.getElementById('employeeName').value.trim();
 
-  if(!name){
-    lastLoadedEmployeeName = '';
-    resetFormForNewEmployee();
-    render();
-    return;
-  }
-
-  // Same member as already loaded — nothing to reset, avoid clobbering
-  // in-progress edits just because the field was re-blurred.
-  if(name === lastLoadedEmployeeName) return;
-  lastLoadedEmployeeName = name;
-
-  // Always start from a completely clean form before loading data for the
-  // newly selected member, so leftover fields/segments from whoever was
-  // previously selected never bleed into this member's submission.
-  resetFormForNewEmployee();
-
-  const match = employeeList.find(e=>e.name===name);
-  if(match && match.department){
-    document.getElementById('department').value = match.department;
-  }
-
-  setEmployeeLoadStatus('กำลังโหลดข้อมูล...');
-  try{
-    const res = await callApi('getMySubmission', { eventId: EVENT_ID, employeeName: name });
-    if(res.ok && res.exists){
-      document.getElementById('department').value = res.data.department || document.getElementById('department').value;
-      state.days = (res.data.trips && res.data.trips.length) ? tripsArrayToDays(res.data.trips) : [ newDay() ];
-      showMsg('warn', `พบเอกสารที่เคยส่งไว้แล้ว (สถานะล่าสุด: ${res.data.status}) — ระบบดึงข้อมูลเดิมมาให้แก้ไข การกด "ยืนยันส่งเอกสาร" จะบันทึกทับเวอร์ชันเดิม`);
-      // Old receipt photos are the slow part (each one is a separate Drive
-      // fetch) — rather than block the form on all of them, render
-      // immediately with lightweight "กำลังโหลดรูป..." placeholders and
-      // stream the real thumbnails in afterward in the background.
-      submissionImagesLoadPromise = loadSubmissionAttachmentImages(name);
-    }
-    // If no existing submission was found, the form is already reset to a
-    // clean, blank state above — nothing further to do.
-  }catch(err){ /* keep the clean, reset form shown so far */ }
-  setEmployeeLoadStatus(null);
-  render();
-}
 
 // Fetches the real Base64 images for every existing-receipt placeholder
 // currently in state.days (see normalizeLoadedSegments) and patches them
@@ -787,8 +953,8 @@ async function loadSubmissionAttachmentImages(employeeName){
 }
 
 /* ---------- RENDER TRIPS ---------- */
-function addDay(){ state.days.push(newDay()); render(); }
-function removeDay(di){ if(state.days.length<=1) return; state.days.splice(di,1); render(); }
+
+
 
 function dayUpdate(di,field,value){
   state.days[di][field] = value;
@@ -803,202 +969,12 @@ function dayUpdate(di,field,value){
   }
   refreshTotals();
 }
-function addSegment(di,key){ state.days[di][key].push(newSegment()); render(); }
-function removeSegment(di,key,si){ state.days[di][key].splice(si,1); render(); }
 
-function render(){
-  const c = document.getElementById('tripsContainer');
-  c.innerHTML = state.days.map((day,di)=>{
-    const outHtml = day.outboundSegments.map((seg,si)=>renderSegment(di,'outboundSegments',seg,si,day.date)).join('');
-    const retHtml = day.returnSegments.map((seg,si)=>renderSegment(di,'returnSegments',seg,si,day.date)).join('');
-    const outTotal = day.outboundSegments.reduce((s,seg)=>s+(parseFloat(seg.amount)||0),0);
-    const retTotal = day.returnSegments.reduce((s,seg)=>s+(parseFloat(seg.amount)||0),0);
-    return `
-      <div class="day-block">
-        <div class="day-header">
-          <div class="field" style="margin:0; max-width:220px;">
-            <label>วันที่เดินทาง (วันที่ ${di+1})</label>
-            <input type="date" value="${day.date}" max="${TODAY_ISO}" onchange="dayUpdate(${di},'date',this.value)">
-          </div>
-          ${state.days.length>1 ? `<button class="btn btn-ghost" onclick="removeDay(${di})">ลบวันนี้ออกทั้งหมด</button>` : ''}
-        </div>
 
-        <div class="trip-section-title"><span class="arrow">🛫</span> ขาไป</div>
-        ${outHtml}
-        <button class="btn btn-add-segment" onclick="addSegment(${di},'outboundSegments')">+ เพิ่มต่อการเดินทาง (ขาไป)</button>
-        <div class="trip-total-line"><span>ยอดรวม ขาไป</span><span id="subtotal-${di}-outboundSegments">${fmt(outTotal)} บาท</span></div>
 
-        <div class="trip-section-title"><span class="arrow">🛬</span> ขากลับ</div>
-        ${retHtml}
-        <button class="btn btn-add-segment" onclick="addSegment(${di},'returnSegments')">+ เพิ่มต่อการเดินทาง (ขากลับ)</button>
-        <div class="trip-total-line"><span>ยอดรวม ขากลับ</span><span id="subtotal-${di}-returnSegments">${fmt(retTotal)} บาท</span></div>
-      </div>
-    `;
-  }).join('') + `<button class="btn btn-outline" style="width:100%; margin-top:4px;" onclick="addDay()">+ เพิ่มวันเดินทาง (สำหรับกิจกรรมหลายวัน)</button>`;
-  updateTotals();
-}
 
-function renderSegment(di,key,seg,si,dayDate){
-  const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
-  let body = '';
-  if(typeCfg.kind==='placeholder'){
-    body = `<div class="hint">กรุณาเลือกวิธีการเดินทางด้านบนก่อนกรอกรายละเอียด</div>`;
-  } else if(typeCfg.kind==='rail'){
-    const originInvalid = seg.origin && !isValidStation(seg.type, seg.origin);
-    const destInvalid = seg.destination && !isValidStation(seg.type, seg.destination);
-    const dlId = `dl-${di}-${key}-${si}-${seg.type}`;
-    body = `
-      <div class="grid2">
-        <div class="field"><label>สถานีต้นทาง <span class="req">*</span></label>
-          <input list="${dlId}-o" value="${seg.origin}" placeholder="พิมพ์ชื่อสถานี..."
-            onfocus="this.dataset.prev=this.value; this.value='';"
-            onblur="if(!this.value) this.value=this.dataset.prev||'';"
-            oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)">
-          <datalist id="${dlId}-o">${stationDatalistOptions(seg.type)}</datalist>
-          <div class="hint" id="hint-o-${di}-${key}-${si}" style="color:var(--danger); display:${originInvalid?'block':'none'};">ไม่พบสถานีนี้ กรุณาเลือกจากรายการ</div>
-        </div>
-        <div class="field"><label>สถานีปลายทาง <span class="req">*</span></label>
-          <input list="${dlId}-d" value="${seg.destination}" placeholder="พิมพ์ชื่อสถานี..."
-            onfocus="this.dataset.prev=this.value; this.value='';"
-            onblur="if(!this.value) this.value=this.dataset.prev||'';"
-            oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)">
-          <datalist id="${dlId}-d">${stationDatalistOptions(seg.type)}</datalist>
-          <div class="hint" id="hint-d-${di}-${key}-${si}" style="color:var(--danger); display:${destInvalid?'block':'none'};">ไม่พบสถานีนี้ กรุณาเลือกจากรายการ</div>
-        </div>
-      </div>
-      <div class="field"><label>จำนวนเงิน (บาท) — คำนวณอัตโนมัติ แก้ไขได้ <span class="req">*</span></label>
-        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
-          oninput="segAmountInput(${di},'${key}',${si},this.value)"
-          onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>`;
-  } else if(typeCfg.kind==='car'){
-    const fuelEntry = getFuelPriceEntryForDate(dayDate);
-    const hasFuelPrice = fuelEntry && Number(fuelEntry.price) > 0;
-    const fuelNote = hasFuelPrice
-      ? `ราคาน้ำมันอ้างอิงวันที่ ${dayDate || '-'}: ${Number(fuelEntry.price).toFixed(2)} บาท/ลิตร${fuelEntry.date !== dayDate ? ` (ใช้ราคาล่าสุดของวันที่ ${fuelEntry.date})` : ''}`
-      : '';
-    // If there's simply no fuel-price data on file for this date yet, the
-    // (distance ÷ 15) × price formula has nothing to multiply by, so it
-    // correctly computes 0.00 — which looks exactly like "the system
-    // isn't calculating". Surface that clearly, up front, instead of a
-    // barely-visible hint at the bottom, and tell the person they can
-    // still type the amount in manually while it's missing.
-    const missingPriceWarning = !hasFuelPrice ? `
-      <div class="fuel-warn">⚠️ ยังไม่มีข้อมูลราคาน้ำมันสำหรับวันที่ ${dayDate || 'นี้'} ในระบบ — จำนวนเงินจะยังคงเป็น 0.00 บาท และไม่คำนวณให้อัตโนมัติ จนกว่าผู้ดูแลกิจกรรมจะเพิ่มราคาน้ำมันของวันนี้ ระหว่างนี้สามารถกรอกจำนวนเงินเองในช่องด้านล่างได้</div>` : '';
-    body = `
-      ${missingPriceWarning}
-      <div class="grid2">
-        <div class="field"><label>จาก (ต้นทาง) <span class="req">*</span></label>
-          <input value="${seg.origin}" oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)" placeholder="เช่น ออฟฟิศ"></div>
-        <div class="field"><label>ไป (ปลายทาง) <span class="req">*</span></label>
-          <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder="เช่น สนามบิน"></div>
-      </div>
-      <div class="field"><label>ระยะทาง (กิโลเมตร) <span class="req">*</span></label>
-        <input type="number" step="0.01" min="0" placeholder="0.00" value="${seg.distanceKm ? Number(seg.distanceKm).toFixed(2) : ''}" oninput="segFieldInput(${di},'${key}',${si},'distanceKm',this.value)"
-          onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : ''; segFieldInput(${di},'${key}',${si},'distanceKm',this.value);"></div>
-      <div class="field"><label>จำนวนเงิน (บาท) — คำนวณอัตโนมัติ แก้ไขได้ <span class="req">*</span></label>
-        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
-          oninput="segAmountInput(${di},'${key}',${si},this.value)"
-          onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>
-      ${hasFuelPrice ? `<div class="hint">สูตร: (ระยะทาง ÷ 15) × ราคาน้ำมันแก๊สโซฮอลล์91 ณ วันเดินทาง — ${fuelNote}</div>` : ''}`;
-  } else if(seg.type==='PARKING'){
-    body = `
-      <div class="field"><label>จำนวนเงิน (บาท) <span class="req">*</span></label>
-        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
-          oninput="segAmountInput(${di},'${key}',${si},this.value)"
-          onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>
-      <div class="hint">ค่าจอดรถไม่ต้องระบุต้นทาง/ปลายทาง — กรอกเฉพาะจำนวนเงินและแนบสลิป/ใบเสร็จ</div>`;
-  } else if(typeCfg.kind==='none'){
-    // "ไม่เบิกค่าเดินทาง" (No Expense Claim) — quietly hide the
-    // distance/amount/receipt inputs with no explanatory note, to keep
-    // the UI clean. The amount is forced to 0 in recalcSegment().
-    body = '';
-  } else if(seg.type==='TOLL'){
-    body = `
-      <div class="grid2">
-        <div class="field"><label>จาก (ต้นทาง) <span style="color:var(--muted); font-weight:400;"></span></label>
-          <input value="${seg.origin}" oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)" placeholder="ไม่บังคับ เช่น ทางพิเศษเฉลิมมหานคร"></div>
-        <div class="field"><label>ไป (ปลายทาง) <span style="color:var(--muted); font-weight:400;"></span></label>
-          <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder="ไม่บังคับ เช่น ทางพิเศษเฉลิมมหานคร"></div>
-      </div>
-      <div class="field"><label>จำนวนเงิน (บาท) <span class="req">*</span></label>
-        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
-          oninput="segAmountInput(${di},'${key}',${si},this.value)"
-          onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>
-      <div class="hint">ต้นทาง/ปลายทางไม่บังคับ — กรอกจำนวนเงินและแนบใบเสร็จค่าทางด่วน</div>`;
-  } else {
-    const otherField = seg.type==='OTHER' ? `
-      <div class="field"><label>รายละเอียดเพิ่มเติม (ระบุประเภทการเดินทาง) <span class="req">*</span></label>
-        <input value="${seg.otherDescription||''}" oninput="segFieldInput(${di},'${key}',${si},'otherDescription',this.value)" placeholder="เช่น เรือข้ามฟาก, รถสองแถว"></div>` : '';
-    body = `
-      ${otherField}
-      <div class="grid2">
-        <div class="field"><label>จาก (ต้นทาง) <span class="req">*</span></label>
-          <input value="${seg.origin}" oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)" placeholder="เช่น ออฟฟิศ"></div>
-        <div class="field"><label>ไป (ปลายทาง) <span class="req">*</span></label>
-          <input value="${seg.destination}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)" placeholder="เช่น สนามบิน"></div>
-      </div>
-      <div class="field"><label>จำนวนเงิน (บาท) <span class="req">*</span></label>
-        <input type="number" step="0.01" min="0" placeholder="0.00" id="amtinput-${di}-${key}-${si}" value="${seg.amount>0 ? Number(seg.amount).toFixed(2) : ''}"
-          oninput="segAmountInput(${di},'${key}',${si},this.value)"
-          onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"></div>`;
-  }
 
-  // All receipts — whether just picked in this session or pulled back from
-  // a previous submission — live in seg.attachments. Freshly-picked ones
-  // and already-loaded existing ones get a real <img> thumbnail (or a PDF
-  // icon + filename if the file is a PDF — see isPdfAttachment); existing
-  // ones still waiting on their background image fetch (see
-  // onEmployeeChange/loadSubmissionAttachmentImages) show a lightweight
-  // loading placeholder instead, so the segment renders instantly rather
-  // than waiting on every old photo to come back from Drive first.
-  const thumbs = (seg.attachments||[]).map((a,ai)=>{
-    if(a.isExisting && !a.base64){
-      return `<span class="attach-thumb attach-thumb-loading"><span class="existing-badge">เดิม</span><span class="thumb-loading-text">กำลังโหลดรูป...</span><span class="rm" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</span></span>`;
-    }
-    if(isPdfAttachment(a)){
-      return `<span class="attach-thumb"><span class="pdf-thumb-icon">📄</span>${a.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<span class="pdf-thumb-name" title="${escapeAttr(a.fileName||'')}">${escapeAttr(a.fileName||'PDF')}</span><button type="button" class="view-img-link" onclick="window.open('${a.base64}','_blank')">📄 ดูไฟล์ PDF</button><span class="rm" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</span></span>`;
-    }
-    return `<span class="attach-thumb">${a.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${a.base64}"><button type="button" class="view-img-link" onclick="openImageLightbox('${a.base64}')">🔍 ดูรูปภาพ</button><span class="rm" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</span></span>`;
-  }).join('');
 
-  // Parking, Toll, and Personal Vehicle require at least one attached
-  // Parking, Toll, Personal Vehicle, and Grab/Lineman/Bolt all require at
-  // least one attached file (see validate()) — flag that visually with a
-  // red "*" and a mode-specific label, matching the exact wording used in
-  // the validation alert, so employees see the requirement before they
-  // hit submit instead of only finding out from the error message.
-  const requiresReceipt = seg.type==='PARKING' || seg.type==='TOLL' || seg.type==='GRAB' || typeCfg.kind==='car';
-  const attachLabel = seg.type==='PARKING' ? 'แนบรูปใบเสร็จค่าจอดรถ'
-    : seg.type==='TOLL' ? 'แนบรูปใบเสร็จค่าทางด่วน'
-    : seg.type==='GRAB' ? 'แนบรูปภาพหลักฐานการเดินทาง Grab/Lineman/Bolt'
-    : typeCfg.kind==='car' ? 'แนบรูปภาพแคปหน้าจอ Google Maps สำหรับรถยนต์ส่วนตัว'
-    : 'แนบรูปภาพหลักฐาน/สลิป (แนบได้มากกว่า 1 ไฟล์)';
-
-  const attachHtml = typeCfg.kind === 'none' ? '' : `
-    <div class="attach-box">
-      <label>${attachLabel}${requiresReceipt ? ' <span class="req">*</span>' : ''}</label>
-      <input type="file" accept="image/*,application/pdf" multiple onchange="handleFiles(event, ${di}, '${key}', ${si})">
-      ${thumbs ? `<div class="preview-list">${thumbs}</div>` : ''}
-    </div>`;
-
-  const currentTypeLabel = typeCfg.label;
-  const typeOptionsHtml = SEGMENT_TYPES.map(t=>
-    `<div class="type-opt ${t.value===seg.type?'active':''}" onclick="this.closest('details').open=false; segUpdate(${di},'${key}',${si},'type','${t.value}')">${t.label}</div>`
-  ).join('');
-
-  return `
-    <div class="segment">
-      <div class="segment-head">
-        <details class="type-dropdown">
-          <summary>${currentTypeLabel}</summary>
-          <div class="type-options">${typeOptionsHtml}</div>
-        </details>
-        <button class="btn btn-ghost" onclick="removeSegment(${di},'${key}',${si})">ลบ</button>
-      </div>
-      ${body}
-      ${attachHtml}
-    </div>`;
-}
 
 function segUpdate(di,key,si,field,value){
   const seg = state.days[di][key][si];
@@ -1037,21 +1013,7 @@ function segAmountInput(di,key,si,value){
   refreshTotals();
 }
 
-function refreshTotals(){
-  let grand = 0;
-  state.days.forEach((day,di)=>{
-    ['outboundSegments','returnSegments'].forEach(key=>{
-      let subtotal = 0;
-      day[key].forEach(seg=>{ subtotal += (parseFloat(seg.amount)||0); });
-      grand += subtotal;
-      const subEl = document.getElementById(`subtotal-${di}-${key}`);
-      if(subEl) subEl.textContent = fmt(subtotal) + ' บาท';
-    });
-  });
-  document.getElementById('grandTotal').textContent = fmt(grand) + ' บาท';
-  document.getElementById('summaryPreview').value = buildSummaryText(grand);
-  return grand;
-}
+
 
 // Amount = (Distance / 15) * Gasohol 91 price of that travel date — with
 // the closest-previous-event-date fallback baked into getFuelPriceForDate().
@@ -1218,125 +1180,20 @@ function buildSummaryText(total){
 }
 
 /* ---------- COPY SUMMARY ---------- */
-function copySummary(){
-  const textarea = document.getElementById('summaryPreview');
-  const btn = document.getElementById('copySummaryBtn');
-  const text = textarea.value;
 
-  function showCopied(){
-    const original = btn.textContent;
-    btn.textContent = '✅ คัดลอกแล้ว';
-    setTimeout(()=>{ btn.textContent = original; }, 1800);
-  }
-
-  if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(text).then(showCopied).catch(()=>{
-      textarea.select();
-      document.execCommand('copy');
-      showCopied();
-    });
-  } else {
-    textarea.select();
-    document.execCommand('copy');
-    showCopied();
-  }
-}
 
 /* ---------- VALIDATION ---------- */
-function validate(){
-  let ok = true;
-  const errors = [];
 
-  if(!document.getElementById('employeeName').value.trim()){ errors.push('กรุณากรอกชื่อผู้เบิก'); ok=false; }
-  if(!document.getElementById('department').value.trim()){ errors.push('กรุณากรอกแผนก/ฝ่าย'); ok=false; }
 
-  state.days.forEach((day,di)=>{
-    if(!day.date){ errors.push(`วันที่ ${di+1}: กรุณาเลือกวันที่เดินทาง`); ok=false; }
-    else if(day.date > TODAY_ISO){ errors.push(`วันที่ ${di+1}: ไม่สามารถเลือกวันที่ในอนาคตได้`); ok=false; }
 
-    [['outboundSegments','ขาไป'],['returnSegments','ขากลับ']].forEach(([key,label])=>{
-      const segments = day[key];
-      if(segments.length===0){ errors.push(`วันที่ ${di+1} (${label}) ต้องมีอย่างน้อย 1 ต่อการเดินทาง`); ok=false; }
-      segments.forEach((seg,si)=>{
-        const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type);
-        const tag = `วันที่ ${di+1} (${label}) รายการที่ ${si+1}`;
-
-        if(!seg.type || typeCfg.kind==='placeholder'){
-          errors.push(`${tag}: กรุณาเลือกวิธีการเดินทาง`); ok=false;
-          return;
-        }
-
-        const needsRoute = (typeCfg.kind==='rail' || typeCfg.kind==='manual' || typeCfg.kind==='car') && seg.type!=='PARKING' && seg.type!=='TOLL';
-
-        if(needsRoute){
-          if(!seg.origin){ errors.push(`${tag}: กรุณากรอกต้นทาง`); ok=false; }
-          else if(typeCfg.kind==='rail' && !isValidStation(seg.type, seg.origin)){ errors.push(`${tag}: ชื่อสถานีต้นทางไม่ถูกต้อง`); ok=false; }
-
-          if(!seg.destination){ errors.push(`${tag}: กรุณากรอกปลายทาง`); ok=false; }
-          else if(typeCfg.kind==='rail' && !isValidStation(seg.type, seg.destination)){ errors.push(`${tag}: ชื่อสถานีปลายทางไม่ถูกต้อง`); ok=false; }
-        }
-
-        if(typeCfg.kind==='car' && !(parseFloat(seg.distanceKm) > 0)){
-          errors.push(`${tag}: กรุณากรอกระยะทาง`); ok=false;
-        }
-
-        if(seg.type==='OTHER' && !(seg.otherDescription||'').trim()){
-          errors.push(`${tag}: กรุณาระบุรายละเอียดประเภทการเดินทาง`); ok=false;
-        }
-
-        // "ไม่เบิกค่าเดินทาง" never requires an amount — its expense is
-        // always exactly 0.00 by design, with no extra input required.
-        if(typeCfg.kind!=='none' && !(parseFloat(seg.amount) > 0)){
-          errors.push(`${tag}: กรุณากรอกจำนวนเงิน`); ok=false;
-        }
-
-        // Mandatory receipt/photo upload for these travel modes — a
-        // parking or toll receipt, a Google Maps screenshot proving the
-        // distance for a personal-vehicle trip, or a trip screenshot for
-        // Grab/Lineman/Bolt. Submission is blocked without at least one
-        // attached file.
-        const requiresReceipt = seg.type==='PARKING' || seg.type==='TOLL' || seg.type==='GRAB' || typeCfg.kind==='car';
-        if(requiresReceipt && !((seg.attachments||[]).length > 0)){
-          const receiptWarning = seg.type==='PARKING' ? 'กรุณาแนบรูปใบเสร็จค่าจอดรถ'
-            : seg.type==='TOLL' ? 'กรุณาแนบรูปใบเสร็จค่าทางด่วน'
-            : seg.type==='GRAB' ? 'กรุณาแนบรูปภาพหลักฐานการเดินทาง Grab/Lineman/Bolt'
-            : 'กรุณาแนบรูปภาพแคปหน้าจอ Google Maps สำหรับรถยนต์ส่วนตัว';
-          errors.push(`${tag}: ${receiptWarning}`); ok=false;
-        }
-
-        // Safety net: an existing receipt (isExisting) that still has no
-        // base64 means its background fetch either hasn't finished yet or
-        // failed outright (e.g. the original Drive file is missing/moved).
-        // Block submission here rather than letting it through silently —
-        // the URL would still technically be preserved either way, but the
-        // person needs to actually SEE that something is wrong with an old
-        // photo instead of unknowingly resubmitting with a broken receipt.
-        const stillLoadingOrBroken = (seg.attachments||[]).some(a => a.isExisting && !a.base64);
-        if(stillLoadingOrBroken){
-          errors.push(`${tag}: รูปเดิมบางไฟล์ยังโหลดไม่เสร็จหรือไม่พบไฟล์ในระบบ กรุณารอสักครู่แล้วลองใหม่ (ถ้ายังไม่หายให้ลองลบและแนบไฟล์นี้ใหม่)`); ok=false;
-        }
-      });
-    });
-  });
-
-  if(!ok) showMsg('err', errors.join(' / '));
-  return ok;
-}
-
-function showMsg(type, text){
-  ['Err','Ok','Warn'].forEach(t=>{ const el=document.getElementById('msg'+t); if(el) el.style.display='none'; });
-  const key = type.charAt(0).toUpperCase()+type.slice(1);
-  const el = document.getElementById('msg'+key);
-  if(el){ el.textContent = text; el.style.display='block'; el.scrollIntoView({behavior:'smooth', block:'center'}); }
-}
 
 /* ---------- PDF GENERATION ---------- */
 function buildPrintArea(total){
   document.getElementById('pEventName').textContent = eventName || '';
   document.getElementById('pIssueDate').textContent = formatThaiDate(localISODate(new Date()));
   document.getElementById('pMeta').innerHTML = `
-    <div><span class="label">ผู้เบิก:</span> ${document.getElementById('employeeName').value || '-'}</div>
-    <div><span class="label">แผนก/ฝ่าย:</span> ${document.getElementById('department').value || '-'}</div>`;
+    <div><span class="label">ผู้เบิก:</span> ${escapeAttr(document.getElementById('employeeName').value || '-')}</div>
+    <div><span class="label">แผนก/ฝ่าย:</span> ${escapeAttr(document.getElementById('department').value || '-')}</div>`;
 
   const wrap = document.getElementById('pDaysWrap');
   wrap.innerHTML = '';
@@ -1364,7 +1221,7 @@ function buildPrintArea(total){
       } else {
         detail = `${seg.origin||'-'} → ${seg.destination||'-'}`;
       }
-      rows += `<tr><td>${i+1}</td><td>${typeLabel}</td><td>${detail}</td><td class="amt">${(Number(seg.amount)||0).toFixed(2)}</td></tr>`;
+      rows += `<tr><td>${i+1}</td><td>${escapeAttr(typeLabel)}</td><td>${escapeAttr(detail)}</td><td class="amt">${(Number(seg.amount)||0).toFixed(2)}</td></tr>`;
     });
     return {
       html: `<div class="dir-title">${title}</div>
@@ -1382,7 +1239,7 @@ function buildPrintArea(total){
     const dayDiv = document.createElement('div');
     dayDiv.className = 'day-block';
     dayDiv.dataset.dayIndex = di;
-    dayDiv.innerHTML = `<div class="day-title">${dayLabel}</div>${out.html}${ret.html}`;
+    dayDiv.innerHTML = `<div class="day-title">${escapeAttr(dayLabel)}</div>${out.html}${ret.html}`;
     wrap.appendChild(dayDiv);
   });
 
@@ -1574,7 +1431,7 @@ async function generatePdfBlob(){
   }
 
   async function placeOriginalPhoto(att, caption){
-    const shouldCompress = document.getElementById('compressImages').checked;
+    const shouldCompress = true;
     let photoData = att.base64;
     let format = guessImageFormat(att.mimeType, att.base64);
     let naturalSize;
@@ -1799,7 +1656,7 @@ function showFileSizeToast(text){
 function checkPdfSize(doc){
   const sizeKB = Math.round(doc.output('blob').size / 1024);
   if(sizeKB > 400){
-    const compressed = document.getElementById('compressImages').checked;
+    const compressed = true;
     const tip = compressed
       ? 'ติ๊กบีบอัดไว้แล้วแต่ไฟล์ยังใหญ่ — ลองลดจำนวนรูปที่แนบต่อรายการ'
       : 'ถ้าต้องการไฟล์เล็กลง ลองติ๊ก "บีบอัดรูปหลักฐาน" ด้านบนแล้วสร้างใหม่อีกครั้ง';
@@ -1807,73 +1664,967 @@ function checkPdfSize(doc){
   }
 }
 
+
+
+/* ---------- WORD (.docx) EXPORT ----------
+   Built from the same state.days data as the PDF, so amounts and wording
+   always match. Tables and text stay editable in Word (not images).
+   Library: docx 8.5.0 (window.docx). */
+function docxSegTypeLabel(seg){
+  const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type) || { label: '-' };
+  return (seg.type==='OTHER' && seg.otherDescription) ? `อื่นๆ (${seg.otherDescription})` : typeCfg.label;
+}
+
+function docxSegDetail(seg, dateStr){
+  const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type) || {};
+  const tollEmpty = seg.type==='TOLL' && !seg.origin && !seg.destination;
+  if(seg.type==='PARKING' || tollEmpty || typeCfg.kind==='none') return '-';
+  if(typeCfg.kind==='car'){
+    const distance = Number(seg.distanceKm||0).toFixed(2);
+    const price = getFuelPriceForDate(dateStr).toFixed(2);
+    const amount = (Number(seg.amount)||0).toFixed(2);
+    return `จาก ${seg.origin||'-'} - ไป ${seg.destination||'-'} ${distance}/15x${price} = ${amount} บาท`;
+  }
+  return `${seg.origin||'-'} → ${seg.destination||'-'}`;
+}
+
+// Same evidence order as the PDF: travel receipts (day by day), then the
+// admin's fuel-price receipts for days that have a personal-car segment.
+function collectEvidenceItems(){
+  const travel = [], fuel = [];
+  state.days.forEach(day=>{
+    const segs = [
+      ...day.outboundSegments.map(seg=>({ seg, dir: 'ขาไป' })),
+      ...day.returnSegments.map(seg=>({ seg, dir: 'ขากลับ' }))
+    ];
+    segs.forEach(({ seg, dir })=>{
+      const typeCfg = SEGMENT_TYPES.find(t=>t.value===seg.type) || {};
+      let route;
+      if(typeCfg.kind==='car'){
+        route = docxSegDetail(seg, day.date);
+      } else {
+        const tollEmpty = seg.type==='TOLL' && !seg.origin && !seg.destination;
+        const suffix = (seg.type==='PARKING' || tollEmpty) ? '' : ` (${seg.origin||'-'} → ${seg.destination||'-'})`;
+        route = docxSegTypeLabel(seg) + suffix;
+      }
+      (seg.attachments||[]).forEach(att=>{
+        travel.push({ att, caption: `หลักฐาน${att.isExisting ? ' (ไฟล์เดิม)' : ''}: ${dir} — ${route}` });
+      });
+    });
+    const hasCar = segs.some(({seg})=>{ const c = SEGMENT_TYPES.find(t=>t.value===seg.type); return c && c.kind==='car'; });
+    if(hasCar){
+      const fe = getFuelPriceEntryForDate(day.date);
+      if(fe){
+        const note = fe.date !== day.date ? ` (อ้างอิงราคาวันที่ ${fe.date})` : '';
+        const caption = `ใบเสร็จราคาน้ำมันแก๊สโซฮอล์ 91 วันที่ ${formatThaiDate(day.date)}: ${Number(fe.price||0).toFixed(2)} บาท/ลิตร${note}`;
+        if(fe.receiptImage && fe.receiptImage.base64) fuel.push({ att: fe.receiptImage, caption });
+        else fuel.push({ att: null, caption: caption + (fe.receiptUrl ? ' (ดึงรูปใบเสร็จไม่สำเร็จ)' : ' (ไม่มีใบเสร็จแนบในระบบ)') });
+      }
+    }
+  });
+  return travel.concat(fuel);
+}
+
+// Re-encodes any browser-decodable image as JPEG, max 1400px on the long
+// side (keeps the .docx small). Returns null if the browser can't decode it
+// (e.g. HEIC), so the caller can write a note instead of failing.
+function shrinkImageForDocx(dataUrl){
+  return new Promise(resolve=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const MAX = 1400;
+      let w = img.naturalWidth || 800, h = img.naturalHeight || 600;
+      if(w > MAX || h > MAX){ const k = MAX / Math.max(w, h); w = Math.round(w*k); h = Math.round(h*k); }
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve({ dataUrl: c.toDataURL('image/jpeg', 0.9), width: w, height: h });
+    };
+    img.onerror = ()=>resolve(null);
+    img.src = dataUrl;
+  });
+}
+
+async function pdfAttachmentToImages(att){
+  const pdf = await pdfjsLib.getDocument({ data: dataUriToUint8Array(att.base64) }).promise;
+  const out = [];
+  for(let n = 1; n <= pdf.numPages; n++){
+    const page = await pdf.getPage(n);
+    const viewport = page.getViewport({ scale: 1.6 });
+    const c = document.createElement('canvas');
+    c.width = viewport.width; c.height = viewport.height;
+    await page.render({ canvasContext: c.getContext('2d'), viewport }).promise;
+    out.push({ dataUrl: c.toDataURL('image/jpeg', 0.85), width: c.width, height: c.height });
+  }
+  return out;
+}
+
+async function buildDocxBlob(){
+  if(!window.docx) throw new Error('โหลดไลบรารีสร้างไฟล์ Word ไม่สำเร็จ (ตรวจสอบอินเทอร์เน็ต แล้วรีเฟรชหน้า)');
+  if(submissionImagesLoadPromise) await submissionImagesLoadPromise;
+  await ensureFuelReceiptImagesLoaded();
+  const D = window.docx;
+  const FONT = 'TH Sarabun New';
+  // Font sizes are in half-points (24 = 12 pt). Body text and tables are 12 pt;
+  // headings are a little larger so the sections stay easy to scan.
+  const SZ = { body: 24, title: 32, heading: 28, sub: 24, total: 28 };
+  const run = (text, o = {}) => new D.TextRun({ text: String(text == null ? '' : text), font: FONT, size: o.size || SZ.body, bold: !!o.bold, color: o.color });
+  const para = (text, o = {}) => new D.Paragraph({ alignment: o.align, spacing: { after: o.after == null ? 80 : o.after }, children: [run(text, o)] });
+  // Column widths in DXA (1/20 pt). A4 width 11906 minus 2 x 1000 margins
+  // = 9906 usable; percentages are ignored by some Word/LibreOffice versions.
+  const COLS = [600, 2300, 5106, 1900];
+  const dxa = pct => Math.round(9906 * pct / 100);
+  const cell = (text, w, o = {}) => new D.TableCell({
+    width: { size: dxa(w), type: D.WidthType.DXA },
+    columnSpan: o.span,
+    shading: o.shade ? { fill: o.shade, type: D.ShadingType.CLEAR, color: 'auto' } : undefined,
+    children: [para(text, { size: SZ.body, bold: o.bold, after: 0, align: o.right ? D.AlignmentType.RIGHT : undefined })]
+  });
+
+  const total = updateTotals();
+  const empName = document.getElementById('employeeName').value.trim() || '-';
+  const dept = document.getElementById('department').value.trim() || '-';
+  const children = [
+    para('เอกสารค่าเดินทาง', { bold: true, size: SZ.title }),
+    para(eventName || ''),
+    para('วันที่ออกเอกสาร: ' + formatThaiDate(localISODate(new Date())), { size: SZ.body }),
+    para('ผู้เบิก: ' + empName + '     แผนก/ฝ่าย: ' + dept, { after: 200 })
+  ];
+
+  state.days.forEach((day, di)=>{
+    const dateLabel = formatThaiDate(day.date);
+    const dayLabel = state.days.length > 1 ? `วันที่ ${di+1}${dateLabel ? ' — ' + dateLabel : ''}` : (dateLabel || 'รายละเอียดการเดินทาง');
+    children.push(para(dayLabel, { bold: true, size: SZ.heading, after: 120 }));
+    [['ขาไป', day.outboundSegments], ['ขากลับ', day.returnSegments]].forEach(([label, segs])=>{
+      let sub = 0;
+      const rows = [ new D.TableRow({ tableHeader: true, children: [
+        cell('#', 6, { bold: true, shade: 'EEF2EC' }), cell('ประเภท', 23, { bold: true, shade: 'EEF2EC' }),
+        cell('รายละเอียด', 52, { bold: true, shade: 'EEF2EC' }), cell('จำนวนเงิน', 20, { bold: true, shade: 'EEF2EC', right: true }) ] }) ];
+      segs.forEach((seg, i)=>{
+        sub += Number(seg.amount) || 0;
+        rows.push(new D.TableRow({ children: [
+          cell(String(i+1), 6), cell(docxSegTypeLabel(seg), 23), cell(docxSegDetail(seg, day.date), 52),
+          cell((Number(seg.amount)||0).toFixed(2), 20, { right: true }) ] }));
+      });
+      rows.push(new D.TableRow({ children: [ cell('ยอดรวม ' + label, 80, { bold: true, span: 3, shade: 'FAFAFA' }), cell(sub.toFixed(2), 20, { bold: true, right: true, shade: 'FAFAFA' }) ] }));
+      children.push(para(label, { bold: true, size: SZ.sub, after: 40 }));
+      children.push(new D.Table({ width: { size: 9906, type: D.WidthType.DXA }, columnWidths: COLS, layout: D.TableLayoutType.FIXED, rows }));
+      children.push(para('', { after: 120 }));
+    });
+  });
+  children.push(para('ยอดรวมทั้งสิ้น ' + fmt(total) + ' บาท', { bold: true, size: SZ.total, after: 240 }));
+
+  const items = collectEvidenceItems();
+  if(items.length){
+    children.push(new D.Paragraph({ pageBreakBefore: true, spacing: { after: 160 }, children: [run('หลักฐานประกอบการเบิกจ่าย', { bold: true, size: SZ.heading })] }));
+    for(const it of items){
+      children.push(para(it.caption, { size: SZ.body, after: 60 }));
+      if(!it.att || !it.att.base64) continue;
+      let imgs = [];
+      const isPdf = isPdfAttachment(it.att);
+      try{
+        imgs = isPdf ? await pdfAttachmentToImages(it.att) : [await shrinkImageForDocx(it.att.base64)];
+      }catch(err){ imgs = []; }
+      imgs = imgs.filter(Boolean);
+      if(!imgs.length){ children.push(para('(แสดงไฟล์นี้ในเอกสารไม่ได้ — โปรดแนบเป็น JPG/PNG/PDF)', { size: SZ.body, color: 'C0392B' })); continue; }
+      for(const im of imgs){
+        const maxW = isPdf ? 600 : 340, maxH = 800;
+        let w = maxW, h = Math.round(im.height * maxW / im.width);
+        if(h > maxH){ h = maxH; w = Math.round(im.width * maxH / im.height); }
+        children.push(new D.Paragraph({ alignment: D.AlignmentType.CENTER, spacing: { after: 200 },
+          children: [ new D.ImageRun({ data: dataUriToUint8Array(im.dataUrl), transformation: { width: w, height: h } }) ] }));
+      }
+    }
+  }
+
+  const doc = new D.Document({
+    styles: { default: { document: { run: { font: FONT, size: SZ.body } } } },
+    sections: [{ properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 1000, bottom: 1000, left: 1000, right: 1000 } } }, children }]
+  });
+  return D.Packer.toBlob(doc);
+}
+
+
+
+/* ---------- SUBMIT ---------- */
+
+
+/* =====================================================================
+   UI v3 — staff form (design board: S1–S4, ES1–ES11)
+   Business logic (fares, fuel formula, PDF/Word generation, Drive image
+   loading) is unchanged and lives above. This block only renders the
+   page and drives the flow:
+     pick name → (confirm if already submitted) → fill trips → review → send
+   ===================================================================== */
+
+const TYPE_GROUPS = [
+  { label: 'รถไฟฟ้า',   values: ['BTS_GREEN','BTS_GOLD','BTS_YELLOW','BTS_PINK','MRT_BLUE','MRT_PURPLE','SRT_RED','ARL'] },
+  { label: 'รถส่วนตัว', values: ['CAR','PARKING','TOLL'] },
+  { label: 'รถรับจ้าง', values: ['TAXI','GRAB','MOTORCYCLE'] },
+  { label: 'อื่นๆ',     values: ['OTHER','NO_CLAIM'] }
+];
+
+const ICON = {
+  trash: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" class="ic"><path d="M3 5 H15 M7 5 V3 H11 V5 M5 5 L6 15 H12 L13 5"></path></svg>',
+  clip:  '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" class="ic"><path d="M10.5 4.5 L5 10 a1.8 1.8 0 0 0 2.5 2.5 L13 7 a3.2 3.2 0 0 0 -4.5 -4.5 L3 8"></path></svg>',
+  arrow: '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" class="ic ic-muted"><path d="M4 10 H16 M11 5 L16 10 L11 15"></path></svg>',
+  chev:  '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" class="ic ic-muted"><path d="M4 6 L8 10 L12 6"></path></svg>',
+  copy:  '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" class="ic"><rect x="6" y="6" width="9" height="10" rx="2"></rect><path d="M12 6 V4 a1.5 1.5 0 0 0 -1.5 -1.5 H5 a1.5 1.5 0 0 0 -1.5 1.5 V11 a1.5 1.5 0 0 0 1.5 1.5 H6"></path></svg>',
+  search:'<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" class="ic ic-muted"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5 L14 14"></path></svg>',
+  spin:  '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 22 22" class="spin"><circle cx="11" cy="11" r="8" stroke="#ECECE8"></circle><path d="M11 3 A8 8 0 0 1 19 11" stroke="#FE6D43"></path></svg>'
+};
+
+const ui = {
+  unlocked: false,      // sections 2–3 open once a name is chosen
+  allLocked: false,     // closed event / no staff list
+  openTypeMenu: null,   // "di|key|si" of the open travel-type menu
+  errorSegs: new Set(), // segment ids highlighted after a failed submit
+  closeAt: '', isClosed: false,
+  sending: false,
+  draftTimer: null,
+  undoTimer: null
+};
+let lastPdfDoc = null, lastDocxBlob = null;
+
+function esc(s){ return escapeAttr(s); }
+function segId(di, key, si){ return `${di}-${key}-${si}`; }
+
+/* ---------- small helpers ---------- */
+function formatThaiDateTime(isoLocal){
+  if(!isoLocal) return '';
+  const [d, t] = isoLocal.split('T');
+  const dt = new Date(d + 'T00:00:00');
+  if(isNaN(dt)) return isoLocal;
+  return dt.toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' }) + (t ? ' ' + t : '');
+}
+function nowHHMM(){ const d = new Date(); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); }
+function saveBlob(blob, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 8000);
+}
+function formHasData(){
+  return state.days.some(d => [...d.outboundSegments, ...d.returnSegments].some(s => s.type || (s.attachments||[]).length));
+}
+
+/* ---------- banners, modal, toast ---------- */
+function bannerHtml(kind, html, actions){
+  return `<div class="banner banner-${kind}" role="${kind==='err'?'alert':'status'}"><div>${html}</div>${actions ? `<div class="banner-actions">${actions}</div>` : ''}</div>`;
+}
+function showMsg(type, text){
+  // Kept for the PDF/Word code above, which reports problems through showMsg().
+  const kind = type === 'ok' ? 'ok' : (type === 'warn' ? 'warn' : 'err');
+  const el = document.getElementById('msgArea');
+  if(!el) return;
+  el.innerHTML = bannerHtml(kind, esc(text), `<button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('.banner').remove()">ปิด</button>`);
+  el.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+function confirmModal(opts){
+  return new Promise(resolve=>{
+    const root = document.getElementById('modalRoot');
+    const okCls = opts.danger ? 'btn btn-danger' : 'btn btn-primary';
+    const btns = opts.stacked
+      ? `<button type="button" class="${okCls} btn-block" data-r="1">${opts.ok}</button><button type="button" class="btn btn-outline btn-block" data-r="0">${opts.cancel}</button>`
+      : `<button type="button" class="btn btn-ghost" data-r="0">${opts.cancel}</button><button type="button" class="${okCls}" data-r="1">${opts.ok}</button>`;
+    root.innerHTML = `<div class="modal-overlay"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+      <h2 id="mTitle">${opts.title}</h2><div class="modal-body">${opts.html || ''}</div>
+      <div class="modal-actions ${opts.stacked ? 'stacked' : ''}">${btns}</div></div></div>`;
+    const done = v => { root.innerHTML = ''; document.removeEventListener('keydown', onKey); resolve(v); };
+    const onKey = e => { if(e.key === 'Escape') done(false); };
+    document.addEventListener('keydown', onKey);
+    root.querySelectorAll('[data-r]').forEach(b => b.addEventListener('click', () => done(b.dataset.r === '1')));
+    const first = root.querySelector('[data-r="1"]'); if(first) first.focus();
+  });
+}
+function showUndo(text, undoFn){
+  const el = document.getElementById('undoToast');
+  el.innerHTML = `<span>${esc(text)}</span><button type="button" id="undoBtn">เลิกทำ</button>`;
+  el.classList.add('show');
+  document.getElementById('undoBtn').onclick = () => { el.classList.remove('show'); clearTimeout(ui.undoTimer); undoFn(); };
+  clearTimeout(ui.undoTimer);
+  ui.undoTimer = setTimeout(() => el.classList.remove('show'), 6000);
+}
+
+/* ---------- page states (ES1, ES7, ES10, ES11, S1b) ---------- */
+function showFatal(kind, detail){
+  const area = document.getElementById('formArea');
+  const msg = kind === 'load-fail'
+    ? `<h2>โหลดฟอร์มไม่สำเร็จ</h2><p class="muted">อินเทอร์เน็ตหลุด หรือระบบไม่ตอบสนอง ลิงก์นี้ยังใช้ได้ตามปกติ</p><button type="button" class="btn btn-primary" onclick="location.reload()">ลองโหลดอีกครั้ง</button>`
+    : `<h2>เปิดฟอร์มไม่ได้</h2>${bannerHtml('err', esc(detail || 'ลิงก์นี้ไม่มีรหัสกิจกรรม หรือกิจกรรมถูกลบไปแล้ว'))}<p class="muted">กรุณาขอลิงก์ใหม่จากผู้จัดงาน (ลิงก์ที่ถูกต้องลงท้ายด้วย ?event=EV-…)</p>`;
+  area.innerHTML = `<section class="card fatal">${msg}</section>`;
+  document.getElementById('eventLabel').textContent = '';
+}
+function renderEventLabel(){
+  const label = document.getElementById('eventLabel');
+  label.textContent = 'กิจกรรม: ' + eventName + (ui.closeAt ? ' · ส่งได้ถึง ' + formatThaiDateTime(ui.closeAt) : '');
+}
+function showPageBanner(kind, detail){
+  const el = document.getElementById('pageBanner');
+  if(kind === 'closed'){
+    el.innerHTML = detail
+      ? bannerHtml('warn', `<b>ส่งไม่ได้ — ปิดรับเอกสารแล้ว</b><br>${esc(detail)}`)
+      : bannerHtml('warn', `<b>ปิดรับเอกสารแล้ว</b>${ui.closeAt ? ' เมื่อ ' + esc(formatThaiDateTime(ui.closeAt)) : ''}<br>ถ้าต้องการส่งหรือแก้ไข กรุณาติดต่อผู้จัดงานให้ขยายเวลา`);
+  } else if(kind === 'no-staff'){
+    el.innerHTML = bannerHtml('warn', '<b>กิจกรรมนี้ยังไม่มีรายชื่อพนักงาน</b><br>ผู้จัดงานยังไม่ได้ใส่รายชื่อ จึงยังเลือกชื่อไม่ได้ กรุณาติดต่อผู้จัดงาน');
+  } else {
+    el.innerHTML = '';
+  }
+}
+function lockAll(){ ui.allLocked = true; ui.unlocked = false; applyLock(); }
+function applyLock(){
+  const area = document.getElementById('formArea');
+  if(!area) return;
+  area.classList.toggle('is-locked', !ui.unlocked);
+  area.classList.toggle('is-all-locked', ui.allLocked);
+  const nameEl = document.getElementById('employeeName');
+  if(nameEl) nameEl.disabled = ui.allLocked;
+  const deptEl = document.getElementById('department');
+  if(deptEl) deptEl.disabled = ui.allLocked;
+}
+function setLoading(on){
+  const area = document.getElementById('formArea');
+  if(area) area.classList.toggle('is-loading', on);
+}
+
+/* ---------- draft (D6/D8) ---------- */
+function draftKey(){ return 'eetDraft:' + EVENT_ID; }
+function readDraft(){
+  try{ const d = JSON.parse(localStorage.getItem(draftKey()) || 'null'); return (d && d.v === 1 && d.name) ? d : null; }
+  catch(e){ return null; }
+}
+function clearDraft(){ try{ localStorage.removeItem(draftKey()); }catch(e){} setDraftStatus(''); }
+function setDraftStatus(text){ const el = document.getElementById('draftStatus'); if(el) el.textContent = text; }
+function scheduleDraftSave(){
+  if(!ui.unlocked || ui.sending) return;
+  clearTimeout(ui.draftTimer);
+  ui.draftTimer = setTimeout(saveDraft, 800);
+}
+function draftDays(keepNewFiles){
+  // Existing receipts are re-fetched from Drive, so only their URL is kept.
+  return JSON.parse(JSON.stringify(state.days, (k, v) => v)).map(day => {
+    ['outboundSegments','returnSegments'].forEach(key => {
+      day[key].forEach(seg => {
+        seg.attachments = (seg.attachments || []).filter(a => keepNewFiles || a.isExisting).map(a =>
+          a.isExisting ? { isExisting:true, existingUrl:a.existingUrl, fileName:a.fileName, mimeType:a.mimeType } : a);
+      });
+    });
+    return day;
+  });
+}
+function formSnapshot(){
+  return JSON.stringify([document.getElementById('employeeName').value.trim(), document.getElementById('department').value.trim(), state.days]);
+}
+function saveDraft(){
+  const name = document.getElementById('employeeName').value.trim();
+  if(!name || !ui.unlocked) return;
+  // Nothing changed since the last successful submit → no draft to keep.
+  if(ui.submittedSnap && ui.submittedSnap === formSnapshot()){ clearDraft(); return; }
+  const base = { v:1, name, dept: document.getElementById('department').value.trim(), savedAt: Date.now() };
+  try{
+    localStorage.setItem(draftKey(), JSON.stringify(Object.assign({}, base, { days: draftDays(true) })));
+    setDraftStatus('บันทึกร่างในเครื่องนี้แล้ว ' + nowHHMM());
+  }catch(e){
+    try{
+      localStorage.setItem(draftKey(), JSON.stringify(Object.assign({}, base, { days: draftDays(false), filesDropped: true })));
+      setDraftStatus('บันทึกร่างแล้ว ' + nowHHMM() + ' (ไฟล์แนบใหม่ใหญ่เกินจะเก็บในร่าง)');
+    }catch(e2){ setDraftStatus(''); }
+  }
+}
+function showDraftBanner(d){
+  const when = new Date(d.savedAt);
+  const stamp = when.toLocaleDateString('th-TH', { day:'2-digit', month:'2-digit', year:'numeric' }) + ' ' + String(when.getHours()).padStart(2,'0') + ':' + String(when.getMinutes()).padStart(2,'0');
+  const total = (d.days || []).reduce((s, day) => s + [...day.outboundSegments, ...day.returnSegments].reduce((a, sg) => a + (parseFloat(sg.amount) || 0), 0), 0);
+  document.getElementById('pageBanner').innerHTML = bannerHtml('info',
+    `<b>พบใบเบิกที่ยังกรอกไม่เสร็จในเบราว์เซอร์นี้</b><br>บันทึกไว้เมื่อ ${esc(stamp)} · ${esc(d.name)} · ${(d.days||[]).length} วัน · ${fmt(total)} บาท`,
+    `<button type="button" class="btn btn-primary" onclick="resumeDraft()">กรอกต่อจากเดิม</button><button type="button" class="btn btn-outline" onclick="discardDraft()">เริ่มใหม่</button>`);
+}
+function resumeDraft(){
+  const d = readDraft(); if(!d) return;
+  document.getElementById('pageBanner').innerHTML = '';
+  document.getElementById('employeeName').value = d.name;
+  document.getElementById('department').value = d.dept || '';
+  lastLoadedEmployeeName = d.name;
+  state.days = (d.days && d.days.length) ? d.days : [ newDay() ];
+  ui.unlocked = true; applyLock(); render();
+  const hasExisting = state.days.some(day => [...day.outboundSegments, ...day.returnSegments].some(s => (s.attachments||[]).some(a => a.isExisting && !a.base64)));
+  if(hasExisting) submissionImagesLoadPromise = loadSubmissionAttachmentImages(d.name);
+  if(d.filesDropped) showMsg('warn', 'ไฟล์แนบที่เพิ่งเลือกไว้ใหญ่เกินจะเก็บในร่าง กรุณาแนบไฟล์เหล่านั้นใหม่อีกครั้ง');
+}
+async function discardDraft(){
+  const ok = await confirmModal({ title:'เริ่มใหม่และทิ้งร่างนี้?', html:'ข้อมูลที่กรอกไว้ในร่างจะหายและกู้คืนไม่ได้', ok:'ทิ้งร่าง', cancel:'กลับไปใช้ร่าง', danger:true });
+  if(!ok) return;
+  clearDraft();
+  document.getElementById('pageBanner').innerHTML = '';
+  document.getElementById('employeeName').focus();
+}
+
+/* ---------- searchable dropdown (names + stations) ---------- */
+const combo = { input:null, items:[], active:-1, source:null, onPick:null, emptyText:null, typed:false };
+function comboOpen(input, source, onPick, emptyText){
+  Object.assign(combo, { input, source, onPick, emptyText, typed:false });
+  comboRefresh();
+}
+function comboRefresh(){
+  if(!combo.input) return drawCombo();
+  combo.items = combo.source(combo.typed ? combo.input.value : '');
+  combo.active = combo.items.length ? 0 : -1;
+  drawCombo();
+}
+function highlight(label, q){
+  const s = esc(label); q = (q || '').trim();
+  if(!q) return s;
+  const i = label.indexOf(q);
+  return i < 0 ? s : esc(label.slice(0, i)) + '<b>' + esc(q) + '</b>' + esc(label.slice(i + q.length));
+}
+function comboBoxEl(){
+  let box = document.getElementById('comboBox');
+  if(!box){
+    box = document.createElement('ul');
+    box.id = 'comboBox'; box.className = 'combo-box'; box.setAttribute('role', 'listbox');
+    // Keep focus in the input when an option is clicked — but only for the
+    // options themselves, so the list's own scrollbar can still be dragged.
+    box.addEventListener('mousedown', e => { if(e.target.closest('li')) e.preventDefault(); });
+    document.body.appendChild(box);
+  }
+  return box;
+}
+// Moves the open list under its input without touching the list contents or
+// its scroll position (called on page scroll / resize).
+function positionCombo(){
+  const box = comboBoxEl();
+  if(!combo.input){ box.style.display = 'none'; return; }
+  const r = combo.input.getBoundingClientRect();
+  Object.assign(box.style, { display:'block', left:(r.left + window.scrollX) + 'px', top:(r.bottom + window.scrollY + 6) + 'px', width: Math.max(r.width, 240) + 'px' });
+}
+function drawCombo(keepActiveInView){
+  const box = comboBoxEl();
+  positionCombo();
+  if(!combo.input) return;
+  const q = combo.typed ? combo.input.value : '';
+  if(!combo.items.length){
+    box.innerHTML = `<li class="combo-empty">${combo.emptyText ? combo.emptyText(combo.input.value) : 'ไม่พบรายการ'}</li>`;
+    return;
+  }
+  box.innerHTML = combo.items.map((it, i) =>
+    `<li role="option" aria-selected="${i===combo.active}" class="${i===combo.active ? 'active' : ''}" onclick="comboPick(${i})">
+      <span>${highlight(it.label, q)}</span><span class="combo-sub">${esc(it.sub || '')}${it.tag ? `<span class="combo-tag">${esc(it.tag)}</span>` : ''}</span></li>`).join('');
+  if(keepActiveInView){ const act = box.querySelector('.active'); if(act) act.scrollIntoView({ block:'nearest' }); }
+  else box.scrollTop = 0;
+}
+function comboKey(e){
+  if(!combo.input) return;
+  if(e.key === 'ArrowDown'){ e.preventDefault(); combo.active = Math.min(combo.items.length - 1, combo.active + 1); drawCombo(true); }
+  else if(e.key === 'ArrowUp'){ e.preventDefault(); combo.active = Math.max(0, combo.active - 1); drawCombo(true); }
+  else if(e.key === 'Enter'){ if(combo.active >= 0){ e.preventDefault(); comboPick(combo.active); } }
+  else if(e.key === 'Escape'){ comboClose(); }
+}
+function comboPick(i){
+  const it = combo.items[i], cb = combo.onPick, inp = combo.input;
+  comboClose();
+  if(it && cb) cb(it.value, inp);
+}
+function comboClose(){ combo.input = null; drawCombo(); }
+window.addEventListener('resize', () => { if(combo.input) positionCombo(); });
+window.addEventListener('scroll', e => {
+  if(!combo.input) return;
+  if(e.target && e.target.id === 'comboBox') return; // the list scrolling itself
+  positionCombo();
+}, true);
+
+/* ---------- section 1: who is claiming ---------- */
+function nameSource(q){
+  q = (q || '').trim();
+  return employeeList.filter(e => !q || String(e.name).includes(q)).slice(0, 60)
+    .map(e => ({ value:e.name, label:e.name, sub:e.department || '', tag: e.submitted ? 'ส่งแล้ว' : '' }));
+}
+function nameFocus(input){
+  comboOpen(input, nameSource, v => selectEmployee(v),
+    v => `ไม่พบ “${esc(v)}” ในรายชื่อกิจกรรมนี้<br>ตรวจตัวสะกด หรือติดต่อผู้จัดงานให้เพิ่มชื่อ`);
+}
+function nameInput(input){ combo.typed = true; comboRefresh(); setNameError(''); }
+function nameBlur(input){
+  setTimeout(() => {
+    if(combo.input === input) comboClose();
+    const v = input.value.trim();
+    if(!v){ return; }
+    if(v === lastLoadedEmployeeName) return;
+    const match = employeeList.find(e => e.name === v);
+    if(match) selectEmployee(v);
+    else setNameError('ไม่พบชื่อนี้ในรายชื่อของกิจกรรม — เลือกจากรายการ หรือติดต่อผู้จัดงานให้เพิ่มชื่อ');
+  }, 150);
+}
+function setNameError(text){
+  const el = document.getElementById('nameError');
+  const inp = document.getElementById('employeeName');
+  if(el){ el.textContent = text; el.style.display = text ? 'block' : 'none'; }
+  if(inp) inp.classList.toggle('invalid', !!text);
+}
+function resetFormForNewEmployee(){
+  document.getElementById('department').value = '';
+  state.days = [ newDay() ];
+  submissionImagesLoadPromise = null;
+  ui.errorSegs.clear();
+  document.getElementById('msgArea').innerHTML = '';
+  document.getElementById('validationBox').innerHTML = '';
+}
+async function selectEmployee(name){
+  const nameEl = document.getElementById('employeeName');
+  if(name === lastLoadedEmployeeName && ui.unlocked){ nameEl.value = name; return; }
+  if(ui.unlocked && formHasData() && lastLoadedEmployeeName && name !== lastLoadedEmployeeName){
+    const ok = await confirmModal({ title:'เปลี่ยนชื่อผู้เบิก?', html:'รายการเดินทางที่กรอกไว้จะถูกล้าง เพื่อเริ่มใบเบิกของคนใหม่', ok:'เปลี่ยนชื่อ', cancel:'ยกเลิก', danger:true });
+    if(!ok){ nameEl.value = lastLoadedEmployeeName; return; }
+  }
+  document.getElementById('pageBanner').innerHTML = '';
+  lastLoadedEmployeeName = name;
+  resetFormForNewEmployee();
+  nameEl.value = name;
+  setNameError('');
+  const match = employeeList.find(e => e.name === name);
+  document.getElementById('department').value = (match && match.department) || '';
+
+  setEmployeeLoadStatus('กำลังตรวจสอบใบเบิกเดิม…');
+  let res = null;
+  try{ res = await callApi('getMySubmission', { eventId: EVENT_ID, employeeName: name }); }catch(e){ res = null; }
+  setEmployeeLoadStatus(null);
+  if(name !== lastLoadedEmployeeName) return; // switched again meanwhile
+
+  if(res && res.ok && res.exists){
+    const ok = await confirmModal({
+      title:'พบใบเบิกที่เคยส่งไว้', stacked:true,
+      html:`<p><b>${esc(name)}</b> ส่งใบเบิกไว้แล้วเมื่อ ${esc(res.data.updatedAt || '-')} ยอด ${fmt(res.data.totalAmount)} บาท</p><p class="muted">ถ้าแก้ไขแล้วส่งใหม่ ระบบจะเก็บฉบับเดิมไว้เป็นประวัติ</p>`,
+      ok:'ใช่ ฉันเอง — เปิดใบเบิกเดิมมาแก้ไข', cancel:'ไม่ใช่ฉัน — เลือกชื่อใหม่'
+    });
+    if(!ok){
+      lastLoadedEmployeeName = ''; nameEl.value = ''; document.getElementById('department').value = '';
+      ui.unlocked = false; applyLock(); render(); nameEl.focus();
+      return;
+    }
+    document.getElementById('department').value = res.data.department || document.getElementById('department').value;
+    state.days = (res.data.trips && res.data.trips.length) ? tripsArrayToDays(res.data.trips) : [ newDay() ];
+    submissionImagesLoadPromise = loadSubmissionAttachmentImages(name);
+  }
+  ui.unlocked = true; applyLock(); render(); scheduleDraftSave();
+}
+function onEmployeeChange(){ /* kept for compatibility; selection now goes through selectEmployee() */ }
+
+/* ---------- section 2: trips ---------- */
+function addDay(){ state.days.push(newDay()); render(); }
+function removeDay(di){
+  if(state.days.length <= 1) return;
+  const day = state.days[di];
+  state.days.splice(di, 1); render();
+  showUndo(`ลบ “วันที่ ${di+1}” แล้ว`, () => { state.days.splice(di, 0, day); render(); });
+}
+function addSegment(di, key){ state.days[di][key].push(newSegment()); render(); }
+function removeSegment(di, key, si){
+  const seg = state.days[di][key][si];
+  state.days[di][key].splice(si, 1);
+  ui.openTypeMenu = null; render();
+  const label = seg.type ? typeLabel(seg.type) : '';
+  const amt = parseFloat(seg.amount) > 0 ? ' ' + fmt(seg.amount) + ' บาท' : '';
+  showUndo(`ลบ “ต่อที่ ${si+1}${label ? ' · ' + label : ''}${amt}” แล้ว`, () => { state.days[di][key].splice(si, 0, seg); render(); });
+}
+function typeLabel(v){ const t = SEGMENT_TYPES.find(x => x.value === v); return t ? t.label : ''; }
+
+function toggleTypeMenu(id){
+  ui.openTypeMenu = ui.openTypeMenu === id ? null : id;
+  render();
+  if(ui.openTypeMenu){ const s = document.getElementById('tm-search-' + id); if(s) s.focus(); }
+}
+function filterTypeMenu(id, q){
+  q = (q || '').trim();
+  const menu = document.getElementById('tm-' + id); if(!menu) return;
+  menu.querySelectorAll('[data-label]').forEach(li => { li.style.display = li.dataset.label.includes(q) ? '' : 'none'; });
+  menu.querySelectorAll('.tm-group').forEach(g => {
+    const any = Array.from(g.querySelectorAll('[data-label]')).some(li => li.style.display !== 'none');
+    g.style.display = any ? '' : 'none';
+  });
+}
+function typeMenuKey(e, id){
+  if(e.key === 'Escape'){ toggleTypeMenu(id); return; }
+  if(e.key === 'Enter'){
+    const first = Array.from(document.querySelectorAll(`#tm-${id} [data-label]`)).find(li => li.style.display !== 'none');
+    if(first){ e.preventDefault(); first.click(); }
+  }
+}
+function pickType(di, key, si, v){ ui.openTypeMenu = null; segUpdate(di, key, si, 'type', v); }
+document.addEventListener('mousedown', e => {
+  if(ui.openTypeMenu && !e.target.closest('.type-picker')){ ui.openTypeMenu = null; render(); }
+}, true);
+
+function typeMenuHtml(id, di, key, si, current){
+  const group = gi => {
+    const g = TYPE_GROUPS[gi];
+    return `<div class="tm-group"><div class="tm-head">${g.label}</div>` + g.values.map(v => {
+      const on = v === current;
+      return `<button type="button" role="option" aria-selected="${on}" class="tm-opt${on ? ' active' : ''}" data-label="${esc(typeLabel(v))}" onclick="pickType(${di},'${key}',${si},'${v}')"><span>${esc(typeLabel(v))}</span>${on ? '<span aria-hidden="true">✓</span>' : ''}</button>`;
+    }).join('') + '</div>';
+  };
+  return `<div class="type-menu" id="tm-${id}" role="listbox" aria-label="วิธีการเดินทาง">
+    <div class="tm-search">${ICON.search}<input id="tm-search-${id}" aria-label="ค้นหาวิธีการเดินทาง" placeholder="พิมพ์เพื่อค้นหา" oninput="filterTypeMenu('${id}', this.value)" onkeydown="typeMenuKey(event,'${id}')"></div>
+    <div class="tm-cols"><div>${group(0)}${group(3)}</div><div>${group(1)}${group(2)}</div></div></div>`;
+}
+
+function stationFocus(input, di, key, si, field){
+  const seg = state.days[di][key][si];
+  comboOpen(input, q => getSelectableStations(seg.type).filter(s => !q || s.includes(q.trim())).map(s => ({ value:s, label:s })),
+    v => { input.value = v; segFieldInput(di, key, si, field, v); scheduleDraftSave(); },
+    v => `ไม่พบ “${esc(v)}” ใน${esc(typeLabel(seg.type))}<br>ลองพิมพ์คำอื่น หรือเปลี่ยนวิธีการเดินทาง`);
+}
+function stationInput(input, di, key, si, field){ combo.typed = true; comboRefresh(); segFieldInput(di, key, si, field, input.value); }
+function stationBlur(input){ setTimeout(() => { if(combo.input === input) comboClose(); }, 150); }
+
+function fld(label, inner, opts = {}){
+  return `<div class="fld${opts.cls ? ' ' + opts.cls : ''}"><label${opts.forId ? ` for="${opts.forId}"` : ''}>${label}${opts.req ? ' <span class="req">*</span>' : ''}</label>${inner}${opts.after || ''}</div>`;
+}
+function amountInput(di, key, si, seg){
+  const id = `amtinput-${di}-${key}-${si}`;
+  return `<div class="fld amt-fld"><label for="${id}">จำนวนเงิน <span class="req">*</span></label><div class="suffix-wrap">
+    <input type="number" step="0.01" min="0" placeholder="0.00" id="${id}" value="${seg.amount > 0 ? Number(seg.amount).toFixed(2) : ''}"
+      oninput="segAmountInput(${di},'${key}',${si},this.value)" onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : '';"><span class="suffix">บาท</span></div></div>`;
+}
+function routeRow(di, key, si, seg, opts){
+  const id = segId(di, key, si);
+  const kmFld = opts.km ? fld('ระยะทาง', `<div class="suffix-wrap"><input id="km-${id}" type="number" step="0.01" min="0" placeholder="0.00" value="${seg.distanceKm ? Number(seg.distanceKm).toFixed(2) : ''}"
+        oninput="segFieldInput(${di},'${key}',${si},'distanceKm',this.value)" onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : ''; segFieldInput(${di},'${key}',${si},'distanceKm',this.value);"><span class="suffix">กม.</span></div>`, { req:true, forId:`km-${id}` }) : '';
+  let o, d;
+  if(opts.rail){
+    const oBad = seg.origin && !isValidStation(seg.type, seg.origin), dBad = seg.destination && !isValidStation(seg.type, seg.destination);
+    o = fld('สถานีต้นทาง', `<input id="st-o-${id}" autocomplete="off" value="${esc(seg.origin)}" placeholder="พิมพ์ชื่อสถานี" class="${oBad ? 'invalid' : ''}"
+          onfocus="stationFocus(this,${di},'${key}',${si},'origin')" oninput="stationInput(this,${di},'${key}',${si},'origin')" onkeydown="comboKey(event)" onblur="stationBlur(this)">`,
+          { req:true, forId:`st-o-${id}`, after:`<div class="fld-err" id="hint-o-${di}-${key}-${si}" style="display:${oBad ? 'block' : 'none'}">ไม่พบสถานีนี้ กรุณาเลือกจากรายการ</div>` });
+    d = fld('สถานีปลายทาง', `<input id="st-d-${id}" autocomplete="off" value="${esc(seg.destination)}" placeholder="พิมพ์ชื่อสถานี" class="${dBad ? 'invalid' : ''}"
+          onfocus="stationFocus(this,${di},'${key}',${si},'destination')" oninput="stationInput(this,${di},'${key}',${si},'destination')" onkeydown="comboKey(event)" onblur="stationBlur(this)">`,
+          { req:true, forId:`st-d-${id}`, after:`<div class="fld-err" id="hint-d-${di}-${key}-${si}" style="display:${dBad ? 'block' : 'none'}">ไม่พบสถานีนี้ กรุณาเลือกจากรายการ</div>` });
+  } else {
+    const req = !opts.optional;
+    const ph = opts.optional ? 'ไม่บังคับ' : (opts.phO || 'เช่น ออฟฟิศ');
+    o = fld('จาก (ต้นทาง)', `<input id="o-${id}" value="${esc(seg.origin)}" placeholder="${ph}" oninput="segFieldInput(${di},'${key}',${si},'origin',this.value)">`, { req, forId:`o-${id}` });
+    d = fld('ไป (ปลายทาง)', `<input id="d-${id}" value="${esc(seg.destination)}" placeholder="${opts.optional ? 'ไม่บังคับ' : 'เช่น สถานที่จัดงาน'}" oninput="segFieldInput(${di},'${key}',${si},'destination',this.value)">`, { req, forId:`d-${id}` });
+  }
+  return `<div class="route${opts.km ? ' has-km' : ''}">${o}<div class="route-arrow">${ICON.arrow}</div>${d}${kmFld}</div>`;
+}
+
+function renderSegment(di, key, seg, si, dayDate){
+  const id = segId(di, key, si);
+  const typeCfg = SEGMENT_TYPES.find(t => t.value === seg.type) || SEGMENT_TYPES[0];
+  let body = '', note = '';
+  if(typeCfg.kind === 'placeholder'){
+    note = 'เลือกวิธีการเดินทางก่อน แล้วช่องที่ต้องกรอกจะขึ้นมา';
+  } else if(typeCfg.kind === 'rail'){
+    body = routeRow(di, key, si, seg, { rail:true });
+    note = 'คำนวณจากสถานีอัตโนมัติ · แก้ได้';
+  } else if(typeCfg.kind === 'car'){
+    const fe = getFuelPriceEntryForDate(dayDate);
+    const has = fe && Number(fe.price) > 0;
+    if(!has) body += bannerHtml('warn', `ยังไม่มีราคาน้ำมันของวันที่ ${esc(formatThaiDate(dayDate) || 'นี้')} ในระบบ — ระบบคำนวณให้ไม่ได้ กรอกจำนวนเงินเองได้ หรือแจ้งผู้จัดงานให้เพิ่มราคา`);
+    body += routeRow(di, key, si, seg, { km:true });
+    note = has ? `คำนวณอัตโนมัติ: (ระยะทาง ÷ 15) × ${Number(fe.price).toFixed(2)} บาท/ลิตร${fe.date !== dayDate ? ` (ใช้ราคาล่าสุดของวันที่ ${esc(formatThaiDate(fe.date))})` : ''} · แก้ได้` : 'กรอกจำนวนเงินเองได้ระหว่างรอราคาน้ำมัน';
+  } else if(seg.type === 'PARKING' || typeCfg.kind === 'none'){
+    body = '';
+  } else if(seg.type === 'TOLL'){
+    body = routeRow(di, key, si, seg, { optional:true });
+  } else {
+    if(seg.type === 'OTHER'){
+      body += fld('ระบุประเภทการเดินทาง', `<input id="oth-${id}" value="${esc(seg.otherDescription || '')}" placeholder="เช่น เรือข้ามฟาก, รถสองแถว" oninput="segFieldInput(${di},'${key}',${si},'otherDescription',this.value)">`, { req:true, forId:`oth-${id}` });
+    }
+    body += routeRow(di, key, si, seg, {});
+  }
+
+  const requiresReceipt = seg.type === 'PARKING' || seg.type === 'TOLL' || seg.type === 'GRAB' || typeCfg.kind === 'car';
+  const attachLabel = seg.type === 'PARKING' ? 'ใบเสร็จค่าจอดรถ'
+    : seg.type === 'TOLL' ? 'ใบเสร็จค่าทางด่วน'
+    : seg.type === 'GRAB' ? 'หลักฐานการเดินทาง Grab/Lineman/Bolt'
+    : typeCfg.kind === 'car' ? 'แคปหน้าจอ Google Maps'
+    : 'หลักฐาน/สลิป (ถ้ามี)';
+  const thumbs = (seg.attachments || []).map((a, ai) => {
+    const rm = `<button type="button" class="thumb-rm" aria-label="ลบไฟล์นี้" onclick="removeAttachment(${di},'${key}',${si},${ai})">✕</button>`;
+    const badge = a.isExisting ? '<span class="thumb-badge">เดิม</span>' : '';
+    if(a.isExisting && !a.base64) return `<div class="thumb thumb-loading">${badge}<span>กำลังโหลดรูป…</span>${rm}</div>`;
+    if(isPdfAttachment(a)) return `<div class="thumb thumb-pdf" title="${esc(a.fileName || '')}">${badge}<span class="thumb-pdf-icon">PDF</span><span class="thumb-name">${esc(a.fileName || 'ไฟล์ PDF')}</span>${rm}</div>`;
+    return `<div class="thumb">${badge}<button type="button" class="thumb-view" aria-label="ดูรูปขนาดเต็ม" onclick="openImageLightbox('${a.base64}')"><img src="${a.base64}" alt=""></button>${rm}</div>`;
+  }).join('');
+  const attachHtml = (typeCfg.kind === 'none' || typeCfg.kind === 'placeholder') ? '' : `
+    <div class="attach">
+      <span class="attach-label">${attachLabel}${requiresReceipt ? ' <span class="req">*</span>' : ''}</span>
+      <div class="attach-row">${thumbs}<label class="attach-add">${ICON.clip}<span>แนบไฟล์</span><input type="file" accept="image/*,application/pdf" multiple onchange="handleFiles(event, ${di}, '${key}', ${si})"></label></div>
+    </div>`;
+
+  const open = ui.openTypeMenu === id;
+  const showAmount = typeCfg.kind !== 'none' && typeCfg.kind !== 'placeholder';
+  return `
+    <div class="seg${ui.errorSegs.has(id) ? ' has-error' : ''}" id="seg-${id}">
+      <div class="seg-head">
+        <span class="seg-no">ต่อที่ ${si+1}</span>
+        <div class="type-picker">
+          <button type="button" class="type-btn${open ? ' open' : ''}${typeCfg.kind === 'placeholder' ? ' empty' : ''}" aria-haspopup="listbox" aria-expanded="${open}" onclick="toggleTypeMenu('${id}')">
+            <span>${esc(typeCfg.label)}</span>${ICON.chev}</button>
+          ${open ? typeMenuHtml(id, di, key, si, seg.type) : ''}
+        </div>
+        <div class="grow"></div>
+        ${showAmount ? amountInput(di, key, si, seg) : (typeCfg.kind === 'none' ? '<span class="muted small">ไม่เบิก (0.00 บาท)</span>' : '')}
+        <button type="button" class="icon-btn danger" aria-label="ลบต่อที่ ${si+1}" onclick="removeSegment(${di},'${key}',${si})">${ICON.trash}</button>
+      </div>
+      ${(body || note || attachHtml) ? `<div class="seg-body">${body}${note ? `<p class="seg-note">${note}</p>` : ''}${attachHtml}</div>` : ''}
+    </div>`;
+}
+
+function dirBlockHtml(di, key, label){
+  const segs = state.days[di][key];
+  const sub = segs.reduce((s, seg) => s + (parseFloat(seg.amount) || 0), 0);
+  return `<div class="dir">
+    <div class="dir-head"><h4>${label}</h4><span class="muted">รวม <b id="subtotal-${di}-${key}">${fmt(sub)} บาท</b></span></div>
+    ${segs.map((seg, si) => renderSegment(di, key, seg, si, state.days[di].date)).join('')}
+    <button type="button" class="btn-dashed" onclick="addSegment(${di},'${key}')">+ เพิ่มการเดินทางต่อที่ ${segs.length + 1} (${label})</button>
+  </div>`;
+}
+
+function render(){
+  const c = document.getElementById('tripsContainer');
+  if(!c) return;
+  c.innerHTML = state.days.map((day, di) => `
+    <div class="day" id="day-${di}">
+      <div class="day-head">
+        <h3>วันที่ ${di+1}</h3>
+        <label class="sr-only" for="date-${di}">วันที่เดินทาง วันที่ ${di+1}</label>
+        <input type="date" id="date-${di}" value="${esc(day.date)}" max="${TODAY_ISO}" onchange="dayUpdate(${di},'date',this.value)">
+        <div class="grow"></div>
+        ${state.days.length > 1 ? `<button type="button" class="link-danger" onclick="removeDay(${di})">ลบวันนี้</button>` : ''}
+      </div>
+      ${dirBlockHtml(di, 'outboundSegments', 'ขาไป')}
+      <div class="day-divider"></div>
+      ${dirBlockHtml(di, 'returnSegments', 'ขากลับ')}
+    </div>`).join('') +
+    `<button type="button" class="btn btn-outline btn-block" onclick="addDay()">+ เพิ่มวันเดินทาง (กิจกรรมหลายวัน)</button>`;
+  updateTotals();
+}
+
+function refreshTotals(){
+  let grand = 0;
+  state.days.forEach((day, di) => {
+    ['outboundSegments','returnSegments'].forEach(key => {
+      let subtotal = 0;
+      day[key].forEach(seg => { subtotal += (parseFloat(seg.amount) || 0); });
+      grand += subtotal;
+      const subEl = document.getElementById(`subtotal-${di}-${key}`);
+      if(subEl) subEl.textContent = fmt(subtotal) + ' บาท';
+    });
+  });
+  const g = document.getElementById('grandTotal'); if(g) g.textContent = fmt(grand) + ' บาท';
+  const sp = document.getElementById('summaryPreview'); if(sp) sp.value = buildSummaryText(grand);
+  scheduleDraftSave();
+  return grand;
+}
+
+/* ---------- section 3: review & send ---------- */
+function copySummary(){
+  const textarea = document.getElementById('summaryPreview');
+  const btn = document.getElementById('copySummaryBtn');
+  const hint = document.getElementById('copyHint');
+  const done = () => {
+    btn.innerHTML = '✓ คัดลอกแล้ว';
+    hint.style.display = 'inline';
+    setTimeout(() => { btn.innerHTML = ICON.copy + ' คัดลอกข้อความสรุป'; hint.style.display = 'none'; }, 2200);
+  };
+  const fallback = () => { textarea.select(); document.execCommand('copy'); window.getSelection().removeAllRanges(); textarea.blur(); done(); };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(textarea.value).then(done).catch(fallback);
+  else fallback();
+}
+
+function validate(){
+  const errors = [];
+  ui.errorSegs.clear();
+  const add = (text, target, segKey) => { errors.push({ text, target }); if(segKey) ui.errorSegs.add(segKey); };
+  if(!document.getElementById('employeeName').value.trim()) add('ข้อมูลผู้เบิก: กรุณาเลือกชื่อผู้เบิก', 'sec1');
+  if(!document.getElementById('department').value.trim()) add('ข้อมูลผู้เบิก: กรุณากรอกแผนก/ฝ่าย', 'sec1');
+
+  state.days.forEach((day, di) => {
+    if(!day.date) add(`วันที่ ${di+1}: กรุณาเลือกวันที่เดินทาง`, `day-${di}`);
+    else if(day.date > TODAY_ISO) add(`วันที่ ${di+1}: ไม่สามารถเลือกวันที่ในอนาคตได้`, `day-${di}`);
+    [['outboundSegments','ขาไป'],['returnSegments','ขากลับ']].forEach(([key, label]) => {
+      const segments = day[key];
+      if(segments.length === 0) add(`วันที่ ${di+1} · ${label}: ต้องมีอย่างน้อย 1 ต่อการเดินทาง`, `day-${di}`);
+      segments.forEach((seg, si) => {
+        const sid = segId(di, key, si);
+        const typeCfg = SEGMENT_TYPES.find(t => t.value === seg.type) || SEGMENT_TYPES[0];
+        const tag = `วันที่ ${di+1} · ${label} · ต่อที่ ${si+1}${seg.type ? ' ' + typeCfg.label : ''}`;
+        if(!seg.type || typeCfg.kind === 'placeholder'){ add(`${tag}: ยังไม่ได้เลือกวิธีการเดินทาง`, 'seg-' + sid, sid); return; }
+        const needsRoute = (typeCfg.kind === 'rail' || typeCfg.kind === 'manual' || typeCfg.kind === 'car') && seg.type !== 'PARKING' && seg.type !== 'TOLL';
+        if(needsRoute){
+          if(!seg.origin) add(`${tag}: ยังไม่ได้กรอก${typeCfg.kind === 'rail' ? 'สถานี' : ''}ต้นทาง`, 'seg-' + sid, sid);
+          else if(typeCfg.kind === 'rail' && !isValidStation(seg.type, seg.origin)) add(`${tag}: ชื่อสถานีต้นทางไม่ถูกต้อง`, 'seg-' + sid, sid);
+          if(!seg.destination) add(`${tag}: ยังไม่ได้กรอก${typeCfg.kind === 'rail' ? 'สถานี' : ''}ปลายทาง`, 'seg-' + sid, sid);
+          else if(typeCfg.kind === 'rail' && !isValidStation(seg.type, seg.destination)) add(`${tag}: ชื่อสถานีปลายทางไม่ถูกต้อง`, 'seg-' + sid, sid);
+        }
+        if(typeCfg.kind === 'car' && !(parseFloat(seg.distanceKm) > 0)) add(`${tag}: ยังไม่ได้กรอกระยะทาง`, 'seg-' + sid, sid);
+        if(seg.type === 'OTHER' && !(seg.otherDescription || '').trim()) add(`${tag}: ยังไม่ได้ระบุประเภทการเดินทาง`, 'seg-' + sid, sid);
+        if(typeCfg.kind !== 'none' && !(parseFloat(seg.amount) > 0)) add(`${tag}: ยังไม่ได้กรอกจำนวนเงิน`, 'seg-' + sid, sid);
+        const requiresReceipt = seg.type === 'PARKING' || seg.type === 'TOLL' || seg.type === 'GRAB' || typeCfg.kind === 'car';
+        if(requiresReceipt && !((seg.attachments || []).length > 0)) add(`${tag}: ยังไม่ได้แนบหลักฐาน`, 'seg-' + sid, sid);
+        if((seg.attachments || []).some(a => a.isExisting && !a.base64)) add(`${tag}: รูปเดิมยังโหลดไม่เสร็จ รอสักครู่แล้วลองใหม่ (ถ้าไม่หาย ให้ลบแล้วแนบใหม่)`, 'seg-' + sid, sid);
+      });
+    });
+  });
+
+  const box = document.getElementById('validationBox');
+  render();
+  if(errors.length){
+    box.innerHTML = bannerHtml('err', `<b>ยังส่งไม่ได้ — กรอกไม่ครบ ${errors.length} จุด</b><ul class="err-list">` +
+      errors.slice(0, 12).map(e => `<li><a href="#${e.target}" onclick="jumpTo('${e.target}'); return false;">${esc(e.text)}</a></li>`).join('') +
+      (errors.length > 12 ? `<li>…และอีก ${errors.length - 12} จุด</li>` : '') + '</ul>');
+    box.scrollIntoView({ behavior:'smooth', block:'start' });
+    return false;
+  }
+  box.innerHTML = '';
+  return true;
+}
+function jumpTo(id){
+  const el = document.getElementById(id); if(!el) return;
+  el.scrollIntoView({ behavior:'smooth', block:'center' });
+  const f = el.querySelector('input, button'); if(f) setTimeout(() => f.focus({ preventScroll:true }), 350);
+}
+
+function setActions(mode, detail){
+  const area = document.getElementById('actionArea');
+  const formArea = document.getElementById('formArea');
+  formArea.classList.toggle('is-sending', mode === 'sending');
+  if(mode === 'sending'){
+    const step = detail === 1 ? ['กำลังสร้างเอกสาร PDF…', 'ขั้นที่ 1 จาก 2'] : ['กำลังส่งข้อมูลและไฟล์…', 'ขั้นที่ 2 จาก 2'];
+    area.innerHTML = `<div class="actions" role="status"><div class="sending">${ICON.spin}<div><b>${step[0]}</b><div class="muted small">${step[1]} · อย่าปิดหน้านี้</div></div></div>
+      <button type="button" class="btn btn-primary btn-lg" disabled>กำลังส่ง…</button></div>`;
+  } else if(mode === 'fail'){
+    area.innerHTML = `<div class="send-fail" role="alert">${bannerHtml('err', `<b>ส่งเอกสารไม่สำเร็จ</b> — ${esc(detail || 'เชื่อมต่อระบบไม่ได้ (อินเทอร์เน็ตหลุด หรือระบบกำลังบันทึกของคนอื่นอยู่)')}<br>ข้อมูลและไฟล์ที่กรอกยังอยู่ครบ ไม่ต้องกรอกใหม่`)}
+      <div class="actions"><span class="muted">หรือ <a href="#" onclick="downloadPdf(); return false;">ดาวน์โหลด PDF เก็บไว้ก่อน</a></span>
+      <button type="button" class="btn btn-primary btn-lg" onclick="submitForm()">ลองส่งอีกครั้ง</button></div></div>`;
+  } else {
+    area.innerHTML = `<div class="actions"><span class="muted">ดูตัวอย่างเอกสารก่อนส่ง: <a href="#" onclick="downloadPdf(); return false;">PDF</a> · <a href="#" onclick="downloadDocx(); return false;">Word</a></span>
+      <button type="button" class="btn btn-primary btn-lg" id="submitFormBtn" onclick="submitForm()">ยืนยันส่งเอกสาร</button></div>`;
+  }
+}
+
 async function downloadPdf(){
   if(!validate()) return;
-  const btn = document.getElementById('downloadPdfBtn');
-  const originalText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '⏳ กำลังสร้าง PDF...';
+  showMsg('ok', 'กำลังสร้าง PDF…');
   try{
     const doc = await generatePdfBlob();
     checkPdfSize(doc);
     doc.save(pdfFileName());
-  }catch(err){
-    showMsg('err', 'สร้าง PDF ไม่สำเร็จ: ' + err);
-  }finally{
-    btn.disabled = false;
-    btn.textContent = originalText;
-  }
+    document.getElementById('msgArea').innerHTML = '';
+  }catch(err){ showMsg('err', 'สร้าง PDF ไม่สำเร็จ: ' + err); }
+}
+async function downloadDocx(){
+  if(!validate()) return;
+  showMsg('ok', 'กำลังสร้างไฟล์ Word…');
+  try{
+    const blob = await buildDocxBlob();
+    saveBlob(blob, pdfFileName().replace(/\.pdf$/i, '.docx'));
+    document.getElementById('msgArea').innerHTML = '';
+  }catch(err){ showMsg('err', 'สร้างไฟล์ Word ไม่สำเร็จ: ' + (err && err.message ? err.message : err)); }
 }
 
-/* ---------- SUBMIT ---------- */
 async function submitForm(){
+  if(ui.sending) return;
   if(!validate()) return;
-  const btn = document.getElementById('submitFormBtn');
-  const downloadBtn = document.getElementById('downloadPdfBtn');
-  const originalText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '⏳ กำลังส่งเอกสาร...';
-  if(downloadBtn) downloadBtn.disabled = true;
-  showMsg('ok','กำลังส่งเอกสาร กรุณารอสักครู่...');
-
+  ui.sending = true; comboClose(); ui.openTypeMenu = null;
+  document.getElementById('msgArea').innerHTML = '';
+  setActions('sending', 1);
   try{
     const total = updateTotals();
     const doc = await generatePdfBlob();
     checkPdfSize(doc);
-    const pdfBase64 = doc.output('datauristring').split(',')[1];
-
+    lastPdfDoc = doc;
+    setActions('sending', 2);
     const payload = {
       eventId: EVENT_ID,
       employeeName: document.getElementById('employeeName').value.trim(),
       department: document.getElementById('department').value.trim(),
       totalAmount: Number(total.toFixed(2)),
       summaryText: buildSummaryText(total),
-      pdfBase64: pdfBase64,
+      pdfBase64: doc.output('datauristring').split(',')[1],
       pdfFileName: pdfFileName(),
-      // Already-uploaded receipts only need their existingUrl sent back —
-      // the server already has the file, so their (potentially large)
-      // base64 data (fetched purely for local preview/PDF-embedding) is
-      // stripped here rather than resent. Keeps the submit payload small
-      // and avoids ever risking a request-size limit on a resubmit with
-      // many existing photos.
       tripDetails: stripExistingBase64ForSubmit(daysToTripsArray(state.days))
     };
-
     const res = await callApi('submitExpense', payload);
-    if(res.ok){
-      showMsg('ok', (res.resubmitted ? 'อัปเดตเอกสารสำเร็จ ' : 'ส่งเอกสารสำเร็จ ') + '— สถานะ: ' + res.status + ' — กำลังดาวน์โหลดสำเนา PDF ลงเครื่องของคุณ...');
-      doc.save(pdfFileName());
+    ui.sending = false;
+    if(res && res.ok){
+      ui.submittedSnap = formSnapshot();
+      clearTimeout(ui.draftTimer);
+      clearDraft();
+      setActions('idle');
+      const emp = employeeList.find(e => e.name === payload.employeeName); if(emp) emp.submitted = true;
+      const pdfName = pdfFileName();
+      doc.save(pdfName);
+      let docxOk = true;
+      try{
+        lastDocxBlob = await buildDocxBlob();
+        setTimeout(() => saveBlob(lastDocxBlob, pdfName.replace(/\.pdf$/i, '.docx')), 600);
+      }catch(e){ docxOk = false; console.error('Word export failed:', e); }
+      showSuccess(payload, docxOk);
+    } else if(res && res.code === 'CLOSED'){
+      setActions('idle');
+      showPageBanner('closed', res.error); lockAll();
+      window.scrollTo({ top:0, behavior:'smooth' });
     } else {
-      showMsg('err', 'ส่งเอกสารไม่สำเร็จ: '+res.error);
+      setActions('fail', res && res.error);
     }
   }catch(err){
-    showMsg('err','เชื่อมต่อระบบหลังบ้านไม่สำเร็จ: '+err);
-  }finally{
-    btn.disabled = false;
-    btn.textContent = originalText;
-    if(downloadBtn) downloadBtn.disabled = false;
+    ui.sending = false;
+    setActions('fail', String(err && err.message ? err.message : err));
   }
 }
+
+function showSuccess(payload, docxOk){
+  const root = document.getElementById('modalRoot');
+  const now = new Date();
+  const stamp = now.toLocaleDateString('th-TH', { day:'2-digit', month:'2-digit', year:'numeric' }) + ' ' + nowHHMM();
+  root.innerHTML = `<div class="modal-overlay"><div class="modal success" role="dialog" aria-modal="true" aria-labelledby="sTitle">
+    <div class="success-mark" aria-hidden="true">✓</div>
+    <h2 id="sTitle">ส่งเอกสารเรียบร้อย</h2>
+    <dl class="kv"><dt>ผู้เบิก</dt><dd>${esc(payload.employeeName)}</dd><dt>ยอดรวม</dt><dd>${fmt(payload.totalAmount)} บาท</dd><dt>ส่งเมื่อ</dt><dd>${esc(stamp)}</dd></dl>
+    <p class="muted small">ระบบดาวน์โหลดสำเนา PDF${docxOk ? ' และ Word' : ''} ลงเครื่องให้แล้ว${docxOk ? ' · ถ้าไม่เห็นไฟล์ Word เบราว์เซอร์อาจถามว่าอนุญาตให้ดาวน์โหลดหลายไฟล์ไหม ให้กดอนุญาต หรือกดปุ่มด้านล่าง' : ''}</p>
+    <div class="modal-actions split">
+      <button type="button" class="btn btn-outline" onclick="lastPdfDoc && lastPdfDoc.save(pdfFileName())">ดาวน์โหลด PDF อีกครั้ง</button>
+      <button type="button" class="btn btn-outline" onclick="lastDocxBlob ? saveBlob(lastDocxBlob, pdfFileName().replace(/\\.pdf$/i, '.docx')) : downloadDocx()">ดาวน์โหลด Word${docxOk ? ' อีกครั้ง' : ''}</button>
+    </div>
+    <button type="button" class="btn btn-primary btn-block" onclick="document.getElementById('modalRoot').innerHTML=''">ปิด</button>
+    <p class="muted small">แก้ไขภายหลังได้: เปิดลิงก์เดิมแล้วเลือกชื่อตัวเอง ระบบเก็บฉบับเก่าไว้ให้ผู้จัดงาน</p>
+  </div></div>`;
+  root.querySelector('.btn-primary').focus();
+}
+
+/* ---------- init ---------- */
+async function loadEventInfo(){
+  if(!EVENT_ID){ showFatal('bad-link'); return; }
+  setLoading(true);
+  let res;
+  try{ res = await callApi('getEventInfo', { eventId: EVENT_ID }); }
+  catch(err){ setLoading(false); showFatal('load-fail'); return; }
+  setLoading(false);
+  if(!res || !res.ok){ showFatal('bad-link', res && res.error); return; }
+  eventName = res.event.eventName;
+  ui.closeAt = res.event.closeAt || '';
+  ui.isClosed = !!res.event.isClosed;
+  employeeList = res.employees || [];
+  eventFuelPrices = res.fuelPrices || [];
+  renderEventLabel();
+  if(ui.isClosed){ showPageBanner('closed'); lockAll(); return; }
+  if(employeeList.length === 0){ showPageBanner('no-staff'); lockAll(); return; }
+  const draft = readDraft();
+  if(draft) showDraftBanner(draft);
+  applyLock();
+  refreshCarFaresAll();
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+  applyLock();
+  setActions('idle');
+  render();
+  await loadEventInfo();
+});
+
 
 /* ---------- API CALL ---------- */
 const API_ACTION_TO_FUNCTION = {
@@ -1915,10 +2666,7 @@ function callApi(action, payload){
   }).then(res => res.json());
 }
 
-window.addEventListener('DOMContentLoaded', async () => {
-  render(); // ✅ เพิ่มบรรทัดนี้ เพื่อสั่งเรนเดอร์ section รายการเดินทางทันที
-  await loadEventInfo();
-});
+
 
 /* ===================================================================
    🖱️ CLICK-OUTSIDE DROPDOWN AUTO-CLOSE
@@ -1927,13 +2675,9 @@ window.addEventListener('DOMContentLoaded', async () => {
    moment the user clicks or taps anywhere else on the page — not stay
    open until they happen to pick an option or reopen it.
 =================================================================== */
-function closeDropdownsOutside(evt){
-  document.querySelectorAll('details.type-dropdown[open]').forEach(function(d){
-    if(!d.contains(evt.target)) d.removeAttribute('open');
-  });
-}
-document.addEventListener('click', closeDropdownsOutside, true);
-document.addEventListener('touchstart', closeDropdownsOutside, true);
+
+
+
 </script>
 </body>
 </html>
