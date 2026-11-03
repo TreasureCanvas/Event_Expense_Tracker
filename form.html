@@ -517,7 +517,7 @@
 /* =========================================================
    CONFIG — แก้ตรงนี้หลัง Deploy Google Apps Script แล้ว 
    ========================================================= */
-const API_URL = 'https://script.google.com/macros/s/AKfycbwpocNSNrJea93nQsKLAZrYHhyHtBsgEpgo5E6t2L4zJyBN1jCj7yYq-D5kyt1ZwHE/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbwmrjHdnyF4r89xnA3w35zat7x5XWO7Y7c732kG7oy9RV6eQW75ykyjjrhZHAK0CIU/exec';
 
 let SERVER_EVENT_ID = '<?= eventId ?>';
 if (SERVER_EVENT_ID.indexOf('<?') !== -1) SERVER_EVENT_ID = '';
@@ -1258,25 +1258,50 @@ function waitForImages(container){
   }));
 }
 
-async function captureCaptionLabel(text){
-  const tmp = document.createElement('div');
-  tmp.style.cssText = 'font-family:Sarabun,sans-serif; font-size:12px; color:#555; padding:2px 4px; background:#fff;';
-  tmp.textContent = text;
-  document.getElementById('pDaysWrap').appendChild(tmp);
-  const canvas = await html2canvas(tmp, { scale:2, backgroundColor:'#ffffff', useCORS:true });
-  tmp.remove();
+// Draws a short text block straight onto a canvas. Same size/padding as the
+// old html2canvas version (which cloned the whole page on every call and
+// made PDFs with many receipts slow).
+const _segmenter = (typeof Intl !== 'undefined' && Intl.Segmenter) ? new Intl.Segmenter('th', { granularity: 'word' }) : null;
+async function drawTextBlock(text, o){
+  const SCALE = 2;
+  const wrapEl = document.getElementById('pDaysWrap');
+  const width = Math.max(200, (wrapEl && wrapEl.clientWidth) || 700);
+  const font = `${o.weight || 400} ${o.size}px Sarabun, sans-serif`;
+  try{ if(document.fonts && document.fonts.load) await document.fonts.load(font, text); }catch(e){}
+  const measure = document.createElement('canvas').getContext('2d');
+  measure.font = font;
+  const maxW = width - o.padX * 2;
+  const pieces = _segmenter ? Array.from(_segmenter.segment(String(text)), x => x.segment) : String(text).split(/(\s+)/);
+  const lines = []; let line = '';
+  pieces.forEach(piece => {
+    if(measure.measureText(line + piece).width <= maxW || !line){
+      if(measure.measureText(piece).width > maxW && !line){ // one very long piece: split by character
+        for(const ch of piece){ if(measure.measureText(line + ch).width > maxW && line){ lines.push(line); line = ch; } else line += ch; }
+      } else line += piece;
+    } else { lines.push(line.trimEnd()); line = piece.trimStart(); }
+  });
+  if(line) lines.push(line);
+  const lineH = Math.round(o.size * 1.5);
+  const height = o.padTop + lines.length * lineH + o.padBottom + (o.underline ? 2 : 0);
+  const canvas = document.createElement('canvas');
+  canvas.width = width * SCALE; canvas.height = height * SCALE;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(SCALE, SCALE);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, width, height);
+  ctx.font = font; ctx.fillStyle = o.color; ctx.textBaseline = 'middle';
+  lines.forEach((ln, i) => ctx.fillText(ln, o.padX, o.padTop + i * lineH + lineH / 2));
+  if(o.underline){ ctx.fillStyle = o.color; ctx.fillRect(0, height - 2, width, 2); }
   return canvas;
 }
 
-async function captureSectionTitle(text){
-  const tmp = document.createElement('div');
-  tmp.style.cssText = 'font-family:Sarabun,sans-serif; font-size:15px; font-weight:700; color:#222; padding:2px 4px 8px; border-bottom:2px solid #222; background:#fff;';
-  tmp.textContent = text;
-  document.getElementById('pDaysWrap').appendChild(tmp);
-  const canvas = await html2canvas(tmp, { scale:2, backgroundColor:'#ffffff', useCORS:true });
-  tmp.remove();
-  return canvas;
+async function captureCaptionLabel(text){
+  return drawTextBlock(text, { size:12, color:'#555555', padX:4, padTop:2, padBottom:2 });
 }
+
+async function captureSectionTitle(text){
+  return drawTextBlock(text, { size:15, weight:700, color:'#222222', padX:4, padTop:2, padBottom:8, underline:true });
+}
+
 
 function guessImageFormat(mimeType, dataUrl){
   const src = (mimeType || '').toLowerCase() || (/^data:image\/([a-zA-Z0-9.+-]+);/.exec(dataUrl||'')||[])[1] || '';
@@ -2062,9 +2087,9 @@ async function discardDraft(){
 }
 
 /* ---------- searchable dropdown (names + stations) ---------- */
-const combo = { input:null, items:[], active:-1, source:null, onPick:null, emptyText:null, typed:false };
-function comboOpen(input, source, onPick, emptyText){
-  Object.assign(combo, { input, source, onPick, emptyText, typed:false });
+const combo = { input:null, items:[], active:-1, source:null, onPick:null, emptyText:null, typed:false, onHover:null };
+function comboOpen(input, source, onPick, emptyText, onHover){
+  Object.assign(combo, { input, source, onPick, emptyText, typed:false, onHover: onHover || null });
   comboRefresh();
 }
 function comboRefresh(){
@@ -2109,15 +2134,16 @@ function drawCombo(keepActiveInView){
     return;
   }
   box.innerHTML = combo.items.map((it, i) =>
-    `<li role="option" aria-selected="${i===combo.active}" class="${i===combo.active ? 'active' : ''}" onclick="comboPick(${i})">
+    `<li role="option" aria-selected="${i===combo.active}" class="${i===combo.active ? 'active' : ''}" onclick="comboPick(${i})" onmouseenter="comboHover(${i})">
       <span>${highlight(it.label, q)}</span><span class="combo-sub">${esc(it.sub || '')}${it.tag ? `<span class="combo-tag">${esc(it.tag)}</span>` : ''}</span></li>`).join('');
   if(keepActiveInView){ const act = box.querySelector('.active'); if(act) act.scrollIntoView({ block:'nearest' }); }
   else box.scrollTop = 0;
 }
+function comboHover(i){ const it = combo.items[i]; if(it && combo.onHover) combo.onHover(it.value); }
 function comboKey(e){
   if(!combo.input) return;
-  if(e.key === 'ArrowDown'){ e.preventDefault(); combo.active = Math.min(combo.items.length - 1, combo.active + 1); drawCombo(true); }
-  else if(e.key === 'ArrowUp'){ e.preventDefault(); combo.active = Math.max(0, combo.active - 1); drawCombo(true); }
+  if(e.key === 'ArrowDown'){ e.preventDefault(); combo.active = Math.min(combo.items.length - 1, combo.active + 1); drawCombo(true); comboHover(combo.active); }
+  else if(e.key === 'ArrowUp'){ e.preventDefault(); combo.active = Math.max(0, combo.active - 1); drawCombo(true); comboHover(combo.active); }
   else if(e.key === 'Enter'){ if(combo.active >= 0){ e.preventDefault(); comboPick(combo.active); } }
   else if(e.key === 'Escape'){ comboClose(); }
 }
@@ -2140,9 +2166,18 @@ function nameSource(q){
   return employeeList.filter(e => !q || String(e.name).includes(q)).slice(0, 60)
     .map(e => ({ value:e.name, label:e.name, sub:e.department || '', tag: e.submitted ? 'ส่งแล้ว' : '' }));
 }
+const mySubPrefetch = {};
+function prefetchMySub(name){
+  const hit = mySubPrefetch[name];
+  if(hit && Date.now() - hit.at < 30000) return hit.p;
+  const p = callApi('getMySubmission', { eventId: EVENT_ID, employeeName: name }).catch(() => null);
+  mySubPrefetch[name] = { at: Date.now(), p };
+  return p;
+}
 function nameFocus(input){
   comboOpen(input, nameSource, v => selectEmployee(v),
-    v => `ไม่พบ “${esc(v)}” ในรายชื่อกิจกรรมนี้<br>ตรวจตัวสะกด หรือติดต่อผู้จัดงานให้เพิ่มชื่อ`);
+    v => `ไม่พบ “${esc(v)}” ในรายชื่อกิจกรรมนี้<br>ตรวจตัวสะกด หรือติดต่อผู้จัดงานให้เพิ่มชื่อ`,
+    v => prefetchMySub(v));
 }
 function nameInput(input){ combo.typed = true; comboRefresh(); setNameError(''); }
 function nameBlur(input){
@@ -2187,7 +2222,8 @@ async function selectEmployee(name){
 
   setEmployeeLoadStatus('กำลังตรวจสอบใบเบิกเดิม…');
   let res = null;
-  try{ res = await callApi('getMySubmission', { eventId: EVENT_ID, employeeName: name }); }catch(e){ res = null; }
+  try{ res = await prefetchMySub(name); }catch(e){ res = null; }
+  delete mySubPrefetch[name]; // use a prefetched answer once; next pick asks again
   setEmployeeLoadStatus(null);
   if(name !== lastLoadedEmployeeName) return; // switched again meanwhile
 
@@ -2555,6 +2591,8 @@ async function submitForm(){
       clearDraft();
       setActions('idle');
       const emp = employeeList.find(e => e.name === payload.employeeName); if(emp) emp.submitted = true;
+      delete mySubPrefetch[payload.employeeName];
+      try{ const c = JSON.parse(localStorage.getItem(INFO_KEY()) || 'null'); if(c){ (c.employees || []).forEach(e => { if(e.name === payload.employeeName) e.submitted = true; }); localStorage.setItem(INFO_KEY(), JSON.stringify(c)); } }catch(e){}
       const pdfName = pdfFileName();
       doc.save(pdfName);
       let docxOk = true;
@@ -2596,26 +2634,37 @@ function showSuccess(payload, docxOk){
 }
 
 /* ---------- init ---------- */
-async function loadEventInfo(){
-  if(!EVENT_ID){ showFatal('bad-link'); return; }
-  setLoading(true);
-  let res;
-  try{ res = await callApi('getEventInfo', { eventId: EVENT_ID }); }
-  catch(err){ setLoading(false); showFatal('load-fail'); return; }
-  setLoading(false);
-  if(!res || !res.ok){ showFatal('bad-link', res && res.error); return; }
+const INFO_KEY = () => 'eetFormInfo:' + EVENT_ID;
+let infoApplied = false;
+function applyEventInfo(res, fromCache){
+  const firstTime = !infoApplied; infoApplied = true;
+  const oldFuel = JSON.stringify(eventFuelPrices || []);
   eventName = res.event.eventName;
   ui.closeAt = res.event.closeAt || '';
-  ui.isClosed = !!res.event.isClosed;
+  ui.isClosed = !!res.event.isClosed || (!!ui.closeAt && new Date(ui.closeAt) <= new Date());
   employeeList = res.employees || [];
   eventFuelPrices = res.fuelPrices || [];
   renderEventLabel();
-  if(ui.isClosed){ showPageBanner('closed'); lockAll(); return; }
+  if(ui.isClosed){ document.getElementById('pageBanner').innerHTML = ''; showPageBanner('closed'); lockAll(); return; }
   if(employeeList.length === 0){ showPageBanner('no-staff'); lockAll(); return; }
-  const draft = readDraft();
-  if(draft) showDraftBanner(draft);
+  if(ui.allLocked){ ui.allLocked = false; document.getElementById('pageBanner').innerHTML = ''; } // e.g. deadline was extended
+  if(firstTime){ const draft = readDraft(); if(draft) showDraftBanner(draft); }
   applyLock();
-  refreshCarFaresAll();
+  if(combo.input && combo.input.id === 'employeeName') comboRefresh();
+  if(firstTime || JSON.stringify(eventFuelPrices) !== oldFuel){ refreshCarFaresAll(); if(ui.unlocked) render(); }
+}
+async function loadEventInfo(){
+  if(!EVENT_ID){ showFatal('bad-link'); return; }
+  let cached = null;
+  try{ cached = JSON.parse(localStorage.getItem(INFO_KEY()) || 'null'); }catch(e){}
+  if(cached && cached.event) applyEventInfo(cached, true); else setLoading(true);
+  let res;
+  try{ res = await callApi('getEventInfo', { eventId: EVENT_ID }); }
+  catch(err){ setLoading(false); if(!cached) showFatal('load-fail'); return; }
+  setLoading(false);
+  if(!res || !res.ok){ try{ localStorage.removeItem(INFO_KEY()); }catch(e){} showFatal('bad-link', res && res.error); return; }
+  try{ localStorage.setItem(INFO_KEY(), JSON.stringify(res)); }catch(e){}
+  applyEventInfo(res, false);
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
