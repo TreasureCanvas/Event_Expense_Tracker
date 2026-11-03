@@ -2,1956 +2,898 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ระบบเบิกค่าเดินทาง — หน้าหลัก</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Event Expense Tracker · Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    color-scheme:light; box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+    --brand:#FE6D43; --brand-text:#B4451F; --brand-soft:#FFF1E8;
+    --ink:#1E1E1E; --muted:#5F5F5A; --line:#D9D9D6; --fill:#ECECE8; --bg:#F5F5F3; --surface:#FFFFFF;
+    --ok:#1B6B3C; --ok-bg:#E3F4E8; --warn:#8A4B00; --warn-bg:#FFF1DE; --err:#A61B1B; --err-bg:#FDECEC; --info-bg:#EDEDEA;
+    background:var(--bg);
+  }
+  *,*::before,*::after{box-sizing:inherit;}
+  html{scroll-padding-top:env(safe-area-inset-top,0px);}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Sans Thai',system-ui,sans-serif; font-size:15px; line-height:1.55;}
+  a{color:var(--brand-text);} a:hover{color:#8A3416;}
+  :focus-visible{outline:2px solid var(--brand); outline-offset:2px;}
+  .sr-only{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap;}
+  .muted{color:var(--muted);} .small{font-size:13px;} .grow{flex:1 1 0;}
+  .row{display:flex; gap:12px; align-items:center; flex-wrap:wrap;}
+  .between{justify-content:space-between;}
+  .ic{fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; flex:none;}
+
+  .topbar{background:var(--surface); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20;}
+  body::before{content:""; position:fixed; inset:0 0 auto; height:env(safe-area-inset-top,0px); z-index:21; background:var(--surface);}
+  .topbar-in{max-width:1200px; margin:0 auto; padding:12px 32px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:700; color:var(--ink); text-decoration:none;}
+  .brand-mark{width:28px; height:28px; border-radius:8px; background:var(--brand);}
+  .brand small{font-weight:400; color:var(--muted); font-size:14px;}
+  .nav{display:flex; gap:4px; align-items:center; flex-wrap:wrap;}
+  .nav a{padding:8px 12px; border-radius:8px; text-decoration:none; color:var(--ink); font-weight:600; font-size:14px;}
+  .nav a.on{background:var(--bg);}
+  main{max-width:1200px; margin:0 auto; padding:28px 32px 120px; display:flex; flex-direction:column; gap:20px;}
+  .crumb{font-size:14px; color:var(--muted);}
+  h1{margin:0; font-size:26px; line-height:1.3; overflow-wrap:anywhere;}
+  h2{margin:0; font-size:18px;}
+  h3{margin:0; font-size:16px;}
+  .sub{margin:4px 0 0; color:var(--muted); overflow-wrap:anywhere;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:24px; display:flex; flex-direction:column; gap:16px; min-width:0;}
+  .card.dashed{border-style:dashed;}
+
+  label{font-size:14px; font-weight:600;}
+  .req{color:var(--err);}
+  input:not([type=checkbox]):not([type=file]), select, textarea{font:inherit; color:var(--ink); width:100%; min-height:44px; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface); font-size:15px;}
+  textarea{padding:12px; min-height:120px; line-height:1.7; resize:vertical;}
+  input:focus, textarea:focus, select:focus{outline:none; border-color:var(--ink); box-shadow:0 0 0 1px var(--ink);}
+  input.invalid{border:2px solid var(--err) !important; box-shadow:none;}
+  input.warn{border:2px solid var(--warn) !important;}
+  input[type=checkbox]{width:18px; height:18px; accent-color:var(--brand); margin:0; flex:none;}
+  .fld{display:flex; flex-direction:column; gap:6px; min-width:0;}
+  .fld-err{color:var(--err); font-size:13px;}
+  .hint{font-size:13px; color:var(--muted);}
+  .grid{display:grid; gap:16px;} .g2{grid-template-columns:repeat(2,minmax(0,1fr));} .g3{grid-template-columns:repeat(3,minmax(0,1fr));} .g4{grid-template-columns:repeat(4,minmax(0,1fr));}
+  .span2{grid-column:1 / -1;}
+
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:0 18px; border-radius:10px; border:1px solid var(--line); background:var(--surface); color:var(--ink); font:inherit; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap; text-decoration:none;}
+  .btn:hover{border-color:var(--ink);}
+  .btn:disabled{opacity:.55; cursor:default;}
+  .btn-primary{background:var(--brand); border-color:var(--brand); color:#fff;}
+  .btn-primary:hover:not(:disabled){background:#E85A31; border-color:#E85A31;}
+  .btn-ghost{background:transparent; border-color:transparent;}
+  .btn-ghost:hover{background:var(--bg); border-color:transparent;}
+  .btn-danger{color:var(--err); border-color:transparent; background:transparent;}
+  .btn-danger-solid{color:var(--err); border-color:var(--err); background:transparent;}
+  .btn-dark{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .btn-sm{min-height:36px; padding:0 12px;}
+  .btn-reset{color:var(--brand-text); border-color:var(--brand);}
+  .btn-reset:hover:not(:disabled){background:var(--brand-soft); border-color:var(--brand);}
+  .btn-reset:disabled{color:var(--muted); border-color:var(--line); opacity:1;}
+  .chip{display:inline-flex; align-items:center; gap:6px; padding:2px 10px; border-radius:999px; font-size:13px; font-weight:600; white-space:nowrap; background:var(--info-bg); color:#4F4F4A;}
+  .chip.ok{background:var(--ok-bg); color:var(--ok);} .chip.warn{background:var(--warn-bg); color:var(--warn);} .chip.err{background:var(--err-bg); color:var(--err);} .chip.acc{background:var(--brand-soft); color:var(--brand-text);}
+  button.chip{border:1px solid transparent; cursor:pointer; min-height:36px; padding:0 14px; font:inherit; font-size:14px; font-weight:600;}
+  button.chip.on{background:var(--ink); color:#fff;}
+
+  .banner{border-radius:12px; padding:14px 16px; display:flex; flex-direction:column; gap:10px; overflow-wrap:anywhere;}
+  .banner.err{background:var(--err-bg); color:var(--err);} .banner.warn{background:var(--warn-bg); color:var(--warn);} .banner.info{background:var(--info-bg);} .banner.ok{background:var(--ok-bg); color:var(--ok);}
+  .banner ul{margin:4px 0 0; padding-left:20px;}
+  .banner a{color:inherit;}
+
+  .ev-card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:20px; display:flex; gap:20px; align-items:center; flex-wrap:wrap;}
+  .ev-main{flex:1 1 360px; min-width:0; display:flex; flex-direction:column; gap:4px;}
+  .ev-name{font-size:17px; font-weight:700; color:var(--ink); text-decoration:none; overflow-wrap:anywhere;}
+  .ev-name:hover{text-decoration:underline;}
+  .ev-amt{flex:0 0 150px; text-align:right;}
+  .ev-amt b{font-size:18px;}
+
+  .table-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--surface);}
+  table{width:100%; border-collapse:collapse; font-size:14px;}
+  th{text-align:left; padding:10px 12px; font-size:13px; color:var(--muted); font-weight:600; border-bottom:1px solid var(--line); white-space:nowrap;}
+  td{padding:10px 12px; border-bottom:1px solid #EEEEEA; vertical-align:middle; overflow-wrap:anywhere;}
+  tr:last-child td{border-bottom:none;}
+  td.num, th.num{text-align:right; white-space:nowrap;}
+  tr.is-new td{background:#F6FBF7;}
+
+  .stat{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px; display:flex; flex-direction:column; gap:2px; min-width:0;}
+  .stat b{font-size:24px;}
+  .selbar{background:var(--ink); color:#fff; border-radius:12px; padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+  .selbar .btn{background:transparent; color:#fff; border-color:#6b6b66;}
+  .selbar .btn:hover{border-color:#fff;}
+  .savebar{position:sticky; bottom:0; z-index:10; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:14px 20px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; box-shadow:0 -2px 10px rgba(0,0,0,.06); margin-bottom:env(safe-area-inset-bottom,0px);}
+  .draft-ok{color:var(--ok); font-weight:600;}
+  .thumb{width:64px; height:64px; border-radius:8px; border:1px solid var(--line); background:var(--fill); overflow:hidden; display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--muted); flex:none; position:relative;}
+  .thumb img{width:100%; height:100%; object-fit:cover;}
+  .file-btn{display:inline-flex; align-items:center; gap:6px; min-height:36px; padding:0 12px; border:1.5px dashed #BDBDB7; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; background:var(--surface);}
+  .file-btn input{position:absolute; width:1px; height:1px; opacity:0;}
+  .skel{height:14px; border-radius:6px; background:var(--fill);}
+
+  .drawer-wrap{position:fixed; inset:0; z-index:50; display:flex; justify-content:flex-end; background:rgba(20,20,20,.35);}
+  .drawer{width:620px; max-width:100%; height:100%; overflow-y:auto; background:var(--surface); box-shadow:-8px 0 24px rgba(0,0,0,.12); padding:28px; padding-top:calc(28px + env(safe-area-inset-top,0px)); display:flex; flex-direction:column; gap:16px;}
+  .day-sec{border-top:1px solid var(--line); padding-top:4px; display:flex; flex-direction:column; gap:10px;}
+  .day-toggle{width:100%; min-height:48px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 4px; border:none; background:transparent; font:inherit; color:var(--ink); text-align:left; cursor:pointer;}
+  .mini td{padding:8px 10px;}
+  .mini .grp td{background:var(--bg); font-weight:700; font-size:13px;}
+  .ev-grid{display:flex; gap:12px; flex-wrap:wrap;}
+  .ev-fig{margin:0; width:96px; display:flex; flex-direction:column; gap:4px;}
+  .ev-fig .ph{width:96px; height:96px; border-radius:8px; background:var(--fill); border:1px dashed #BDBDB7; display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--muted);}
+  .ev-fig figcaption{font-size:12px; color:var(--muted); line-height:1.35;}
+  .hist{display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #EEEEEA; flex-wrap:wrap;}
+
+  .modal-overlay{position:fixed; inset:0; z-index:100; background:rgba(20,20,20,.45); display:flex; align-items:flex-start; justify-content:center; padding:80px 20px 20px; overflow:auto;}
+  .modal{width:100%; max-width:480px; background:var(--surface); border-radius:14px; padding:28px; box-shadow:0 16px 40px rgba(0,0,0,.25); display:flex; flex-direction:column; gap:14px;}
+  .modal.wide{max-width:860px;}
+  .modal-actions{display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap;}
+  .steps{display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:14px;}
+  .step{display:inline-flex; align-items:center; gap:8px; color:var(--muted);}
+  .step i{font-style:normal; width:24px; height:24px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; background:var(--fill);}
+  .step.on{color:var(--ink); font-weight:700;} .step.on i{background:var(--brand); color:#fff;}
+  .step.done{color:var(--ink);} .step.done i{background:var(--ink); color:#fff;}
+  .toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(20px); z-index:120; display:flex; align-items:center; gap:16px; background:var(--ink); color:#fff; border-radius:12px; padding:12px 16px; box-shadow:0 12px 32px rgba(0,0,0,.25); opacity:0; pointer-events:none; transition:opacity .2s, transform .2s; max-width:calc(100vw - 32px); margin-bottom:env(safe-area-inset-bottom,0px);}
+  .toast.show{opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0);}
+  .toast button{min-height:36px; padding:0 14px; border-radius:8px; border:1px solid #fff; background:transparent; color:#fff; font:inherit; font-weight:700; cursor:pointer;}
+  .login{max-width:420px; margin:72px auto; }
+
+
+  @media (max-width: 760px){
+    .topbar-in, main{padding-left:14px; padding-right:14px;}
+    .g2, .g3, .g4{grid-template-columns:1fr;}
+    .ev-amt{text-align:left; flex-basis:auto;}
+    .card{padding:16px;}
+  }
+</style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
 <style>
-  :root{ --brand:#FE6D43; --brand-dark:#222222; --accent:#e8a33d; --bg:#F6F7FB; --card:#ffffff; --line:#e2e5e1;
-    --text:#20281f; --muted:#686868; --ok:#1f7a4d; --warn:#b9770e; --danger:#c0392b; --pending:#8b8f89; --radius:14px; }
-  *{box-sizing:border-box;}
-  body{margin:0; background:var(--bg); color:var(--text); font-family:'Sarabun',sans-serif; padding:18px;}
-  .wrap{max-width:980px; margin:0 auto;}
-  h1{font-size:20px; color:var(--brand-dark); margin:0 0 14px;}
-  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px; margin-bottom:14px;}
-  label{display:block; font-size:13px; color:var(--muted); margin-bottom:5px; font-weight:600;}
-  input, select, textarea{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:9px; font-family:inherit; font-size:14.5px;}
-  textarea{min-height:120px; font-family:monospace; font-size:12.5px;}
-  .req{color:#c0392b;}
-  .hint{font-size:12px; color:var(--muted); margin-top:4px;}
-  .btn{border:none; border-radius:9px; padding:9px 15px; font-family:inherit; font-weight:600; font-size:13.5px; cursor:pointer; background:var(--brand); color:#fff; white-space:nowrap;}
-  .btn-outline{background:#fff; color:var(--brand-dark); border:1px solid var(--line);}
-  .btn-small{padding:6px 11px; font-size:12.5px; background:#fff; color:var(--brand-dark); border:1px solid var(--line);}
-  .btn-ghost{background:transparent; color:var(--muted); padding:6px 8px; font-size:12.5px;}
-
-  .toolbar{display:flex; gap:10px; align-items:center;}
-  .toolbar .search{flex:1; position:relative;}
-  .toolbar .search input{padding-left:34px;}
-  .toolbar .search::before{content:'🔎'; position:absolute; left:11px; top:50%; transform:translateY(-50%); font-size:13px; opacity:.6;}
-
-  .event-card{border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; background:#fff;}
-  .event-card-head{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;}
-  .event-name{font-size:15.5px; font-weight:700; color:var(--brand-dark); cursor:pointer;}
-  .event-name:hover{text-decoration:underline;}
-  .event-meta{font-size:12.5px; color:var(--muted); margin-top:4px;}
-  .event-actions{display:flex; gap:8px; flex-shrink:0;}
-  .empty{color:var(--muted); padding:26px 0; text-align:center;}
-
-  .roster-panel{margin-top:12px; padding-top:12px; border-top:1px dashed var(--line); display:none;}
-  .summary-bar{display:flex; gap:14px; margin-bottom:10px; font-size:13px; flex-wrap:wrap;}
-  .summary-bar span{background:#f1f4f0; border-radius:20px; padding:4px 11px;}
-  table{width:100%; border-collapse:collapse; font-size:13.5px;}
-  th, td{border-bottom:1px solid var(--line); padding:8px 7px; text-align:left; vertical-align:top;}
-  th{color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase;}
-  .status-new{color:var(--ok); font-weight:600;}
-  .status-edit{color:var(--warn); font-weight:600;}
-  .status-pending{color:var(--pending); font-weight:600;}
-  .dot{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px;}
-  .dot-green{background:var(--ok);} .dot-orange{background:var(--warn);} .dot-grey{background:var(--pending);}
-  a.pdf-link{color:var(--brand-dark); font-weight:600; text-decoration:none;}
-
-  #createView, #editView, #exportView{display:none;}
-  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
-  .grid3{display:grid; grid-template-columns:1fr auto auto; gap:12px; align-items:end;}
-  .field{margin-bottom:14px;}
-  .export-filter-box{border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:12px; background:#fbfbfa;}
-  .export-filter-header{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:12px;}
-  .export-filter-title{font-size:13.5px; font-weight:700; color:var(--brand-dark);}
-  .btn-danger{background:var(--danger); color:#fff;}
-  .export-filter-daterow{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
-  .export-filter-box .field{margin-bottom:12px;}
-  .export-filter-box .field:last-child{margin-bottom:0;}
-  .export-select-all{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); font-weight:600; padding:8px 0 4px; border-top:1px dashed var(--line); margin-top:2px;}
-  .export-select-all input{width:auto;}
-  .export-event-row{display:flex; align-items:center; gap:8px; padding:6px 0; font-size:13.5px; cursor:pointer;}
-  .export-event-row input{width:auto;}
-  .export-empty-filtered{color:var(--muted); padding:14px 4px; font-size:13px; text-align:center;}
-  .msg{padding:11px 13px; border-radius:9px; font-size:13.5px; margin-bottom:14px; display:none;}
-  .msg.err{background:#fdeceb; color:#c0392b; border:1px solid #f3c6c1;}
-  .msg.ok{background:#eaf6ef; color:var(--ok); border:1px solid #bfe5cd;}
-  .back-row{display:flex; align-items:center; gap:10px; margin-bottom:14px;}
-
-  /* ===== 📋 Bulk Staff Import Modal ===== */
-  .field-head{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:5px;}
-  .field-head label{margin-bottom:0;}
-  .btn-import{background:#eef2ec; color:var(--brand-dark); border:1px solid var(--line); white-space:nowrap;}
-  .btn-import:hover{border-color:var(--brand); color:var(--brand);}
-
-  .modal-overlay{
-    display:none; position:fixed; inset:0; background:rgba(20,22,18,.45);
-    z-index:1000; align-items:flex-start; justify-content:center; padding:24px 14px; overflow-y:auto;
-  }
-  .modal-overlay.show{display:flex;}
-  .modal-box{
-    background:#fff; border-radius:var(--radius); width:100%; max-width:640px;
-    box-shadow:0 10px 40px rgba(0,0,0,.18); display:flex; flex-direction:column; max-height:calc(100vh - 48px);
-  }
-  .modal-head{display:flex; justify-content:space-between; align-items:center; padding:16px 18px; border-bottom:1px solid var(--line);}
-  .modal-head h2{font-size:15.5px; margin:0; color:var(--brand-dark);}
-  .modal-close{background:transparent; border:none; font-size:16px; cursor:pointer; color:var(--muted); padding:4px 6px; line-height:1;}
-  .modal-close:hover{color:var(--danger);}
-  .modal-body{padding:16px 18px; overflow-y:auto;}
-  .modal-foot{display:flex; justify-content:flex-end; gap:10px; padding:14px 18px; border-top:1px solid var(--line);}
-
-  #importRawText{min-height:110px; font-family:monospace; font-size:12.5px;}
-  .import-header-toggle{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted); font-weight:600; margin-top:9px;}
-  .import-header-toggle input{width:auto;}
-
-  .import-preview-wrap{margin-top:16px;}
-  .import-preview-bar{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; font-size:12.5px; color:var(--muted); font-weight:600;}
-  .import-table-scroll{border:1px solid var(--line); border-radius:10px; overflow:auto; max-height:300px;}
-  table.import-table{width:100%; border-collapse:collapse; font-size:13px;}
-  table.import-table th{
-    position:sticky; top:0; background:#f6f7fb; color:var(--muted); font-weight:600; font-size:11px;
-    text-transform:uppercase; text-align:left; padding:8px 7px; border-bottom:1px solid var(--line); z-index:1;
-  }
-  table.import-table td{padding:5px 6px; border-bottom:1px solid var(--line); vertical-align:middle;}
-  table.import-table tr:last-child td{border-bottom:none;}
-  table.import-table input[type="text"]{padding:6px 8px; font-size:12.5px; border-radius:7px;}
-  table.import-table input[type="checkbox"]{width:auto;}
-  .import-del-btn{background:transparent; border:none; cursor:pointer; font-size:14px; padding:4px; color:var(--danger); border-radius:6px;}
-  .import-del-btn:hover{background:#fdeceb;}
-  tr.dup-row td{background:#fdf8ec;}
-  tr.dup-note-row td{padding:0 6px 6px;}
-  .dup-note{font-size:11.5px; color:var(--warn); font-weight:600;}
-  .import-empty{color:var(--muted); font-size:13px; text-align:center; padding:18px 0;}
-
-  /* ===== ⛽ Daily Fuel Price + Receipt inputs ===== */
-  .fuel-price-header{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;}
-  .fuel-price-title{font-size:13.5px; font-weight:700; color:var(--brand-dark);}
-  .fuel-price-link{font-size:12px; color:var(--brand); text-decoration:none; font-weight:600; white-space:nowrap;}
-  .fuel-price-link:hover{text-decoration:underline;}
-  .fuel-day-row{border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:10px; background:#fbfbfa;}
-  .fuel-day-row label{font-weight:400;}
-  .fuel-day-row .fuel-day-label{font-weight:700; margin-bottom:6px;}
-  .fuel-preview-list{margin-top:8px; display:flex; flex-wrap:wrap; gap:8px;}
-  .fuel-thumb{position:relative; display:inline-flex; align-items:center; gap:6px; background:#f1f4f0; border-radius:8px; padding:4px 8px 4px 4px;}
-  .fuel-thumb img{height:38px; width:38px; object-fit:cover; border-radius:6px;}
-  .fuel-thumb .rm{cursor:pointer; color:var(--danger); font-weight:700; font-size:13px; padding:0 3px;}
-  .fuel-thumb-loading{padding:4px 10px;}
-  .thumb-loading-text{font-size:11.5px; color:var(--muted); font-style:italic;}
-  .existing-badge{font-size:10px; color:#6b7a63; background:#e2ebdd; border-radius:5px; padding:1px 5px; white-space:nowrap;}
-
-  /* ===== 📦 Roster bulk PDF -> ZIP export ===== */
-  .roster-bulk-bar{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;}
-  .roster-select-all{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted); font-weight:600;}
-  .roster-select-all input{width:auto;}
-  .roster-bulk-actions{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
-  th.roster-check-col, td.roster-check-col{width:28px;}
-  td.roster-check-col input{width:auto;}
-
-  /* ===== 🔍 Image preview lightbox ===== */
-  .view-img-link{font-size:11.5px; color:var(--brand); font-weight:600; text-decoration:none; cursor:pointer; white-space:nowrap; background:none; border:none; padding:0;}
-  .view-img-link:hover{text-decoration:underline;}
-  .lightbox-overlay{display:none; position:fixed; inset:0; background:rgba(10,12,9,.82); z-index:2000; align-items:center; justify-content:center; padding:24px; cursor:zoom-out;}
-  .lightbox-overlay.show{display:flex;}
-  .lightbox-overlay img{max-width:100%; max-height:100%; border-radius:8px; box-shadow:0 10px 40px rgba(0,0,0,.4); cursor:default;}
-  .lightbox-close{position:fixed; top:18px; right:22px; background:transparent; border:none; color:#fff; font-size:26px; cursor:pointer; z-index:2001; line-height:1;}
-
-  /* 🚧 Exit confirmation modal */
-  .exit-modal-overlay{display:none; position:fixed; inset:0; background:rgba(10,12,9,.55); z-index:2100; align-items:center; justify-content:center; padding:20px;}
-  .exit-modal-overlay.show{display:flex;}
-  .exit-modal-box{background:#fff; border-radius:14px; max-width:400px; width:100%; padding:22px 22px 18px; box-shadow:0 14px 45px rgba(0,0,0,.3);}
-  .exit-modal-title{font-size:17px; font-weight:700; color:var(--brand-dark); margin-bottom:10px;}
-  .exit-modal-message{font-size:14px; color:var(--text); line-height:1.6; margin-bottom:20px;}
-  .exit-modal-actions{display:flex; justify-content:flex-end; gap:10px;}
-  .exit-modal-actions .btn-exit-danger{background:var(--danger); color:#fff;}
-
-  /* ===== ⛽ Buffer (optional, pre-event) fuel date rows ===== */
-  .fuel-day-mandatory{font-size:10px; color:#fff; background:var(--brand); border-radius:5px; padding:1px 6px; white-space:nowrap; font-weight:700;}
-  .fuel-day-buffer{font-size:10px; color:#8a6d00; background:#fdf3e2; border-radius:5px; padding:1px 6px; white-space:nowrap; font-weight:700;}
-  .fuel-day-remove{cursor:pointer; color:var(--danger); font-weight:700; font-size:13px; margin-left:8px;}
-  .btn-add-buffer{margin-bottom:10px;}
+  .lightbox{position:fixed; inset:0; z-index:150; background:rgba(0,0,0,.82); display:none; align-items:center; justify-content:center; padding:24px;}
+  .lightbox.show{display:flex;}
+  .lightbox img{max-width:92vw; max-height:86vh; border-radius:8px; background:#fff;}
+  .lightbox button{position:absolute; top:calc(16px + env(safe-area-inset-top,0px)); right:16px; min-height:44px; padding:0 16px; border-radius:10px; border:1px solid #fff; background:transparent; color:#fff; font:inherit; font-weight:700; cursor:pointer;}
+  a.ph{display:flex; align-items:center; justify-content:center; text-decoration:none; color:var(--brand-text); font-weight:600;}
 </style>
 </head>
 <body>
-<div class="wrap">
-
-  <div id="listView">
-    <h1>📋 ระบบเบิกค่าเดินทาง — กิจกรรมทั้งหมด</h1>
-
-    <div class="card">
-      <div class="toolbar">
-        <div class="search"><input id="searchBox" placeholder="ค้นหาชื่อกิจกรรม..." oninput="renderEventList()"></div>
-        <button class="btn" onclick="showCreateView()">➕ สร้าง Event</button>
-        <button class="btn btn-outline" onclick="showExportView()">📥 Export Excel</button>
-        <button class="btn btn-outline" onclick="loadEvents()">🔄 รีเฟรช</button>
-      </div>
-    </div>
-
-    <div class="msg ok" id="listMsgOk"></div>
-    <div id="eventListContainer"></div>
-    <div class="empty" id="listEmptyMsg" style="display:none;"></div>
-  </div>
-
-  <div id="createView">
-    <div class="back-row">
-      <button class="btn btn-outline" onclick="guardedExit(showListView)">← กลับหน้าหลัก</button>
-      <h1 style="margin:0;">🛠️ สร้างกิจกรรมใหม่</h1>
-    </div>
-    <div class="msg err" id="createMsgErr"></div>
-
-    <div class="card">
-      <div class="field">
-        <label>ชื่อ Event <span class="req">*</span></label>
-        <input id="eventName" placeholder="เช่น อบรมการตลาดประจำปี 2569" oninput="markFormDirty()">
-      </div>
-      <div class="field">
-        <label>ชื่อผู้สร้าง Event <span class="req">*</span></label>
-        <input id="ownerName" placeholder="เช่น สมหญิง มีสุข" oninput="markFormDirty()">
-      </div>
-      <div class="field">
-        <label>สถานที่จัดงาน</label>
-        <input id="venue" placeholder="เช่น โรงแรม ABC, ห้องประชุมชั้น 5" oninput="markFormDirty()">
-      </div>
-      <div class="grid2">
-        <div class="field">
-          <label>วันที่เริ่ม Event <span class="req">*</span></label>
-          <input id="startDate" type="date" onchange="markFormDirty(); renderFuelInputs('create')">
-        </div>
-        <div class="field">
-          <label>วันที่สิ้นสุด Event</label>
-          <input id="endDate" type="date" onchange="markFormDirty(); renderFuelInputs('create')">
-          <div class="hint">ถ้าเป็นกิจกรรมวันเดียว เว้นว่างไว้ได้</div>
-        </div>
-      </div>
-      <div class="field">
-        <div class="field-head">
-          <label>รายชื่อ Staff ที่เกี่ยวข้องกับกิจกรรมนี้ <span class="req">*</span></label>
-          <button type="button" class="btn btn-small btn-import" onclick="openImportModal('employeeList')">📋 นำเข้าจาก Excel</button>
-        </div>
-        <textarea id="employeeList" placeholder="พิมพ์ 1 คนต่อบรรทัด รูปแบบ: ชื่อ นามสกุล - แผนก" oninput="markFormDirty()"></textarea>
-        <div class="hint">พิมพ์ "ชื่อ นามสกุล - แผนก" แล้วกด Enter ขึ้นบรรทัดใหม่ทีละคน หรือกด "นำเข้าจาก Excel" เพื่อวางข้อมูลจาก Excel โดยตรง</div>
-      </div>
-      <div class="field">
-        <div class="fuel-price-header">
-          <span class="fuel-price-title">⛽ ราคาน้ำมันแก๊สโซฮอล์ 91 รายวัน + ใบเสร็จ</span>
-          <a class="fuel-price-link" href="https://gasprice.kapook.com" target="_blank" rel="noopener">🔗 เช็กราคาน้ำมันย้อนหลัง (gasprice.kapook.com)</a>
-        </div>
-        <div id="fuelPricesContainer"><div class="hint">กรุณาเลือกวันที่เริ่ม Event ก่อน เพื่อกรอกราคาน้ำมันรายวัน</div></div>
-      </div>
-      <button class="btn" id="createBtn" onclick="createNewEvent()">✅ สร้างกิจกรรมและลิงก์</button>
-    </div>
-  </div>
-
-  <div id="editView">
-    <div class="back-row">
-      <button class="btn btn-outline" onclick="guardedExit(showListView)">← กลับหน้าหลัก</button>
-      <h1 style="margin:0;">✏️ แก้ไขรายละเอียดกิจกรรม</h1>
-    </div>
-    <div class="msg err" id="editMsgErr"></div>
-
-    <div class="card">
-      <div class="field">
-        <label>ชื่อ Event <span class="req">*</span></label>
-        <input id="editEventName" oninput="markFormDirty()">
-      </div>
-      <div class="field">
-        <label>ชื่อผู้สร้าง Event <span class="req">*</span></label>
-        <input id="editOwnerName" oninput="markFormDirty()">
-      </div>
-      <div class="field">
-        <label>สถานที่จัดงาน</label>
-        <input id="editVenue" oninput="markFormDirty()">
-      </div>
-      <div class="grid2">
-        <div class="field">
-          <label>วันที่เริ่ม Event <span class="req">*</span></label>
-          <input id="editStartDate" type="date" onchange="markFormDirty(); renderFuelInputs('edit')">
-        </div>
-        <div class="field">
-          <label>วันที่สิ้นสุด Event</label>
-          <input id="editEndDate" type="date" onchange="markFormDirty(); renderFuelInputs('edit')">
-        </div>
-      </div>
-      <div class="field">
-        <div class="field-head">
-          <label>รายชื่อ Staff ที่เกี่ยวข้องกับกิจกรรมนี้ <span class="req">*</span></label>
-          <button type="button" class="btn btn-small btn-import" onclick="openImportModal('editEmployeeList')">📋 นำเข้าจาก Excel</button>
-        </div>
-        <textarea id="editEmployeeList" oninput="markFormDirty()"></textarea>
-      </div>
-      <div class="field">
-        <div class="fuel-price-header">
-          <span class="fuel-price-title">⛽ ราคาน้ำมันแก๊สโซฮอล์ 91 รายวัน + ใบเสร็จ</span>
-          <a class="fuel-price-link" href="https://gasprice.kapook.com" target="_blank" rel="noopener">🔗 เช็กราคาน้ำมันย้อนหลัง (gasprice.kapook.com)</a>
-        </div>
-        <div id="editFuelPricesContainer"><div class="hint">กรุณาเลือกวันที่เริ่ม Event ก่อน เพื่อกรอกราคาน้ำมันรายวัน</div></div>
-      </div>
-      <button class="btn" id="editSaveBtn" onclick="saveEditEvent()">💾 บันทึกการแก้ไข</button>
-    </div>
-  </div>
-
-  <div id="exportView">
-    <div class="back-row">
-      <button class="btn btn-outline" onclick="showListView()">← กลับหน้าหลัก</button>
-      <h1 style="margin:0;">📥 Export ข้อมูลเป็น Excel</h1>
-    </div>
-    <div class="msg err" id="exportMsgErr"></div>
-
-    <div class="card">
-      <div class="field">
-        <label>เลือกกิจกรรมที่ต้องการ Export</label>
-        <div class="export-filter-box">
-          <div class="export-filter-header">
-            <span class="export-filter-title">🔎 ตัวกรองกิจกรรม</span>
-            <button class="btn btn-danger" type="button" onclick="resetExportFilters()">✕ ล้างตัวกรอง</button>
-          </div>
-          <div class="field">
-            <label style="margin-bottom:3px;">ค้นหาชื่อกิจกรรม</label>
-            <input type="text" id="exportSearch" placeholder="พิมพ์ชื่อกิจกรรม..." oninput="filterExportEvents()">
-          </div>
-          <div class="export-filter-daterow">
-            <div class="field">
-              <label style="margin-bottom:3px;">ตั้งแต่วันที่</label>
-              <input type="date" id="exportStartDate" onchange="filterExportEvents()">
-            </div>
-            <div class="field">
-              <label style="margin-bottom:3px;">ถึงวันที่</label>
-              <input type="date" id="exportEndDate" onchange="filterExportEvents()">
-            </div>
-          </div>
-          <div class="field">
-            <label style="margin-bottom:3px;">ชื่อผู้สร้างกิจกรรม</label>
-            <input type="text" id="exportCreator" placeholder="พิมพ์ชื่อผู้สร้างกิจกรรม..." oninput="filterExportEvents()">
-          </div>
-        </div>
-        <label class="export-select-all">
-          <input type="checkbox" id="exportSelectAllFiltered" onchange="toggleSelectAllFiltered(this.checked)">
-          เลือกทั้งหมดที่กรองไว้ (Select All Filtered)
-        </label>
-        <div id="exportEventList" style="max-height:280px; overflow-y:auto; border:1px solid var(--line); border-radius:9px; padding:8px 12px; margin-top:8px;"></div>
-      </div>
-      <button class="btn" id="exportBtn" onclick="exportEventsToExcel()">📥 ดาวน์โหลด Excel</button>
-    </div>
-  </div>
-
-  <!-- 📋 Bulk Staff Import Modal -->
-  <div class="modal-overlay" id="importModalOverlay" onclick="if(event.target===this) closeImportModal()">
-    <div class="modal-box">
-      <div class="modal-head">
-        <h2>📋 นำเข้ารายชื่อ Staff จาก Excel</h2>
-        <button type="button" class="modal-close" onclick="closeImportModal()">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="field" style="margin-bottom:0;">
-          <label>วางข้อมูลที่คัดลอกจาก Excel (2 คอลัมน์: ชื่อ-นามสกุล และ แผนก)</label>
-          <textarea id="importRawText" placeholder="Navisa Thanasuttawong (Noinae)&#9;Marketing&#10;สมชาย ใจดี&#9;IT" oninput="handleImportRawInput()"></textarea>
-          <label class="import-header-toggle">
-            <input type="checkbox" id="importSkipHeader" onchange="parseImportPreview()">
-            แถวแรกเป็นหัวตาราง (เช่น "ชื่อ / แผนก") ให้ข้ามแถวนี้
-          </label>
-          <div class="hint">คัดลอกทั้ง 2 คอลัมน์จาก Excel/Google Sheets แล้ววางที่นี่ได้เลย ระบบจะแยกชื่อและแผนกให้อัตโนมัติ (คั่นด้วย Tab)</div>
-        </div>
-
-        <div class="import-preview-wrap" id="importPreviewWrap" style="display:none;">
-          <div class="import-preview-bar">
-            <span id="importPreviewCount"></span>
-            <button type="button" class="btn btn-small" onclick="addEmptyImportRow()">➕ เพิ่มแถวว่าง</button>
-          </div>
-          <div class="import-table-scroll">
-            <table class="import-table">
-              <thead>
-                <tr>
-                  <th style="width:30px;"><input type="checkbox" id="importSelectAll" checked onchange="toggleAllImportRows(this.checked)"></th>
-                  <th>ชื่อ-นามสกุล</th>
-                  <th>แผนก</th>
-                  <th style="width:34px;"></th>
-                </tr>
-              </thead>
-              <tbody id="importTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-        <div class="import-empty" id="importEmptyMsg" style="display:none;">ยังไม่พบข้อมูลที่แยกได้ ลองตรวจสอบว่าคัดลอกมาถูกคอลัมน์หรือไม่</div>
-      </div>
-      <div class="modal-foot">
-        <button type="button" class="btn btn-outline" onclick="closeImportModal()">ยกเลิก</button>
-        <button type="button" class="btn" id="importConfirmBtn" onclick="confirmImport()" disabled>➕ เพิ่มเข้ารายชื่อ</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 🔍 Image preview lightbox -->
-  <div class="lightbox-overlay" id="imgLightbox" onclick="closeImageLightbox()">
-    <button type="button" class="lightbox-close" onclick="closeImageLightbox(event)">✕</button>
-    <img id="imgLightboxImg" src="" alt="ตัวอย่างรูปภาพ" onclick="event.stopPropagation()">
-  </div>
-
-  <!-- 🚧 Exit confirmation modal (unsaved changes / files still processing) -->
-  <div class="exit-modal-overlay" id="exitModalOverlay">
-    <div class="exit-modal-box">
-      <div class="exit-modal-title" id="exitModalTitle"></div>
-      <div class="exit-modal-message" id="exitModalMessage"></div>
-      <div class="exit-modal-actions" id="exitModalActions"></div>
-    </div>
-  </div>
-</div>
-
+<div id="app"></div>
+<div id="drawerRoot"></div>
+<div id="modalRoot"></div>
+<div class="toast" id="toast" role="status"></div>
+<div class="lightbox" id="lightbox" onclick="if(event.target===this) closeLightbox()" role="dialog" aria-label="รูปขนาดเต็ม"><img alt=""><button type="button" onclick="closeLightbox()">ปิด ✕</button></div>
 <script>
-// ⚠️ ใส่ Web App URL ที่ได้จาก Google Apps Script ของคุณ
+/* =====================================================================
+   Event Expense Tracker — หน้า Admin (index.html)
+   ⚠️ ใส่ Web App URL ของ Google Apps Script ที่บรรทัด API_URL ด้านล่าง
+   ===================================================================== */
 const API_URL = 'https://script.google.com/macros/s/AKfycbwmrjHdnyF4r89xnA3w35zat7x5XWO7Y7c732kG7oy9RV6eQW75ykyjjrhZHAK0CIU/exec';
 
-function callApi(action, payload){
-  return fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action, payload })
-  }).then(res => res.json());
-}
+const h = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const fmt = n => (Number(n) || 0).toLocaleString('th-TH', { minimumFractionDigits:2, maximumFractionDigits:2 });
+const pad = n => String(n).padStart(2, '0');
+const isoD = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+const iso = off => { const d = new Date(); d.setDate(d.getDate() + off); return isoD(d); };
+const thDate = s => { if(!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' }); };
+const thDT = s => s ? thDate(s.split('T')[0]) + ' ' + (s.split('T')[1] || '') : '';
+const safeName = s => String(s || '').replace(/[\\/:*?"<>|]/g, '_');
+const ICON = {
+  clip: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" class="ic"><path d="M10.5 4.5 L5 10 a1.8 1.8 0 0 0 2.5 2.5 L13 7 a3.2 3.2 0 0 0 -4.5 -4.5 L3 8"></path></svg>',
+  reset: '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" class="ic"><path d="M2.5 3 V6.5 H6"></path><path d="M2.9 6.3 A5.5 5.5 0 1 1 3.4 10.6"></path></svg>'
+};
+const TYPE_LABELS = { BTS_GREEN:'BTS สายสีเขียว', BTS_GOLD:'BTS สายสีทอง', BTS_YELLOW:'MRT สายสีเหลือง', BTS_PINK:'MRT สายสีชมพู', MRT_BLUE:'MRT สีน้ำเงิน', MRT_PURPLE:'MRT สีม่วง',
+  SRT_RED:'SRT สีแดง', ARL:'Airport Rail Link', CAR:'รถยนต์ส่วนบุคคล', TAXI:'แท็กซี่', GRAB:'Grab/Lineman/Bolt', MOTORCYCLE:'รถจักรยานยนต์รับจ้าง', PARKING:'ค่าจอดรถ',
+  TOLL:'ค่าธรรมเนียมผ่านทางพิเศษ (ทางด่วน)', NO_CLAIM:'ไม่เบิกค่าเดินทาง', OTHER:'อื่นๆ' };
+const typeLabel = s => s.type === 'OTHER' && s.otherDescription ? `อื่นๆ (${s.otherDescription})` : (TYPE_LABELS[s.type] || s.type || '-');
 
-function formLinkFor(eventId){
-  // ชี้ไปยัง Vercel Domain ของคุณเสมอ
-  return window.location.origin + '/form.html?event=' + encodeURIComponent(eventId);
-}
-
-/* ===================================================================
-   🔍 IMAGE PREVIEW LIGHTBOX
-   Shared modal used to inspect any previously-uploaded image (travel
-   receipts, daily fuel-price receipts) at full size, without leaving
-   the Edit Event / Edit Claim view.
-=================================================================== */
-function openImageLightbox(src){
-  if(!src) return;
-  document.getElementById('imgLightboxImg').src = src;
-  document.getElementById('imgLightbox').classList.add('show');
-  document.body.style.overflow = 'hidden';
-}
-function closeImageLightbox(evt){
-  if(evt) evt.stopPropagation();
-  document.getElementById('imgLightbox').classList.remove('show');
-  document.getElementById('imgLightboxImg').src = '';
-  document.body.style.overflow = '';
-}
-
-/* ===================================================================
-   🚧 CUSTOM EXIT CONFIRMATION MODAL (Create/Edit Event)
-   Two variants:
-   - 'processing': a fuel-price receipt file is still being read — a hard
-     stop, single "เข้าใจแล้ว" button, no way to proceed from here.
-   - 'unsaved': the Create/Edit Event form has edits that were never
-     saved — asks the admin to confirm before actually leaving.
-=================================================================== */
-let _exitModalCancelCallback = null;
-
-function showExitModal(variant, onConfirm, onCancel){
-  const titleEl = document.getElementById('exitModalTitle');
-  const msgEl = document.getElementById('exitModalMessage');
-  const actionsEl = document.getElementById('exitModalActions');
-  actionsEl.innerHTML = '';
-  _exitModalCancelCallback = onCancel || null;
-
-  if(variant === 'processing'){
-    titleEl.textContent = '⏳ กำลังอัปโหลดไฟล์หลักฐาน...';
-    msgEl.textContent = 'ไฟล์หลักฐานของคุณกำลังถูกประมวลผลและอัปโหลดอยู่ กรุณารอให้ระบบประมวลผลเสร็จสิ้นก่อนออกจากหน้านี้';
-    const okBtn = document.createElement('button');
-    okBtn.type = 'button';
-    okBtn.className = 'btn';
-    okBtn.textContent = 'เข้าใจแล้ว';
-    okBtn.onclick = closeExitModal;
-    actionsEl.appendChild(okBtn);
-  } else { // 'unsaved'
-    titleEl.textContent = '⚠️ ยืนยันการออกจากหน้านี้?';
-    msgEl.textContent = 'คุณมีข้อมูลหรือรายการเบิกเงินที่ยังไม่ได้กดบันทึก หากออกจากหน้านี้ ข้อมูลทั้งหมดที่คุณกรอกไว้จะไม่ถูกบันทึก';
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'btn btn-outline';
-    cancelBtn.textContent = 'กรอกข้อมูลต่อ';
-    cancelBtn.onclick = function(){
-      closeExitModal();
-      if(typeof _exitModalCancelCallback === 'function') _exitModalCancelCallback();
-    };
-
-    const confirmBtn = document.createElement('button');
-    confirmBtn.type = 'button';
-    confirmBtn.className = 'btn btn-exit-danger';
-    confirmBtn.textContent = 'ยืนยันออกจากหน้า';
-    confirmBtn.onclick = function(){
-      closeExitModal();
-      if(typeof onConfirm === 'function') onConfirm();
-    };
-
-    actionsEl.appendChild(cancelBtn);
-    actionsEl.appendChild(confirmBtn);
+/* ---------- API ---------- */
+function adminKey(){ try{ return localStorage.getItem('eetAdminKey') || ''; }catch(e){ return ''; } }
+async function callApi(action, payload){
+  const res = await fetch(API_URL, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body: JSON.stringify({ action, payload: payload || {}, adminKey: adminKey() }) });
+  const data = await res.json();
+  if(data && data.code === 'UNAUTHORIZED'){
+    try{ localStorage.removeItem('eetAdminKey'); }catch(e){}
+    viewLogin('รหัส Admin ถูกเปลี่ยนหรือไม่ถูกต้อง กรุณาใส่รหัสใหม่');
+    throw new Error('UNAUTHORIZED');
   }
-
-  document.getElementById('exitModalOverlay').classList.add('show');
+  return data;
 }
 
-function closeExitModal(){
-  document.getElementById('exitModalOverlay').classList.remove('show');
+/* ---------- state ---------- */
+const UI = { q:'', filter:'all', rq:'', rfilter:'all', sel:new Set(), exportSel:new Set(), ex:{ q:'', from:'', to:'' }, form:null, openDays:{}, events:null, roster:null, drawer:null };
+
+/* ---------- toast & modal ---------- */
+let toastTimer = null;
+function toast(text, action, fn, ms){
+  const el = document.getElementById('toast');
+  el.innerHTML = `<span>${h(text)}</span>${action ? `<button type="button" id="toastAct">${h(action)}</button>` : ''}`;
+  el.classList.add('show');
+  if(action) document.getElementById('toastAct').onclick = () => { el.classList.remove('show'); fn && fn(); };
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), ms || 5000);
 }
-
-// Central guard for any internal "leave this view" action (the "← กลับ
-// หน้าหลัก" buttons on Create/Edit Event, and the browser back button —
-// see the popstate handler below). Files still processing takes priority
-// as a hard block; unsaved changes asks for confirmation; otherwise
-// proceeds immediately.
-function guardedExit(proceedFn, cancelFn){
-  if(isProcessingFiles){
-    showExitModal('processing');
-    return;
-  }
-  if(isFormDirty){
-    showExitModal('unsaved', proceedFn, cancelFn);
-    return;
-  }
-  proceedFn();
+function modal(html, wide){
+  document.getElementById('modalRoot').innerHTML = `<div class="modal-overlay"><div class="modal${wide ? ' wide' : ''}" role="dialog" aria-modal="true">${html}</div></div>`;
+  const first = document.querySelector('#modalRoot [data-autofocus], #modalRoot input, #modalRoot .btn-primary'); if(first) first.focus();
 }
-
-// Browser tab close / refresh — the one exit path a custom modal can
-// never intercept, so this uses the native beforeunload confirmation
-// instead. Fires if either guard condition is true.
-window.addEventListener('beforeunload', function(e){
-  if(isProcessingFiles || isFormDirty){
-    e.preventDefault();
-    e.returnValue = '';
-    return '';
-  }
-});
-
-// Browser back/forward button — the most common "internal navigation"
-// path someone would use to leave Create/Edit Event without clicking the
-// explicit "← กลับหน้าหลัก" button. A sentinel history entry lets the
-// first back-press fire popstate while control still stays with us, so
-// we can show the custom modal instead of silently letting the
-// navigation happen.
-let _allowNextPopstate = false;
-history.pushState({ formExitGuard: true }, '');
-window.addEventListener('popstate', function(){
-  if(_allowNextPopstate){ _allowNextPopstate = false; return; }
-  guardedExit(
-    function(){ _allowNextPopstate = true; history.back(); },
-    function(){ history.pushState({ formExitGuard: true }, ''); }
-  );
-});
-
-function showListView(){
-  document.getElementById('createView').style.display = 'none';
-  document.getElementById('editView').style.display = 'none';
-  document.getElementById('exportView').style.display = 'none';
-  document.getElementById('listView').style.display = 'block';
-}
-function showCreateView(){
-  document.getElementById('createMsgErr').style.display = 'none';
-  document.getElementById('listView').style.display = 'none';
-  document.getElementById('createView').style.display = 'block';
-  isFormDirty = false; // a freshly opened Create Event form has nothing unsaved yet
-}
-function showEditViewEl(){
-  document.getElementById('editMsgErr').style.display = 'none';
-  document.getElementById('listView').style.display = 'none';
-  document.getElementById('editView').style.display = 'block';
-}
-function showExportView(){
-  document.getElementById('exportMsgErr').style.display = 'none';
-  document.getElementById('exportSearch').value = '';
-  document.getElementById('exportStartDate').value = '';
-  document.getElementById('exportEndDate').value = '';
-  document.getElementById('exportCreator').value = '';
-  document.getElementById('exportSelectAllFiltered').checked = false;
-  renderExportEventList();
-  document.getElementById('listView').style.display = 'none';
-  document.getElementById('exportView').style.display = 'block';
-}
-
-function renderExportEventList(){
-  const list = document.getElementById('exportEventList');
-  if(allEvents.length===0){
-    list.innerHTML = '<div class="hint">ยังไม่มีกิจกรรมในระบบ</div>';
-    return;
-  }
-  list.innerHTML = allEvents.map(e=>`
-    <label class="export-event-row" data-event-name="${(e.eventName||'').replace(/"/g,'&quot;')}" data-start-date="${e.startDate||''}" data-end-date="${e.endDate||e.startDate||''}" data-creator="${(e.ownerName||'').replace(/"/g,'&quot;')}">
-      <input type="checkbox" class="export-check" value="${e.eventId}">
-      ${e.eventName} <span class="hint" style="margin:0;">(${e.startDate}${e.endDate && e.endDate!==e.startDate ? ' – '+e.endDate : ''} • ผู้สร้าง: ${e.ownerName||'-'})</span>
-    </label>`).join('');
-}
-
-// ---------- Date range overlap rule (inclusive) ----------
-// parseToIsoDateString: normalizes ANY date string this app might be
-// comparing — the backend's dd/MM/yyyy (dateStr() in code.gs), a possible
-// Buddhist-Era dd/MM/yyyy, or the browser's own YYYY-MM-DD from
-// <input type="date"> — into a single canonical YYYY-MM-DD string so plain
-// lexicographic <= / >= comparisons are actually correct. Without this, an
-// event stored as "09/08/2026" was being compared directly against a
-// filter value of "2026-08-01" and always losing, silently hiding real
-// August events. Reuses the same normalization already trusted for
-// pre-filling the edit form's <input type="date"> fields.
-const parseToIsoDateString = toISODate;
-
-// An event is visible if its own [evStart, evEnd] range overlaps the
-// user-chosen [filterStart, filterEnd] range:
-//   - if filterStart is set: evEnd   >= filterStart
-//   - if filterEnd   is set: evStart <= filterEnd
-//   - if both are set, BOTH conditions must hold
-// An empty filter bound means "no limit" on that side. Both the event
-// dates and the filter values are normalized to YYYY-MM-DD first, since
-// they can arrive in different formats (see parseToIsoDateString above).
-function eventOverlapsDateFilter(evStart, evEnd, filterStart, filterEnd){
-  const normFilterStart = parseToIsoDateString(filterStart);
-  const normFilterEnd = parseToIsoDateString(filterEnd);
-  const start = parseToIsoDateString(evStart) || '';
-  const end = parseToIsoDateString(evEnd) || start; // no end date recorded -> treat as a single-day event
-  if(normFilterStart && (!end || end < normFilterStart)) return false;
-  if(normFilterEnd && (!start || start > normFilterEnd)) return false;
-  return true;
-}
-
-// ---------- Client-side filtering for the Export event list ----------
-// Filters entirely in the browser (no extra backend calls): matches the
-// search box against the event title, checks whether the event's own date
-// range (startDate..endDate) overlaps the chosen Start/End filter range,
-// and matches the creator name — ALL active filters must match at once.
-// Rows that don't match are hidden (kept in the DOM so checked state
-// survives toggling filters back and forth), and the "select all filtered"
-// checkbox is reset since what counts as "filtered" just changed.
-function filterExportEvents(){
-  const term = (document.getElementById('exportSearch').value || '').trim().toLowerCase();
-  const filterStart = document.getElementById('exportStartDate').value || '';
-  const filterEnd = document.getElementById('exportEndDate').value || '';
-  const creatorTerm = (document.getElementById('exportCreator').value || '').trim().toLowerCase();
-
-  const rows = document.querySelectorAll('#exportEventList .export-event-row');
-  let visibleCount = 0;
-
-  rows.forEach(row=>{
-    const name = (row.dataset.eventName || '').toLowerCase();
-    const evStart = row.dataset.startDate || '';
-    const evEnd = row.dataset.endDate || evStart;
-    const creator = (row.dataset.creator || '').toLowerCase();
-
-    const matchesSearch = !term || name.includes(term);
-    const matchesDate = eventOverlapsDateFilter(evStart, evEnd, filterStart, filterEnd);
-    const matchesCreator = !creatorTerm || creator.includes(creatorTerm);
-
-    const visible = matchesSearch && matchesDate && matchesCreator;
-    row.style.display = visible ? 'flex' : 'none';
-    if(visible) visibleCount++;
-  });
-
-  const emptyNoticeId = 'exportFilterEmptyNotice';
-  let notice = document.getElementById(emptyNoticeId);
-  if(visibleCount===0 && allEvents.length>0){
-    if(!notice){
-      notice = document.createElement('div');
-      notice.id = emptyNoticeId;
-      notice.className = 'export-empty-filtered';
-      notice.textContent = 'ไม่พบกิจกรรมที่ตรงกับตัวกรอง';
-      document.getElementById('exportEventList').appendChild(notice);
-    }
-  } else if(notice){
-    notice.remove();
-  }
-
-  // What's "select all" even means just changed (different set of rows is
-  // now visible) — uncheck it rather than leave a stale, possibly-wrong
-  // checked state.
-  document.getElementById('exportSelectAllFiltered').checked = false;
-}
-
-function resetExportFilters(){
-  document.getElementById('exportSearch').value = '';
-  document.getElementById('exportStartDate').value = '';
-  document.getElementById('exportEndDate').value = '';
-  document.getElementById('exportCreator').value = '';
-  filterExportEvents();
-}
-
-// Checks (or unchecks) only the checkboxes belonging to currently VISIBLE
-// (i.e. not filtered-out) rows — rows hidden by the current search/date
-// filter are left exactly as they were.
-function toggleSelectAllFiltered(checked){
-  document.querySelectorAll('#exportEventList .export-event-row').forEach(row=>{
-    if(row.style.display === 'none') return;
-    const cb = row.querySelector('.export-check');
-    if(cb) cb.checked = checked;
+function closeModal(){ document.getElementById('modalRoot').innerHTML = ''; }
+function confirmBox({ title, text, ok, cancel, danger }){
+  return new Promise(res => {
+    modal(`<h2>${title}</h2><p style="margin:0">${text}</p><div class="modal-actions"><button type="button" class="btn btn-ghost" id="cNo">${cancel || 'ยกเลิก'}</button><button type="button" class="btn ${danger ? 'btn-danger-solid' : 'btn-primary'}" id="cYes" data-autofocus>${ok}</button></div>`);
+    document.getElementById('cNo').onclick = () => { closeModal(); res(false); };
+    document.getElementById('cYes').onclick = () => { closeModal(); res(true); };
   });
 }
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape') return;
+  if(document.getElementById('modalRoot').innerHTML){ const no = document.getElementById('cNo') || document.querySelector('#modalRoot [data-close]'); no ? no.click() : closeModal(); }
+  else if(document.getElementById('drawerRoot').innerHTML) closeDrawer();
+  else if(document.getElementById('lightbox').classList.contains('show')) closeLightbox();
+});
+async function copyText(t){
+  try{ await navigator.clipboard.writeText(t); }
+  catch(e){ const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+}
+function openLightbox(src){ const lb = document.getElementById('lightbox'); lb.querySelector('img').src = src; lb.classList.add('show'); }
+function closeLightbox(){ document.getElementById('lightbox').classList.remove('show'); }
 
-let allEvents = [];
-let rosterCache = {};
+/* ---------- shell & routing ---------- */
+function shell(content, nav){
+  return `<header class="topbar"><div class="topbar-in"><a class="brand" href="#events"><span class="brand-mark" aria-hidden="true"></span>Event Expense Tracker <small>· Admin</small></a>
+    <nav class="nav" aria-label="เมนู"><a href="#events" class="${nav === 'events' ? 'on' : ''}">กิจกรรมทั้งหมด</a><a href="#export" class="${nav === 'export' ? 'on' : ''}">Export Excel</a><a href="#" onclick="logout(); return false;">ออกจากหน้า Admin</a></nav></div></header>
+    <main>${content}</main>`;
+}
+function setApp(html){ document.getElementById('app').innerHTML = html; }
+function logout(){ try{ localStorage.removeItem('eetAdminKey'); }catch(e){} viewLogin(); }
+function loadFailHtml(what){
+  return `<section class="card" style="text-align:center;padding:48px 24px;align-items:center"><b style="font-size:18px">โหลด${what}ไม่สำเร็จ</b><span class="muted">อินเทอร์เน็ตหลุด หรือระบบไม่ตอบสนอง ข้อมูลในระบบไม่ได้หาย</span><button type="button" class="btn btn-primary" onclick="route()">ลองโหลดอีกครั้ง</button></section>`;
+}
+async function route(){
+  closeDrawer(true);
+  if(!adminKey()) return viewLogin();
+  const r = (location.hash || '#events').slice(1);
+  try{
+    if(r === 'new') return await viewForm(null);
+    if(r.startsWith('edit-')) return await viewForm(r.slice(5));
+    if(r.startsWith('event-')) return await viewEvent(r.slice(6));
+    if(r === 'export') return await viewExport();
+    return await viewEvents();
+  }catch(err){ if(String(err && err.message) !== 'UNAUTHORIZED') console.error(err); }
+}
+window.addEventListener('hashchange', route);
 
-/* ===================================================================
-   🚧 UNSAVED-CHANGES / IN-PROGRESS-UPLOAD EXIT GUARD (Create/Edit Event)
-   isFormDirty: true once the admin has actually edited something in the
-   Create or Edit Event view (typed a field, changed dates, added/removed
-   a fuel-price receipt, etc.) — reset to false whenever one of those
-   views is freshly opened, and after a successful save, so navigating
-   away right after saving never triggers a warning.
-   isProcessingFiles: true only while a just-picked fuel-price receipt
-   file is actively being read client-side (handleFuelReceiptFile).
-=================================================================== */
-let isFormDirty = false;
-let isProcessingFiles = false;
-function markFormDirty(){ isFormDirty = true; }
-
-/* ===================================================================
-   ⛽ DYNAMIC DAILY FUEL PRICE + RECEIPT INPUTS
-   Renders one price+receipt row per day in the event's date range, for
-   both the Create and Edit event forms. State is kept in a plain object
-   keyed by ISO date ('YYYY-MM-DD') so it survives adding/removing days
-   at the edges of the range without losing anything already typed.
-=================================================================== */
-let createFuelPrices = {}; // date -> { price, receipt: null | {base64,fileName,mimeType,isExisting?,existingUrl?} }
-let editFuelPrices = {};
-
-// Extra "buffer" dates the admin has manually added, BEFORE the mandatory
-// event start date (e.g. a travel day before the event officially begins).
-// These are optional and can be removed; they never replace or hide any of
-// the mandatory event-date rows below.
-let createBufferDates = [];
-let editBufferDates = [];
-
-function fuelStateFor(mode){ return mode === 'create' ? createFuelPrices : editFuelPrices; }
-function bufferDatesFor(mode){ return mode === 'create' ? createBufferDates : editBufferDates; }
-function setBufferDatesFor(mode, arr){ if(mode === 'create') createBufferDates = arr; else editBufferDates = arr; }
-
-// Formats a Date object as a LOCAL calendar date string (YYYY-MM-DD),
-// using getFullYear/getMonth/getDate rather than toISOString(). This
-// matters because toISOString() converts to UTC first — in a UTC+ timezone
-// (e.g. Thailand, UTC+7), local midnight on "Aug 24" becomes "Aug 23,
-// 17:00 UTC", so .toISOString().slice(0,10) silently produced the WRONG
-// day (one day too early). Every date the fuel-price baseline works with
-// is a local calendar date, never a UTC timestamp, so it must always be
-// formatted this way.
-function localISODate(d){
-  if(!(d instanceof Date) || isNaN(d)) return '';
-  const y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
-  return `${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+/* ---------- A1 passcode ---------- */
+function viewLogin(msg){
+  setApp(`<header class="topbar"><div class="topbar-in"><span class="brand"><span class="brand-mark" aria-hidden="true"></span>Event Expense Tracker <small>· Admin</small></span></div></header>
+    <main><section class="card login"><h1 style="font-size:24px">เข้าสู่หน้า Admin</h1><p class="muted" style="margin:0">ใส่รหัส Admin ครั้งเดียว เบราว์เซอร์นี้จะจำไว้ให้</p>
+      <div class="fld"><label for="pw">รหัส Admin <span class="req">*</span></label><input id="pw" type="password" class="${msg ? 'invalid' : ''}" onkeydown="if(event.key==='Enter') login()">${msg ? `<span class="fld-err" role="alert">${h(msg)}</span>` : ''}</div>
+      <button type="button" class="btn btn-primary" id="loginBtn" onclick="login()">เข้าสู่ระบบ</button>
+      <p class="hint" style="margin:0">ไม่รู้รหัส? ติดต่อผู้ดูแลระบบ · พนักงานไม่ต้องใช้รหัส ใช้ลิงก์ฟอร์มได้เลย</p></section></main>`);
+  document.getElementById('pw').focus();
+}
+async function login(){
+  const v = document.getElementById('pw').value.trim();
+  if(!v) return viewLogin('กรุณาใส่รหัส');
+  const btn = document.getElementById('loginBtn'); btn.disabled = true; btn.textContent = 'กำลังตรวจสอบ…';
+  try{ localStorage.setItem('eetAdminKey', v); }catch(e){}
+  try{
+    const res = await callApi('verifyAdmin', {});
+    if(res && res.ok) return route();
+    viewLogin('ตรวจสอบรหัสไม่สำเร็จ ลองใหม่อีกครั้ง');
+  }catch(err){
+    if(String(err && err.message) === 'UNAUTHORIZED') viewLogin('รหัสไม่ถูกต้อง ลองใหม่อีกครั้ง');
+    else { try{ localStorage.removeItem('eetAdminKey'); }catch(e){} viewLogin('เชื่อมต่อระบบไม่ได้ ลองใหม่อีกครั้ง'); }
+  }
 }
 
-// Builds the inclusive list of ISO dates between start and end (end
-// defaults to start for single-day events). This is the MANDATORY
-// baseline — every one of these dates always gets a fuel-price row,
-// with no way to remove it, so the event's exact date range (e.g.
-// Aug 24–26) is always represented by default.
-function dateRangeArray(start, end){
-  if(!start) return [];
-  const s = new Date(start + 'T00:00:00');
-  if(isNaN(s)) return [];
-  const e = end ? new Date(end + 'T00:00:00') : s;
-  const endD = isNaN(e) ? s : e;
+/* ---------- A2 events list ---------- */
+const eventsHead = () => `<div class="row between" style="align-items:flex-end"><div><h1>กิจกรรมทั้งหมด</h1></div>
+  <div class="row"><a class="btn" href="#export">Export Excel หลายกิจกรรม</a><a class="btn btn-primary" href="#new">+ สร้างกิจกรรม</a></div></div>`;
+async function loadEvents(force){
+  if(UI.events && !force) return UI.events;
+  const res = await callApi('listAllEvents', {});
+  if(!res || !res.ok) throw new Error(res && res.error || 'load');
+  UI.events = res.events.map(e => ({ id:e.eventId, name:e.eventName, owner:e.ownerName, venue:e.venue, start:e.startDate, end:e.endDate, closeAt:e.closeAt || '', isClosed:!!e.isClosed,
+    n:e.staffCount || 0, sent:e.submittedCount || 0, total:e.totalAmount || 0, formLink:e.formLink }));
+  return UI.events;
+}
+async function viewEvents(){
+  setApp(shell(eventsHead() + `<div class="card">${[1,2,3].map(() => '<div class="row"><div class="grow" style="display:flex;flex-direction:column;gap:8px"><div class="skel" style="width:60%;height:16px"></div><div class="skel" style="width:40%"></div></div><div class="skel" style="width:90px;height:20px"></div></div>').join('<hr style="border:none;border-top:1px solid #EEEEEA;margin:6px 0">')}</div>`, 'events'));
+  try{ await loadEvents(true); }
+  catch(err){ if(String(err.message) === 'UNAUTHORIZED') throw err; setApp(shell(eventsHead() + loadFailHtml('รายการกิจกรรม'), 'events')); return; }
+  if(!UI.events.length){
+    setApp(shell(eventsHead() + `<section class="card dashed" style="text-align:center;padding:48px 24px;align-items:center"><b style="font-size:20px">ยังไม่มีกิจกรรม</b><span class="muted">สร้างกิจกรรมแรก ใส่รายชื่อพนักงาน แล้วระบบจะให้ลิงก์ฟอร์มไปส่งต่อ</span><a class="btn btn-primary" href="#new">+ สร้างกิจกรรมแรก</a></section>`, 'events'));
+    return;
+  }
+  renderEventList();
+}
+function renderEventList(){
+  const all = UI.events;
+  const counts = { all: all.length, open: all.filter(e => e.sent < e.n).length, done: all.filter(e => e.n && e.sent === e.n).length };
+  const q = UI.q.trim();
+  const list = all.filter(ev => (!q || (ev.name + ev.venue + ev.owner).includes(q)) && (UI.filter === 'all' || (UI.filter === 'open' ? ev.sent < ev.n : ev.n && ev.sent === ev.n)));
+  const chip = (k, l) => `<button type="button" class="chip${UI.filter === k ? ' on' : ''}" onclick="UI.filter='${k}'; renderEventList()">${l} ${counts[k]}</button>`;
+  const cards = list.map(ev => {
+    const deadline = ev.closeAt ? (ev.isClosed ? '<span class="chip">ปิดรับแล้ว</span>' : `<span class="chip">ปิดรับ ${h(thDT(ev.closeAt))}</span>`) : '';
+    const state = ev.n && ev.sent === ev.n ? '<span class="chip ok">ครบแล้ว</span>' : `<span class="chip warn">ยังไม่ส่ง ${ev.n - ev.sent}</span>`;
+    return `<article class="ev-card"><div class="ev-main"><a class="ev-name" href="#event-${h(ev.id)}">${h(ev.name)}</a>
+      <span class="muted small">${h(thDate(ev.start))}${ev.end && ev.end !== ev.start ? '–' + h(thDate(ev.end)) : ''} · ${h(ev.venue || '-')} · ผู้สร้าง: ${h(ev.owner)}</span>
+      <span class="row" style="gap:8px;margin-top:2px"><b class="small">ส่งแล้ว ${ev.sent}/${ev.n} คน</b>${state}${deadline}</span></div>
+      <div class="ev-amt"><div class="muted small">ยอดรวม</div><b>฿ ${fmt(ev.total)}</b></div>
+      <div class="row" style="gap:8px"><button type="button" class="btn" onclick="copyLink('${h(ev.id)}')">คัดลอกลิงก์ฟอร์ม</button><a class="btn" href="#event-${h(ev.id)}">เปิด</a></div></article>`;
+  }).join('') || `<section class="card dashed" style="text-align:center"><span class="muted">ไม่พบกิจกรรมที่ตรงกับการค้นหา</span></section>`;
+  setApp(shell(eventsHead() + `<div class="row" style="align-items:flex-end"><div class="fld" style="flex:1 1 320px"><label for="q">ค้นหากิจกรรม</label><input id="q" value="${h(UI.q)}" placeholder="พิมพ์ชื่อกิจกรรม สถานที่ หรือผู้สร้าง" oninput="UI.q=this.value; renderEventList(); const i=document.getElementById('q'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);"></div>
+    <div class="row" style="gap:8px">${chip('all','ทั้งหมด')}${chip('open','ยังส่งไม่ครบ')}${chip('done','ส่งครบแล้ว')}</div></div>` + cards, 'events'));
+}
+async function copyLink(id){
+  const ev = (UI.events || []).find(e => e.id === id) || (UI.roster && UI.roster.event.eventId === id ? { formLink: UI.roster.formLink } : null);
+  await copyText(ev && ev.formLink ? ev.formLink : location.origin + '/form.html?event=' + encodeURIComponent(id));
+  toast('คัดลอกลิงก์ฟอร์มแล้ว ส่งให้พนักงานได้เลย');
+}
+
+/* ---------- A3 create / edit ---------- */
+function daysBetween(a, b){
+  if(!a) return [];
+  const out = []; const d = new Date(a + 'T00:00:00'); const end = new Date((b || a) + 'T00:00:00');
+  for(let i = 0; i < 31 && d <= end; i++){ out.push(isoD(d)); d.setDate(d.getDate() + 1); }
+  return out;
+}
+function draftKey(id){ return 'eetAdminDraft:' + (id || 'new'); }
+async function viewForm(id){
+  setApp(shell(`<div class="card">${[1,2,3].map(() => '<div class="skel" style="width:70%;height:18px"></div><div class="skel" style="height:44px"></div>').join('')}</div>`, 'events'));
+  let f = { id:null, name:'', owner:'', venue:'', start:'', end:'', closeDate:'', closeTime:'18:00', staff:[], fuel:[], bulk:'', errors:{}, submitted:{} };
+  if(id){
+    let info, roster;
+    try{ [info, roster] = await Promise.all([callApi('getEventInfo', { eventId:id }), callApi('getEventRoster', { eventId:id })]); }
+    catch(err){ if(String(err.message) === 'UNAUTHORIZED') throw err; setApp(shell(loadFailHtml('ข้อมูลกิจกรรม'), 'events')); return; }
+    if(!info || !info.ok){ setApp(shell(loadFailHtml('ข้อมูลกิจกรรม'), 'events')); return; }
+    const ev = info.event;
+    const evDays = daysBetween(ev.startDate, ev.endDate);
+    f = { id, name:ev.eventName, owner:ev.ownerName, venue:ev.venue || '', start:ev.startDate, end:ev.endDate && ev.endDate !== ev.startDate ? ev.endDate : '',
+          closeDate:(ev.closeAt || '').split('T')[0], closeTime:(ev.closeAt || '').split('T')[1] || '18:00',
+          staff:(info.employees || []).map(e => ({ name:e.name, dept:e.department || '' })),
+          fuel:(info.fuelPrices || []).map(fp => ({ date:fp.date, price: fp.price || '', receiptUrl: fp.receiptUrl || '', preview:null, upload:null, extra: !evDays.includes(fp.date) })),
+          bulk:'', errors:{}, submitted:{} };
+    ((roster && roster.roster) || []).forEach(r => { if(r.submitted) f.submitted[r.employeeName] = r.totalAmount; });
+  }
+  UI.form = f;
+  syncFuelDays();
+  let draft = null; try{ draft = JSON.parse(localStorage.getItem(draftKey(id)) || 'null'); }catch(e){}
+  f.draftFound = draft;
+  renderForm();
+  if(id && f.fuel.some(x => x.receiptUrl)){
+    try{
+      const r = await callApi('getFuelReceiptImages', { eventId:id });
+      if(r && r.ok && UI.form === f){
+        (r.fuelPrices || []).forEach(fp => { const row = f.fuel.find(x => x.date === fp.date); if(row && fp.receiptImage && fp.receiptImage.base64) row.preview = fp.receiptImage.base64; });
+        renderForm();
+      }
+    }catch(e){}
+  }
+}
+function syncFuelDays(){
+  const f = UI.form, days = daysBetween(f.start, f.end);
+  const keep = f.fuel.filter(x => x.extra || days.includes(x.date));
+  days.forEach(d => { if(!keep.find(x => x.date === d)) keep.push({ date:d, price:'', receiptUrl:'', preview:null, upload:null, extra:false }); });
+  keep.forEach(x => { if(!x.extra && !days.includes(x.date)) x.extra = true; });
+  f.fuel = keep.sort((a, b) => (a.date || '0').localeCompare(b.date || '0'));
+}
+function draftData(){ const f = UI.form; return { ...f, draftFound:null, errors:{}, savedAt: Date.now() }; }
+function saveDraft(){
+  const f = UI.form; if(!f) return;
+  let ok = true;
+  try{ localStorage.setItem(draftKey(f.id), JSON.stringify(draftData())); }
+  catch(e){ // receipts too big for the draft: keep everything else
+    try{ const d = draftData(); d.fuel = d.fuel.map(x => ({ ...x, upload:null, preview: x.upload ? null : x.preview })); localStorage.setItem(draftKey(f.id), JSON.stringify(d)); }catch(e2){ ok = false; }
+  }
+  const el = document.getElementById('draftStat');
+  if(el && ok) el.innerHTML = `<b class="draft-ok">บันทึกร่างในเครื่องนี้แล้ว ${pad(new Date().getHours())}:${pad(new Date().getMinutes())}</b> <span class="muted">· ยังไม่ได้บันทึกเข้าระบบ</span>`;
+}
+let draftT = null;
+function touch(){ clearTimeout(draftT); draftT = setTimeout(saveDraft, 700); }
+function setF(k, v){ UI.form[k] = v; if(UI.form.errors[k]) delete UI.form.errors[k]; if(k === 'start' || k === 'end'){ syncFuelDays(); renderForm(); } touch(); }
+
+function renderForm(){
+  const f = UI.form, E = f.errors || {};
+  const draftBanner = f.draftFound ? `<div class="banner info"><div><b>พบร่างที่ยังไม่ได้บันทึก</b><br>บันทึกไว้ในเบราว์เซอร์นี้เมื่อ ${h(new Date(f.draftFound.savedAt).toLocaleString('th-TH'))} · “${h(f.draftFound.name || 'ไม่มีชื่อ')}” · รายชื่อ ${(f.draftFound.staff || []).length} คน</div>
+     <div class="row" style="gap:8px"><button type="button" class="btn btn-primary" onclick="useDraft()">ใช้ร่างนี้ทำต่อ</button><button type="button" class="btn" onclick="discardDraft()">เริ่มใหม่ (ทิ้งร่าง)</button></div></div>` : '';
+  const errList = Object.values(E);
+  const errBanner = errList.length ? `<div class="banner err" role="alert"><b>บันทึกไม่ได้ — กรอกไม่ครบ ${errList.length} จุด</b><ul>${errList.map(t => `<li>${h(t)}</li>`).join('')}</ul></div>` : '';
+  const fld = (k, label, attrs, req, hint) => `<div class="fld${attrs.includes('span2') ? ' span2' : ''}"><label for="f_${k}">${label}${req ? ' <span class="req">*</span>' : ''}</label>
+    <input id="f_${k}" ${attrs.replace('span2','')} value="${h(f[k])}" class="${E[k] ? 'invalid' : ''}" oninput="setF('${k}', this.value)" ${/type="(date|time)"/.test(attrs) ? `onchange="setF('${k}', this.value)"` : ''}>${E[k] ? `<span class="fld-err">${h(E[k])}</span>` : (hint ? `<span class="hint">${hint}</span>` : '')}</div>`;
+  const lines = f.bulk.split('\n').filter(l => l.trim()).length;
+  const staffRows = f.staff.map((s, i) => `<tr class="${s.isNew ? 'is-new' : ''}"><td>${h(s.name)}</td>
+      <td>${s.dept || !s.isNew ? `<input aria-label="แผนกของ ${h(s.name)}" value="${h(s.dept)}" oninput="UI.form.staff[${i}].dept=this.value; touch()">` : `<input aria-label="แผนกของ ${h(s.name)}" class="warn" placeholder="กรอกแผนก" oninput="UI.form.staff[${i}].dept=this.value; touch()">`}</td>
+      <td>${f.submitted[s.name] != null ? '<span class="chip ok">ส่งแล้ว</span>' : (s.isNew ? `<span class="chip ${s.dept ? 'ok' : 'warn'}">เพิ่งเพิ่ม${s.dept ? '' : ' · ยังไม่มีแผนก'}</span>` : '')}</td>
+      <td class="num"><button type="button" class="btn btn-danger btn-sm" onclick="removeStaff(${i})">ลบ</button></td></tr>`).join('');
+  const fuelRows = f.fuel.map((x, i) => {
+    const img = x.upload ? x.upload.base64 : x.preview;
+    const has = x.upload || x.receiptUrl;
+    return `<tr><td>${x.extra
+        ? `<div class="row" style="gap:8px;flex-wrap:nowrap"><input type="date" id="fuelDate${i}" aria-label="วันที่ของวันสำรอง" value="${h(x.date)}" class="${!x.date && E.fuel ? 'invalid' : ''}" style="max-width:190px" onchange="setFuelDate(${i}, this.value)"><span class="chip warn">วันสำรอง</span></div>`
+        : `${h(thDate(x.date))} <span class="chip">วันงาน</span>`}</td>
+      <td><input aria-label="ราคาน้ำมัน ${h(x.date)}" type="number" step="0.01" min="0" value="${h(x.price)}" placeholder="0.00" style="max-width:140px" oninput="UI.form.fuel[${i}].price=this.value; touch()"></td>
+      <td><div class="row" style="gap:8px">${img ? `<button type="button" class="thumb" style="padding:0;cursor:zoom-in" onclick="openLightbox(UI.form.fuel[${i}].upload ? UI.form.fuel[${i}].upload.base64 : UI.form.fuel[${i}].preview)"><img src="${img}" alt="ใบเสร็จ"></button>` : (has ? '<span class="thumb">กำลังโหลด…</span>' : '')}
+        <label class="file-btn">${ICON.clip}${has ? 'เปลี่ยน' : 'อัปโหลดใบเสร็จ'}<input type="file" accept="image/*" onchange="fuelReceipt(${i}, this)"></label>
+        ${has ? `<button type="button" class="btn btn-danger btn-sm" onclick="UI.form.fuel[${i}].upload=null; UI.form.fuel[${i}].receiptUrl=''; UI.form.fuel[${i}].preview=null; renderForm(); touch()">ลบใบเสร็จ</button>` : ''}
+        ${x.extra ? `<button type="button" class="btn btn-danger btn-sm" onclick="UI.form.fuel.splice(${i},1); renderForm(); touch()">ลบวันนี้</button>` : ''}</div></td></tr>`;
+  }).join('');
+  setApp(shell(`<div class="crumb"><a href="#events">กิจกรรมทั้งหมด</a> / ${f.id ? 'แก้ไขกิจกรรม' : 'สร้างกิจกรรม'}</div>
+    <div><h1>${f.id ? 'แก้ไขกิจกรรม' : 'สร้างกิจกรรม'}</h1><p class="sub">กรอก 3 ส่วน แล้วกดบันทึก ระบบจะสร้างลิงก์ฟอร์มให้ทันที</p></div>
+    ${draftBanner}${errBanner}
+    <section class="card"><h2>1 · ข้อมูลกิจกรรม</h2><div class="grid g2">
+      ${fld('name','ชื่อกิจกรรม','span2 placeholder="เช่น สัมมนาการตลาดประจำปี"',true)}
+      ${fld('owner','ผู้สร้าง / ผู้รับผิดชอบ','placeholder="ชื่อของคุณ"',true)}${fld('venue','สถานที่','placeholder="เช่น ไบเทค บางนา"',false)}
+      ${fld('start','วันที่เริ่ม','type="date"',true)}${fld('end','วันที่สิ้นสุด','type="date"',false,'เว้นว่างถ้าเป็นงานวันเดียว')}
+      ${fld('closeDate','ปิดรับเอกสารวันที่','type="date"',false,'ไม่บังคับ · เว้นว่าง = เปิดรับตลอด')}${fld('closeTime','เวลาปิดรับ','type="time"',false)}
+    </div></section>
+    <section class="card"><h2>2 · รายชื่อพนักงานที่เบิกได้ <span class="muted" style="font-weight:400;font-size:15px">(${f.staff.length} คน)</span></h2>
+      <div class="fld" style="background:#FAFAF8;border:1px solid var(--line);border-radius:12px;padding:16px">
+        <label for="bulk">เพิ่มรายชื่อ <span class="muted" style="font-weight:400">— 1 คนต่อ 1 บรรทัด (กด Enter ขึ้นคนใหม่)</span></label>
+        <textarea id="bulk" placeholder="สมชาย ใจดี, ฝ่ายการตลาด&#10;วิภาวดี ศรีสุข, ฝ่ายบัญชี" oninput="UI.form.bulk=this.value; const n=this.value.split('\\n').filter(l=>l.trim()).length; const b=document.getElementById('bulkBtn'); b.textContent='ตรวจสอบและเพิ่ม '+n+' แถว'; b.disabled=!n; this.classList.remove('invalid'); touch()">${h(f.bulk)}</textarea>
+        <div class="row between"><span class="hint">ใส่แผนกต่อท้ายด้วย , ได้ · วางจาก Excel (ชื่อ | แผนก) ลงช่องนี้ได้เลย · มีหัวตารางติดมาก็ได้</span>
+        <button type="button" class="btn btn-primary" id="bulkBtn" onclick="previewBulk()" ${lines ? '' : 'disabled'}>ตรวจสอบและเพิ่ม ${lines} แถว</button></div>
+      </div>
+      ${f.staff.length ? `<div class="table-wrap"><table><thead><tr><th>ชื่อ-นามสกุล</th><th>แผนก/ฝ่าย</th><th>สถานะ</th><th></th></tr></thead><tbody>${staffRows}</tbody></table></div>` : '<p class="muted" style="margin:0">ยังไม่มีรายชื่อ — พิมพ์หรือวางรายชื่อในช่องด้านบน</p>'}
+    </section>
+    <section class="card"><div class="row between"><h2>3 · ราคาน้ำมันแก๊สโซฮอล์ 91 รายวัน</h2><button type="button" class="btn" onclick="addFuelDay()">+ เพิ่มวันสำรอง</button></div>
+      <p class="hint" style="margin:0">ใช้คำนวณค่ารถยนต์ส่วนตัว: (ระยะทาง ÷ 15) × ราคาของวันนั้น · วันงานสร้างให้อัตโนมัติจากวันที่ด้านบน</p>
+      ${f.fuel.length ? `<div class="table-wrap"><table><thead><tr><th>วันที่</th><th>ราคา (บาท/ลิตร)</th><th>ใบเสร็จ</th></tr></thead><tbody>${fuelRows}</tbody></table></div>` : '<p class="muted" style="margin:0">เลือกวันที่เริ่มกิจกรรมก่อน แล้วรายการวันจะขึ้นมา</p>'}
+    </section>
+    <div class="savebar"><span id="draftStat" class="muted">ยังไม่มีการแก้ไข</span><div class="row" style="gap:8px"><a class="btn btn-ghost" href="${f.id ? '#event-' + h(f.id) : '#events'}">ยกเลิก</a><button type="button" class="btn btn-primary" id="saveBtn" onclick="saveEvent()">บันทึกกิจกรรม</button></div></div>`, 'events'));
+}
+function useDraft(){ const d = UI.form.draftFound; UI.form = { ...d, submitted: UI.form.submitted, draftFound:null, errors:{} }; renderForm(); saveDraft(); }
+async function discardDraft(){
+  const ok = await confirmBox({ title:'เริ่มใหม่และทิ้งร่างนี้?', text:'ข้อมูลในร่าง (ชื่อกิจกรรม, รายชื่อ, ราคาน้ำมัน) จะหายและกู้คืนไม่ได้', ok:'ทิ้งร่าง', cancel:'กลับไปใช้ร่าง', danger:true });
+  if(!ok) return;
+  try{ localStorage.removeItem(draftKey(UI.form.id)); }catch(e){}
+  UI.form.draftFound = null; renderForm();
+}
+function addFuelDay(){
+  UI.form.fuel.unshift({ date:'', price:'', receiptUrl:'', preview:null, upload:null, extra:true });
+  renderForm(); touch();
+  const el = document.getElementById('fuelDate0');
+  if(el){ el.focus(); try{ el.showPicker && el.showPicker(); }catch(e){} }
+}
+function setFuelDate(i, v){
+  const f = UI.form, row = f.fuel[i];
+  if(v && f.fuel.some((x, k) => k !== i && x.date === v)){ toast(`วันที่ ${thDate(v)} มีในตารางแล้ว — เลือกวันอื่น`, null, null, 5000); renderForm(); return; }
+  row.date = v; if(f.errors) delete f.errors.fuel;
+  f.fuel.sort((a, b) => (a.date || '0').localeCompare(b.date || '0'));
+  renderForm(); touch();
+}
+function shrinkImage(file){
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => { const img = new Image(); img.onload = () => {
+      const MAX = 1600; let w = img.naturalWidth, hh = img.naturalHeight;
+      if(w > MAX || hh > MAX){ const k = MAX / Math.max(w, hh); w = Math.round(w * k); hh = Math.round(hh * k); }
+      const c = document.createElement('canvas'); c.width = w; c.height = hh; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, hh); x.drawImage(img, 0, 0, w, hh);
+      res(c.toDataURL('image/jpeg', 0.85)); }; img.onerror = () => rej(new Error('ไฟล์นี้เปิดเป็นรูปไม่ได้ (เช่น HEIC) — บันทึกเป็น JPG/PNG แล้วแนบใหม่')); img.src = r.result; };
+    r.onerror = () => rej(new Error('อ่านไฟล์ไม่สำเร็จ')); r.readAsDataURL(file);
+  });
+}
+async function fuelReceipt(i, input){
+  const file = input.files && input.files[0]; if(!file) return;
+  try{ const b64 = await shrinkImage(file); UI.form.fuel[i].upload = { base64:b64, fileName: file.name.replace(/\.\w+$/, '') + '.jpg', mimeType:'image/jpeg' }; renderForm(); touch(); }
+  catch(err){ toast(err.message, null, null, 7000); }
+}
+async function removeStaff(i){
+  const f = UI.form, s = f.staff[i];
+  if(f.submitted[s.name] != null){
+    const ok = await confirmBox({ title:`ลบ “${h(s.name)}” ออกจากรายชื่อ?`, text:`คนนี้ส่งใบเบิกแล้ว (฿ ${fmt(f.submitted[s.name])}) ถ้าลบ ใบเบิกจะไม่แสดงในรายละเอียดกิจกรรมและไม่อยู่ในไฟล์ Export · ไฟล์ใน Drive ยังอยู่ · มีผลหลังกด “บันทึกกิจกรรม”`, ok:'ลบออก', danger:true });
+    if(!ok) return;
+    f.staff.splice(i, 1); renderForm(); touch(); return;
+  }
+  f.staff.splice(i, 1); renderForm(); touch();
+  toast(`ลบ “${s.name}” แล้ว`, 'เลิกทำ', () => { f.staff.splice(i, 0, s); renderForm(); touch(); });
+}
+
+/* bulk names → preview */
+function parseBulk(text){
+  const existing = new Set(UI.form.staff.map(s => s.name));
+  const seen = new Set();
+  return text.split('\n').map(l => l.replace(/\r/g, '')).filter(l => l.trim()).map((line, idx) => {
+    let parts;
+    if(line.includes('\t')) parts = line.split('\t');
+    else if(line.includes(',')) parts = line.split(',');
+    else { const m = line.match(/^(.*\S)\s+-\s+(.+)$/); parts = m ? [m[1], m[2]] : [line]; } // old format: "ชื่อ - แผนก"
+    const name = (parts[0] || '').trim().replace(/\s+/g, ' '), dept = (parts.slice(1).join(' ') || '').trim();
+    let status = 'new', checked = true;
+    if(idx === 0 && /ชื่อ|name/i.test(name) && (/แผนก|dep/i.test(dept) || !dept)) { status = 'header'; checked = false; }
+    else if(!name || /^[\d.,\s฿-]+$/.test(name)) { status = 'bad'; checked = false; }
+    else if(existing.has(name)) { status = 'exists'; checked = false; }
+    else if(seen.has(name)) { status = 'dup'; checked = false; }
+    else if(!dept) status = 'nodept';
+    if(status === 'new' || status === 'nodept') seen.add(name);
+    return { name, dept, status, checked };
+  });
+}
+function previewBulk(){
+  const rows = parseBulk(UI.form.bulk);
+  if(!rows.some(r => r.status === 'new' || r.status === 'nodept')){
+    const box = document.getElementById('bulk'); box.classList.add('invalid');
+    toast(rows.some(r => r.status === 'exists') ? 'ทุกชื่อในข้อความนี้มีอยู่ในรายชื่อแล้ว' : 'ไม่พบรายชื่อในข้อความนี้ — แต่ละบรรทัดต้องขึ้นต้นด้วยชื่อ ลองพิมพ์ใหม่ หรือคัดลอกคอลัมน์ชื่อและแผนกจาก Excel', null, null, 7000);
+    return;
+  }
+  UI.bulkRows = rows; renderPreview();
+}
+function renderPreview(){
+  const rows = UI.bulkRows;
+  const lab = { new:['ใหม่','ok'], nodept:['ไม่มีแผนก','err'], exists:['มีในกิจกรรมแล้ว — ข้าม','warn'], dup:['ซ้ำในที่วาง — ข้าม','warn'], header:['หัวตาราง — ข้าม',''], bad:['อ่านไม่ได้ — ข้าม',''] };
+  const add = rows.filter(r => r.checked).length, skip = rows.length - add;
+  modal(`<div class="row between"><h2>ตรวจสอบรายชื่อก่อนเพิ่ม</h2><button type="button" class="btn btn-ghost" data-close onclick="closeModal()">ปิด ✕</button></div>
+    <div class="steps"><span class="step done"><i>✓</i>พิมพ์ / วางรายชื่อ</span><span class="muted">—</span><span class="step on"><i>2</i>ตรวจสอบก่อนเพิ่ม</span></div>
+    <div class="row" style="gap:8px"><span class="chip ok">จะเพิ่ม ${add} คน</span><span class="chip">ข้าม ${skip} แถว</span>${rows.some(r => r.checked && !r.dept) ? `<span class="chip err">ไม่มีแผนก ${rows.filter(r => r.checked && !r.dept).length}</span>` : ''}</div>
+    <div class="table-wrap"><table><thead><tr><th><span class="sr-only">เพิ่ม</span></th><th>ชื่อ-นามสกุล</th><th>แผนก</th><th>สถานะ</th></tr></thead><tbody>
+    ${rows.map((r, i) => `<tr><td><input type="checkbox" aria-label="เพิ่ม ${h(r.name)}" ${r.checked ? 'checked' : ''} onchange="UI.bulkRows[${i}].checked=this.checked; renderPreview()"></td>
+      <td><input aria-label="ชื่อ" value="${h(r.name)}" oninput="UI.bulkRows[${i}].name=this.value"></td>
+      <td><input aria-label="แผนก" value="${h(r.dept)}" placeholder="กรอกแผนก" class="${r.checked && !r.dept ? 'warn' : ''}" oninput="UI.bulkRows[${i}].dept=this.value"></td>
+      <td><span class="chip ${lab[r.status][1]}">${lab[r.status][0]}</span></td></tr>`).join('')}</tbody></table></div>
+    <div class="modal-actions" style="justify-content:space-between;border-top:1px solid var(--line);padding-top:16px"><button type="button" class="btn btn-ghost" onclick="closeModal()">ย้อนกลับไปแก้ข้อความ</button>
+      <div class="row"><span class="hint">ไม่มีแผนกก็เพิ่มได้ กรอกทีหลังในตาราง</span><button type="button" class="btn btn-primary" onclick="confirmBulk()" ${add ? '' : 'disabled'}>เพิ่ม ${add} คน</button></div></div>`, true);
+}
+function confirmBulk(){
+  const have = new Set(UI.form.staff.map(s => s.name));
+  const rows = UI.bulkRows.filter(r => r.checked && r.name.trim() && !have.has(r.name.trim()));
+  rows.forEach(r => UI.form.staff.push({ name:r.name.trim(), dept:r.dept.trim(), isNew:true }));
+  const skipped = UI.bulkRows.length - rows.length;
+  UI.form.bulk = ''; closeModal(); renderForm(); touch();
+  const noDept = rows.filter(r => !r.dept.trim()).length;
+  toast(`เพิ่ม ${rows.length} คนแล้ว${skipped ? ` · ข้าม ${skipped} แถว` : ''}${noDept ? ` · ${noDept} คนยังไม่มีแผนก กรอกในตารางได้เลย` : ''}`, null, null, 6000);
+}
+function fuelPayload(fuel){
+  return fuel.filter(x => x.date).map(x => ({ date:x.date, price:Number(x.price) || 0,
+    receipt: x.upload ? x.upload : (x.receiptUrl ? { isExisting:true, existingUrl:x.receiptUrl } : null) }));
+}
+async function saveEvent(){
+  const f = UI.form, E = {};
+  if(!f.name.trim()) E.name = 'ชื่อกิจกรรม: กรุณากรอก';
+  if(!f.owner.trim()) E.owner = 'ผู้สร้าง / ผู้รับผิดชอบ: กรุณากรอก';
+  if(!f.start) E.start = 'วันที่เริ่ม: กรุณาเลือก';
+  if(f.end && f.start && f.end < f.start) E.end = 'วันที่สิ้นสุด: ต้องไม่ก่อนวันที่เริ่ม';
+  if(f.fuel.some(x => x.extra && !x.date)) E.fuel = 'ราคาน้ำมัน: วันสำรองยังไม่ได้เลือกวันที่ (หรือกด “ลบวันนี้”)';
+  if(f.bulk.trim()) E.bulk = 'รายชื่อ: มีข้อความในช่อง “เพิ่มรายชื่อ” ที่ยังไม่ได้กด “ตรวจสอบและเพิ่ม”';
+  f.errors = E;
+  if(Object.keys(E).length){ renderForm(); window.scrollTo({ top:0, behavior:'smooth' }); return; }
+  const btn = document.getElementById('saveBtn'); btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
+  const payload = { eventName:f.name.trim(), ownerName:f.owner.trim(), venue:f.venue.trim(), startDate:f.start, endDate:f.end || f.start,
+    closeAt: f.closeDate ? f.closeDate + 'T' + (f.closeTime || '18:00') : '',
+    employees: f.staff.filter(s => s.name.trim()).map(s => ({ name:s.name.trim(), department:(s.dept || '').trim() })), fuelPrices: fuelPayload(f.fuel) };
+  try{
+    const res = f.id ? await callApi('updateEvent', { eventId:f.id, ...payload }) : await callApi('createEvent', payload);
+    if(!res || !res.ok){ btn.disabled = false; btn.textContent = 'บันทึกกิจกรรม'; toast('บันทึกไม่สำเร็จ: ' + (res && res.error || 'ไม่ทราบสาเหตุ'), null, null, 8000); return; }
+    try{ localStorage.removeItem(draftKey(f.id)); }catch(e){}
+    clearTimeout(draftT); UI.form = null; UI.events = null;
+    const id = f.id || res.eventId;
+    location.hash = '#event-' + id;
+    toast(f.id ? 'บันทึกการแก้ไขแล้ว' : 'สร้างกิจกรรมแล้ว · คัดลอกลิงก์ฟอร์มส่งให้พนักงานได้เลย', null, null, 6000);
+  }catch(err){
+    if(String(err.message) === 'UNAUTHORIZED') return;
+    btn.disabled = false; btn.textContent = 'บันทึกกิจกรรม';
+    toast('บันทึกไม่สำเร็จ: เชื่อมต่อระบบไม่ได้ ข้อมูลที่กรอกยังอยู่ (และเก็บเป็นร่างแล้ว) ลองกดบันทึกอีกครั้ง', null, null, 9000);
+  }
+}
+
+/* ---------- A4 event detail / roster ---------- */
+async function viewEvent(id){
+  UI.sel = new Set(); UI.rq = ''; UI.rfilter = 'all';
+  setApp(shell(`<div class="card">${[1,2,3,4].map(() => '<div class="row"><div class="skel" style="width:24px"></div><div class="skel" style="width:30%"></div><div class="skel" style="width:20%"></div><div class="skel" style="width:15%"></div></div>').join('')}</div>`, 'events'));
+  let res;
+  try{ res = await callApi('getEventRoster', { eventId:id }); }
+  catch(err){ if(String(err.message) === 'UNAUTHORIZED') throw err; setApp(shell(loadFailHtml('ข้อมูลกิจกรรม'), 'events')); return; }
+  if(!res || !res.ok){ setApp(shell(`<section class="card"><b>${h(res && res.error || 'ไม่พบกิจกรรมนี้')}</b><a href="#events">กลับไปหน้ารายการกิจกรรม</a></section>`, 'events')); return; }
+  const listEv = (UI.events || []).find(e => e.id === id);
+  UI.roster = { id, event: res.event, rows: res.roster || [], formLink: (listEv && listEv.formLink) || location.origin + '/form.html?event=' + encodeURIComponent(id), fuel:null };
+  renderEvent();
+}
+function rosterStats(){ const rows = UI.roster.rows; const sent = rows.filter(r => r.submitted); return { n: rows.length, sent: sent.length, total: sent.reduce((t, r) => t + (Number(r.totalAmount) || 0), 0) }; }
+function renderEvent(){
+  const R = UI.roster, ev = R.event, s = rosterStats(), closed = !!ev.isClosed;
+  const q = UI.rq.trim();
+  const shown = R.rows.map((r, i) => ({ r, i })).filter(({ r }) => (!q || (r.employeeName + (r.department || '')).includes(q)) && (UI.rfilter === 'all' || (UI.rfilter === 'sent' ? r.submitted : !r.submitted)));
+  const chip = (k, l, n) => `<button type="button" class="chip${UI.rfilter === k ? ' on' : ''}" onclick="UI.rfilter='${k}'; renderEvent()">${l} ${n}</button>`;
+  const sel = [...UI.sel];
+  const status = r => !r.submitted ? '<span class="chip">ยังไม่ส่ง</span>' : (/กู้คืน/.test(r.status || '') ? '<span class="chip acc">กู้คืนเวอร์ชันเก่า</span>' : (r.editCount ? `<span class="chip warn">แก้ไขแล้ว ${r.editCount} ครั้ง</span>` : '<span class="chip ok">ส่งแล้ว</span>'));
+  const table = shown.map(({ r, i }) => `<tr><td><input type="checkbox" aria-label="เลือก ${h(r.employeeName)}" ${UI.sel.has(i) ? 'checked' : ''} ${r.submitted ? '' : 'disabled'} onchange="this.checked ? UI.sel.add(${i}) : UI.sel.delete(${i}); renderEvent()"></td>
+      <td><b>${h(r.employeeName)}</b></td><td>${h(r.department || '')}</td><td>${status(r)}</td><td>${r.submitted ? (r.claimedDays || 0) + ' วัน' : '-'}</td><td class="num">${r.submitted ? '฿ ' + fmt(r.totalAmount) : '-'}</td><td>${r.submitted ? h(r.updatedAt) : '-'}</td>
+      <td>${r.submitted ? `${r.pdfUrl ? `<a href="${h(r.pdfUrl)}" target="_blank" rel="noopener">PDF</a>` : '<span class="muted">PDF</span>'} · <a href="#" onclick="downloadOneDocx(${i}); return false;">Word</a>` : '-'}</td>
+      <td class="num">${r.submitted ? `<button type="button" class="btn btn-sm" onclick="openDrawer(${i})">ดู</button>` : ''}</td></tr>`).join('');
+  const nobody = s.sent === 0;
+  setApp(shell(`<div class="crumb"><a href="#events">กิจกรรมทั้งหมด</a> / รายละเอียดกิจกรรม</div>
+    <div class="row between" style="align-items:flex-start"><div style="flex:1 1 400px;min-width:0"><h1>${h(ev.eventName)}</h1>
+      <p class="sub">${h(thDate(ev.startDate))}${ev.endDate && ev.endDate !== ev.startDate ? '–' + h(thDate(ev.endDate)) : ''} · ${h(ev.venue || '-')} · ผู้สร้าง: ${h(ev.ownerName)}${ev.closeAt ? (closed ? ' · <b>ปิดรับแล้วเมื่อ ' + h(thDT(ev.closeAt)) + '</b>' : ' · ส่งได้ถึง ' + h(thDT(ev.closeAt))) : ''}</p></div>
+      <div class="row" style="gap:8px">${closed ? `<button type="button" class="btn btn-primary" onclick="extendDeadline()">ขยายเวลา</button>` : ''}<a class="btn" href="#edit-${h(R.id)}">แก้ไขกิจกรรม</a></div></div>
+    ${nobody ? '<div class="banner info"><div><b>ยังไม่มีใครส่งใบเบิก</b> — คัดลอกลิงก์ด้านล่างส่งให้พนักงาน</div></div>' : ''}
+    <section class="card" style="padding:20px"><div class="row" style="align-items:flex-end"><div class="fld" style="flex:1 1 420px"><label for="lnk">ลิงก์ฟอร์มสำหรับพนักงาน</label><input id="lnk" readonly value="${h(R.formLink)}" style="background:var(--bg)"></div><button type="button" class="btn btn-primary" onclick="copyLink('${h(R.id)}')">คัดลอกลิงก์</button></div></section>
+    <div class="grid g4"><div class="stat"><span class="muted small">พนักงานทั้งหมด</span><b>${s.n} คน</b></div><div class="stat"><span class="muted small">ส่งแล้ว</span><b>${s.sent} คน</b></div>
+      <div class="stat"><span class="muted small">ยังไม่ส่ง</span><b>${s.n - s.sent} คน</b><span class="muted small">กดตัวกรอง “ยังไม่ส่ง” เพื่อดูรายชื่อ</span></div><div class="stat"><span class="muted small">ยอดรวมที่ส่งแล้ว</span><b>฿ ${fmt(s.total)}</b></div></div>
+    <div class="row" style="align-items:flex-end"><div class="fld" style="flex:1 1 280px"><label for="rq">ค้นหาพนักงาน</label><input id="rq" value="${h(UI.rq)}" placeholder="ชื่อหรือแผนก" oninput="UI.rq=this.value; renderEvent(); const i=document.getElementById('rq'); i.focus(); i.setSelectionRange(i.value.length,i.value.length);"></div>
+      <div class="row" style="gap:8px">${chip('all','ทั้งหมด', s.n)}${chip('sent','ส่งแล้ว', s.sent)}${chip('not','ยังไม่ส่ง', s.n - s.sent)}</div></div>
+    ${sel.length ? `<div class="selbar"><b>เลือกแล้ว ${sel.length} คน</b><div class="row" style="gap:8px"><button type="button" class="btn" onclick="zipPdfs(this)">ดาวน์โหลด PDF (ZIP)</button><button type="button" class="btn" onclick="zipDocx(this)">ดาวน์โหลด Word (ZIP)</button><button type="button" class="btn" onclick="copyExcelSummary(this)">คัดลอกสรุปสำหรับ Excel</button><button type="button" class="btn" onclick="exportSelectedExcel()">Export Excel</button></div></div>`
+      : (nobody ? '' : '<p class="hint" style="margin:0">ติ๊กเลือกคนที่ส่งแล้ว เพื่อดาวน์โหลดเอกสารเป็น ZIP, คัดลอกสรุป หรือ Export Excel</p>')}
+    <div class="table-wrap"><table style="min-width:1000px"><thead><tr><th><input type="checkbox" aria-label="เลือกทุกคนที่ส่งแล้ว" ${sel.length && sel.length === s.sent ? 'checked' : ''} ${s.sent ? '' : 'disabled'} onchange="UI.sel = this.checked ? new Set(UI.roster.rows.map((r,i)=>r.submitted?i:-1).filter(i=>i>-1)) : new Set(); renderEvent()"></th>
+      <th>ชื่อ-นามสกุล</th><th>แผนก</th><th>สถานะ</th><th>วันที่เบิก</th><th class="num">ยอดเงิน</th><th>อัปเดตล่าสุด</th><th>ไฟล์</th><th></th></tr></thead>
+      <tbody>${table || `<tr><td colspan="9" class="muted" style="text-align:center;padding:24px">${R.rows.length ? 'ไม่พบพนักงานที่ตรงกับการค้นหา' : 'กิจกรรมนี้ยังไม่มีรายชื่อพนักงาน — กด “แก้ไขกิจกรรม” เพื่อเพิ่ม'}</td></tr>`}</tbody></table></div>
+    ${s.sent ? `<p class="hint" style="margin:0">ยอดรวมทั้งสิ้นของคนที่ส่งแล้ว: <b>฿ ${fmt(s.total)}</b></p>` : ''}`, 'events'));
+}
+function selectedRows(){ return [...UI.sel].map(i => UI.roster.rows[i]).filter(r => r && r.submitted); }
+async function runPool(items, limit, fn){
+  let next = 0; const out = new Array(items.length);
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => { while(next < items.length){ const k = next++; out[k] = await fn(items[k], k); } }));
+  return out;
+}
+function zipNames(){ const evName = safeName(UI.roster.event.eventName || UI.roster.id); const used = new Set();
+  return { evName, name(r, ext){ const base = `เอกสารเบิกค่าเดินทาง_${evName} - ${safeName(r.employeeName)}${r.department ? ' ' + safeName(r.department) : ''}`; let fn = base + ext, n = 2; while(used.has(fn)){ fn = `${base} (${n})${ext}`; n++; } used.add(fn); return fn; } }; }
+async function zipPdfs(btn){
+  const rows = selectedRows().filter(r => r.pdfUrl); if(!rows.length){ toast('คนที่เลือกยังไม่มีไฟล์ PDF'); return; }
+  const orig = btn.textContent; btn.disabled = true; let done = 0;
+  const zip = new JSZip(), N = zipNames(), missing = [];
+  try{
+    await runPool(rows, 3, async r => {
+      try{ const res = await callApi('getFileBase64', { url:r.pdfUrl }); if(res && res.ok && res.base64) zip.file(N.name(r, '.pdf'), res.base64.split(',')[1] || res.base64, { base64:true }); else missing.push(r.employeeName); }
+      catch(e){ if(String(e.message) === 'UNAUTHORIZED') throw e; missing.push(r.employeeName); }
+      btn.textContent = `กำลังสร้าง ZIP (${++done}/${rows.length})…`;
+    });
+    if(missing.length === rows.length){ toast('ดาวน์โหลดไม่สำเร็จ — ไม่พบไฟล์ PDF ของคนที่เลือก', null, null, 8000); return; }
+    saveAs(await zip.generateAsync({ type:'blob' }), `เอกสารเบิกค่าเดินทาง_${N.evName}.zip`);
+    if(missing.length) toast(`ดาวน์โหลด ZIP ได้ ${rows.length - missing.length} จาก ${rows.length} ไฟล์ — ไม่พบไฟล์ของ: ${missing.join(', ')} (ให้คนนั้นส่งใหม่จากลิงก์เดิม)`, null, null, 12000);
+    else toast(`ดาวน์โหลด ZIP แล้ว (${rows.length} ไฟล์)`);
+  }finally{ btn.disabled = false; btn.textContent = orig; }
+}
+
+/* ---------- Word (.docx) built from the stored trip data ---------- */
+async function eventFuelPrices(){
+  if(UI.roster.fuel) return UI.roster.fuel;
+  try{ const r = await callApi('getEventInfo', { eventId: UI.roster.id }); UI.roster.fuel = (r && r.ok && r.fuelPrices) || []; }catch(e){ UI.roster.fuel = []; }
+  return UI.roster.fuel;
+}
+function fuelPriceFor(dateStr, fp){
+  if(!dateStr || !fp || !fp.length) return 0;
+  const exact = fp.find(x => x.date === dateStr); if(exact) return Number(exact.price) || 0;
+  const prior = fp.filter(x => x.date < dateStr).sort((a, b) => b.date.localeCompare(a.date)); if(prior.length) return Number(prior[0].price) || 0;
+  return Number(fp.slice().sort((a, b) => a.date.localeCompare(b.date))[0].price) || 0;
+}
+function segDetail(seg, dateStr, fp){
+  if(seg.type === 'PARKING' || seg.type === 'NO_CLAIM' || (seg.type === 'TOLL' && !seg.origin && !seg.destination)) return '-';
+  if(seg.type === 'CAR') return `จาก ${seg.origin || '-'} - ไป ${seg.destination || '-'} ${(Number(seg.distanceKm) || 0).toFixed(2)}/15x${fuelPriceFor(dateStr, fp).toFixed(2)} = ${(Number(seg.amount) || 0).toFixed(2)} บาท`;
+  return `${seg.origin || '-'} → ${seg.destination || '-'}`;
+}
+function tripsToDays(trips){
   const days = [];
-  const cur = new Date(s);
-  let guard = 0;
-  while(cur <= endD && guard < 366){ // 366-day guard against bad ranges
-    days.push(localISODate(cur));
-    cur.setDate(cur.getDate() + 1);
-    guard++;
-  }
+  (trips || []).forEach(t => { if(!t) return; let d = days.find(x => x.date === t.date); if(!d){ d = { date:t.date, out:[], ret:[] }; days.push(d); } (t.label === 'ขากลับ' ? d.ret : d.out).push(...(t.segments || [])); });
   return days;
 }
-
-// Adds one optional "buffer" date immediately before the earliest date
-// currently shown (mandatory or already-added buffer) — lets the admin
-// cover travel that happened the day(s) before the event officially
-// started. Buffer dates are never mandatory and can be removed again.
-function addBufferFuelDate(mode){
-  const startId = mode === 'create' ? 'startDate' : 'editStartDate';
-  const endId = mode === 'create' ? 'endDate' : 'editEndDate';
-  const start = document.getElementById(startId) ? document.getElementById(startId).value : '';
-  if(!start){
-    showToast('⚠️ กรุณาเลือกวันที่เริ่ม Event ก่อน', 'err');
-    return;
-  }
-  markFormDirty();
-  const end = document.getElementById(endId) ? document.getElementById(endId).value : '';
-  const mandatoryDays = dateRangeArray(start, end);
-  const buffers = bufferDatesFor(mode);
-  const earliest = [...buffers, ...mandatoryDays].sort()[0] || start;
-  const d = new Date(earliest + 'T00:00:00');
-  d.setDate(d.getDate() - 1);
-  const newDate = localISODate(d);
-  if(buffers.includes(newDate) || mandatoryDays.includes(newDate)) return;
-  buffers.push(newDate);
-  setBufferDatesFor(mode, buffers);
-  renderFuelInputs(mode);
-}
-
-// Removes a previously-added optional buffer date (mandatory event-date
-// rows have no remove control and can never be deleted this way).
-function removeBufferFuelDate(mode, date){
-  markFormDirty();
-  setBufferDatesFor(mode, bufferDatesFor(mode).filter(d => d !== date));
-  const stateObj = fuelStateFor(mode);
-  delete stateObj[date];
-  renderFuelInputs(mode);
-}
-
-function renderFuelInputs(mode){
-  const startId = mode === 'create' ? 'startDate' : 'editStartDate';
-  const endId = mode === 'create' ? 'endDate' : 'editEndDate';
-  const containerId = mode === 'create' ? 'fuelPricesContainer' : 'editFuelPricesContainer';
-  const container = document.getElementById(containerId);
-  if(!container) return;
-
-  const startEl = document.getElementById(startId);
-  const endEl = document.getElementById(endId);
-  const start = startEl ? startEl.value : '';
-  const end = endEl ? endEl.value : '';
-  const mandatoryDays = dateRangeArray(start, end); // MUST always be generated, by default, from the Event Start Date
-  const stateObj = fuelStateFor(mode);
-
-  if(mandatoryDays.length === 0){
-    container.innerHTML = '<div class="hint">กรุณาเลือกวันที่เริ่ม Event ก่อน เพื่อกรอกราคาน้ำมันรายวัน</div>';
-    return;
-  }
-
-  // De-duplicate buffer dates against the mandatory range (a buffer date
-  // that now falls inside the event's own range is redundant).
-  const mandatorySet = new Set(mandatoryDays);
-  const buffers = bufferDatesFor(mode).filter(d => !mandatorySet.has(d));
-  setBufferDatesFor(mode, buffers);
-  const allDays = [...buffers, ...mandatoryDays].sort();
-
-  const addBufferBtnHtml = `<button type="button" class="btn btn-small btn-outline btn-add-buffer" onclick="addBufferFuelDate('${mode}')">+ เพิ่มวันเดินทางก่อนหน้า</button>`;
-
-  container.innerHTML = addBufferBtnHtml + allDays.map((d, idx) => {
-    const isBuffer = !mandatorySet.has(d);
-    const entry = stateObj[d] || { price:'', receipt:null };
-    let thumb = '';
-    if(entry.receipt && entry.receipt.isExisting && !entry.receipt.base64){
-      // Existing receipt confirmed on file (existingUrl is already set —
-      // see loadFuelPricesIntoState) but its Base64 image hasn't arrived
-      // from the background fetch yet.
-      thumb = `<div class="fuel-preview-list"><span class="fuel-thumb fuel-thumb-loading"><span class="existing-badge">เดิม</span><span class="thumb-loading-text">กำลังโหลดรูป...</span><span class="rm" onclick="removeFuelReceipt('${mode}','${d}')">✕</span></span></div>`;
-    } else if(entry.receipt){
-      thumb = `<div class="fuel-preview-list"><span class="fuel-thumb">${entry.receipt.isExisting ? '<span class="existing-badge">เดิม</span>' : ''}<img src="${entry.receipt.base64}"><button type="button" class="view-img-link" onclick="openImageLightbox('${entry.receipt.base64}')">🔍 ดูรูปภาพ</button><span class="rm" onclick="removeFuelReceipt('${mode}','${d}')">✕</span></span></div>`;
-    }
-    return `
-      <div class="fuel-day-row">
-        <div class="fuel-day-label">วันที่ ${idx+1}: ${d}
-          ${isBuffer ? '<span class="fuel-day-buffer">บัฟเฟอร์ / ไม่บังคับ</span>' : '<span class="fuel-day-mandatory">วัน Event / จำเป็น</span>'}
-          ${isBuffer ? `<span class="fuel-day-remove" title="ลบวันบัฟเฟอร์นี้" onclick="removeBufferFuelDate('${mode}','${d}')">✕</span>` : ''}
-        </div>
-        <div class="grid2">
-          <div>
-            <label>ราคาแก๊สโซฮอล์ 91 (บาท/ลิตร)</label>
-            <input type="number" step="0.01" min="0" placeholder="เช่น 34.57" value="${entry.price !== '' && entry.price !== undefined ? entry.price : ''}"
-              oninput="updateFuelPriceValue('${mode}','${d}',this.value)"
-              onblur="this.value = this.value ? parseFloat(this.value).toFixed(2) : ''; updateFuelPriceValue('${mode}','${d}',this.value);">
-          </div>
-          <div>
-            <label>แนบใบเสร็จราคาน้ำมันวันนี้</label>
-            <input type="file" accept="image/*" onchange="handleFuelReceiptFile(event,'${mode}','${d}')">
-          </div>
-        </div>
-        ${thumb}
-      </div>`;
-  }).join('');
-}
-
-function updateFuelPriceValue(mode, date, value){
-  markFormDirty();
-  const stateObj = fuelStateFor(mode);
-  if(!stateObj[date]) stateObj[date] = { price:'', receipt:null };
-  stateObj[date].price = value;
-}
-
-function handleFuelReceiptFile(evt, mode, date){
-  const file = evt.target.files && evt.target.files[0];
-  if(!file) return;
-  markFormDirty();
-  isProcessingFiles = true;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const stateObj = fuelStateFor(mode);
-    if(!stateObj[date]) stateObj[date] = { price:'', receipt:null };
-    stateObj[date].receipt = { base64: e.target.result, fileName: file.name, mimeType: file.type };
-    isProcessingFiles = false;
-    renderFuelInputs(mode);
-  };
-  reader.onerror = () => { isProcessingFiles = false; };
-  reader.readAsDataURL(file);
-}
-
-function removeFuelReceipt(mode, date){
-  markFormDirty();
-  const stateObj = fuelStateFor(mode);
-  if(stateObj[date]) stateObj[date].receipt = null;
-  renderFuelInputs(mode);
-}
-
-// Converts the in-memory fuel-price state into the payload shape the
-// backend expects — existing (unchanged) receipts are sent back as
-// {isExisting:true, existingUrl} so the server never re-uploads or drops
-// them; freshly picked files are sent as raw Base64.
-function collectFuelPricesPayload(mode){
-  const stateObj = fuelStateFor(mode);
-  return Object.keys(stateObj).map(date => {
-    const entry = stateObj[date];
-    let receipt = null;
-    if(entry.receipt){
-      receipt = entry.receipt.isExisting
-        ? { isExisting:true, existingUrl: entry.receipt.existingUrl }
-        : { base64: entry.receipt.base64, fileName: entry.receipt.fileName, mimeType: entry.receipt.mimeType };
-    }
-    return { date, price: parseFloat(entry.price) || 0, receipt };
-  }).filter(fp => fp.price > 0 || fp.receipt);
-}
-
-// Loads previously-saved fuel prices/receipts (from apiGetEventInfo) back
-// into the edit form's state so nothing already uploaded is ever lost —
-// each receipt is tagged isExisting + existingUrl so a re-save keeps
-// pointing at the same Drive file instead of re-uploading a duplicate.
-function loadFuelPricesIntoState(mode, fuelPrices){
-  const stateObj = fuelStateFor(mode);
-  Object.keys(stateObj).forEach(k => delete stateObj[k]);
-  (fuelPrices || []).forEach(fp => {
-    if(!fp || !fp.date) return;
-    // IMPORTANT: build the "existing receipt" placeholder from
-    // fp.receiptUrl immediately, regardless of whether fp.receiptImage
-    // (the actual Base64 photo) has loaded yet — apiGetEventInfo returns
-    // receiptUrl right away but always sends receiptImage:null (images
-    // load separately, in the background — see the getFuelReceiptImages
-    // call in editEvent()). If this only set `receipt` once the image
-    // arrived, saving the event before that background fetch finished
-    // would send receipt:null for every date, and the backend would
-    // silently WIPE the previously-saved receiptUrl from the database —
-    // even though the file was still sitting in Drive the whole time.
-    stateObj[fp.date] = {
-      price: fp.price || '',
-      receipt: fp.receiptUrl
-        ? {
-            isExisting: true,
-            existingUrl: fp.receiptUrl,
-            base64: (fp.receiptImage && fp.receiptImage.base64) || null,
-            fileName: (fp.receiptImage && fp.receiptImage.fileName) || '',
-            mimeType: (fp.receiptImage && fp.receiptImage.mimeType) || ''
-          }
-        : null
-    };
-  });
-
-  // Any previously-saved date that falls OUTSIDE the event's mandatory
-  // start–end range is a buffer date someone added earlier — restore it
-  // as a buffer row so it keeps showing (and isn't silently lost) instead
-  // of only ever re-appearing if it happens to fall in the mandatory range.
-  const startId = mode === 'create' ? 'startDate' : 'editStartDate';
-  const endId = mode === 'create' ? 'endDate' : 'editEndDate';
-  const start = document.getElementById(startId) ? document.getElementById(startId).value : '';
-  const end = document.getElementById(endId) ? document.getElementById(endId).value : '';
-  const mandatorySet = new Set(dateRangeArray(start, end));
-  const restoredBuffers = (fuelPrices || [])
-    .map(fp => fp && fp.date)
-    .filter(d => d && !mandatorySet.has(d));
-  setBufferDatesFor(mode, restoredBuffers);
-}
-
-// ---------- Date helper: normalize any date value coming back from the
-// backend (ISO string, dd/MM/yyyy, dd/MM/yyyy in Buddhist Era, or a raw
-// Date-like value) into the strict YYYY-MM-DD format required by
-// <input type="date">. Without this, dates simply fail to bind and the
-// field renders blank when opening the edit form. ----------
-function toISODate(value){
-  if(value === null || value === undefined) return '';
-  if(value instanceof Date){
-    if(isNaN(value)) return '';
-    const y = value.getFullYear(), m = value.getMonth()+1, d = value.getDate();
-    return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-  }
-
-  const str = String(value).trim();
-  if(!str) return '';
-
-  // Already ISO (YYYY-MM-DD, optionally with a time component)
-  let m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if(m) return `${m[1]}-${m[2]}-${m[3]}`;
-
-  // dd/MM/yyyy (what the backend's dateStr() produces, possibly in the
-  // Buddhist Era if the Sheet/script locale is set to Thai)
-  m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if(m){
-    const day = parseInt(m[1], 10);
-    const month = parseInt(m[2], 10);
-    let year = parseInt(m[3], 10);
-    // Buddhist Era years run ~543 years ahead of Gregorian; normalize back
-    if(year > 2400) year -= 543;
-    return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-  }
-
-  // Fallback: let the Date constructor try, then re-format safely
-  const parsed = new Date(str);
-  if(!isNaN(parsed)){
-    const y = parsed.getFullYear(), mo = parsed.getMonth()+1, d = parsed.getDate();
-    return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-  }
-
-  return '';
-}
-
-// Guards against a race condition where a user opens "edit" on one event,
-// then quickly opens "edit" on another before the first event's roster
-// fetch resolves — without this, the slower response could stomp the
-// currently-open form with the wrong event's staff list.
-let editRequestToken = 0;
-
-async function loadEvents(){
-  const container = document.getElementById('eventListContainer');
-  const emptyMsg = document.getElementById('listEmptyMsg');
-  container.innerHTML = '';
-  emptyMsg.style.display = 'block';
-  emptyMsg.textContent = 'กำลังโหลด...';
-
-  try{
-    const res = await callApi('listAllEvents', {});
-    if(!res.ok){ emptyMsg.textContent = 'เกิดข้อผิดพลาด: ' + res.error; return; }
-    allEvents = res.events || [];
-    rosterCache = {};
-    renderEventList();
-  }catch(err){
-    emptyMsg.textContent = 'เชื่อมต่อระบบหลังบ้านไม่สำเร็จ: ' + err;
-  }
-}
-
-function renderEventList(){
-  const q = document.getElementById('searchBox').value.trim().toLowerCase();
-  const filtered = allEvents.filter(e => (e.eventName||'').toLowerCase().includes(q));
-  const container = document.getElementById('eventListContainer');
-  const emptyMsg = document.getElementById('listEmptyMsg');
-
-  if(filtered.length===0){
-    container.innerHTML = '';
-    emptyMsg.style.display = 'block';
-    emptyMsg.textContent = allEvents.length===0 ? 'ยังไม่มีกิจกรรมในระบบ — กด "➕ สร้าง Event" เพื่อเริ่มต้น' : 'ไม่พบกิจกรรมที่ตรงกับคำค้นหา';
-    return;
-  }
-  emptyMsg.style.display = 'none';
-
-  container.innerHTML = filtered.map((e,i)=>{
-    const dates = (!e.endDate || e.startDate===e.endDate) ? (e.startDate||'-') : `${e.startDate} – ${e.endDate}`;
-    return `
-    <div class="event-card">
-      <div class="event-card-head">
-        <div>
-          <div class="event-name" onclick="toggleRoster('${e.eventId}', ${i})">📌 ${e.eventName}</div>
-          <div class="event-meta">🗓️ ${dates} &nbsp;•&nbsp; 📍 ${e.venue || '-'} &nbsp;•&nbsp; 👤 ผู้สร้าง: ${e.ownerName||'-'} &nbsp;•&nbsp; 👥 Staff: ${e.staffCount||0} คน</div>
-        </div>
-        <div class="event-actions">
-          <button class="btn btn-small" onclick="copyLink('${e.eventId}', this)">🔗 คัดลอกลิงก์</button>
-          <button class="btn btn-small" onclick="editEvent('${e.eventId}')">✏️ แก้ไข</button>
-          <button class="btn btn-small" onclick="toggleRoster('${e.eventId}', ${i})">รายละเอียด ▾</button>
-        </div>
-      </div>
-      <div class="roster-panel" id="roster-${i}"></div>
-    </div>`;
-  }).join('');
-}
-
-function copyLink(eventId, btnEl){
-  const link = formLinkFor(eventId);
-  navigator.clipboard.writeText(link).then(()=>{
-    const original = btnEl.textContent;
-    btnEl.textContent = 'คัดลอกแล้ว ✓';
-    setTimeout(()=>{ btnEl.textContent = original; }, 1800);
-  }).catch(()=>{
-    window.prompt('คัดลอกลิงก์นี้:', link);
-  });
-}
-
-async function toggleRoster(eventId, i){
-  const panel = document.getElementById('roster-'+i);
-  const isOpen = panel.style.display === 'block';
-  document.querySelectorAll('.roster-panel').forEach(p=>p.style.display='none');
-  if(isOpen) return;
-
-  panel.style.display = 'block';
-  panel.innerHTML = '<div class="hint">กำลังโหลดรายละเอียด...</div>';
-
-  let data = rosterCache[eventId];
-  if(!data){
-    try{
-      data = await callApi('getEventRoster', {eventId});
-      rosterCache[eventId] = data;
-    }catch(err){
-      panel.innerHTML = `<div class="hint">โหลดไม่สำเร็จ: ${err}</div>`;
-      return;
-    }
-  }
-  if(!data.ok){ panel.innerHTML = `<div class="hint">เกิดข้อผิดพลาด: ${data.error}</div>`; return; }
-
-  if(!data.roster || data.roster.length===0){
-    panel.innerHTML = '<div class="hint">ยังไม่มีรายชื่อพนักงานผูกกับกิจกรรมนี้</div>';
-    return;
-  }
-
-  const submittedCount = data.roster.filter(r=>r.submitted).length;
-  const editedCount = data.roster.filter(r=>r.status && r.status.startsWith('มีการแก้ไข')).length;
-  const pendingCount = data.roster.length - submittedCount;
-
-  // Dynamic grand total — recomputed fresh every time this panel renders,
-  // so it always reflects the latest submitted/edited expense amounts.
-  const grandTotal = data.roster.reduce((sum, r) => sum + (r.submitted ? (Number(r.totalAmount) || 0) : 0), 0);
-
-  const rowsHtml = data.roster.map((r, idx)=>{
-    const isEdit = r.status && r.status.startsWith('มีการแก้ไข');
-    const dot = !r.submitted ? 'dot-grey' : (isEdit ? 'dot-orange' : 'dot-green');
-    const cls = !r.submitted ? 'status-pending' : (isEdit ? 'status-edit' : 'status-new');
-    const canExport = r.submitted && r.pdfUrl;
-    return `
-    <tr>
-      <td class="roster-check-col">${canExport ? `<input type="checkbox" class="roster-check" data-index="${idx}" data-pdf-url="${escapeAttr(r.pdfUrl)}" data-name="${escapeAttr(r.employeeName)}" data-department="${escapeAttr(r.department||'')}">` : ''}</td>
-      <td><span class="dot ${dot}"></span><span class="${cls}">${r.status || 'รอส่งเอกสาร'}</span></td>
-      <td>${r.employeeName}</td>
-      <td>${r.department||'-'}</td>
-      <td>${r.submitted ? (r.claimedDays||0) + ' วัน' : '-'}</td>
-      <td>${r.submitted ? Number(r.totalAmount).toLocaleString('th-TH',{minimumFractionDigits:2, maximumFractionDigits:2})+' บาท' : '-'}</td>
-      <td>${canExport ? `<a class="pdf-link" href="${r.pdfUrl}" target="_blank">เปิดเอกสาร ↗</a>` : '-'}</td>
-    </tr>`;
-  }).join('');
-
-  panel.innerHTML = `
-    <div class="summary-bar">
-      <span>ทั้งหมด ${data.roster.length} คน</span>
-      <span>🟢 ส่งแล้ว ${submittedCount}</span>
-      <span>🟡 มีการแก้ไข ${editedCount}</span>
-      <span>⚪ ยังไม่ส่ง ${pendingCount}</span>
-    </div>
-    <div class="roster-bulk-bar">
-      <label class="roster-select-all">
-        <input type="checkbox" onchange="toggleAllRosterChecks(this, ${i})">
-        เลือกทั้งหมด (Select All)
-      </label>
-      <div class="roster-bulk-actions">
-        <button class="btn btn-small btn-outline" onclick="copyExcelSummaryForSelected('${eventId}', ${i})">📋 คัดลอกข้อความสรุปสำหรับ Excel</button>
-        <button class="btn btn-small bulk-zip-btn" onclick="bulkExportSelectedPdfs('${eventId}', ${i})">📦 ดาวน์โหลด PDF ที่เลือกเป็น ZIP</button>
-      </div>
-    </div>
-    <table>
-      <thead><tr><th class="roster-check-col"></th><th>สถานะ</th><th>ชื่อ-นามสกุล</th><th>แผนก</th><th>จำนวนวันที่เบิก</th><th>ยอดเงิน</th><th>PDF File</th></tr></thead>
-      <tbody>${rowsHtml}</tbody>
-      <tfoot>
-        <tr class="roster-total-row" style="font-weight:700; border-top:2px solid var(--line);">
-          <td></td>
-          <td colspan="3" style="text-align:right;">ยอดรวมทั้งสิ้น (Grand Total)</td>
-          <td>${grandTotal.toLocaleString('th-TH',{minimumFractionDigits:2, maximumFractionDigits:2})} บาท</td>
-          <td></td>
-        </tr>
-      </tfoot>
-    </table>`;
-}
-
-function toggleAllRosterChecks(checkboxEl, i){
-  const panel = document.getElementById('roster-'+i);
-  if(!panel) return;
-  panel.querySelectorAll('.roster-check').forEach(cb => { cb.checked = checkboxEl.checked; });
-}
-
-/* ===================================================================
-   📋 COPY EXCEL TEMPLATE SUMMARY (คัดลอกข้อความสรุปสำหรับ Excel)
-=================================================================== */
-
-// Mirrors form.html's SEGMENT_TYPES labels, so a travel-mode code stored
-// in trip_details_json (e.g. "CAR", "BTS_GREEN") can be translated back
-// into its Thai display label for the summary text.
-const SEGMENT_TYPE_LABELS = {
-  BTS_GREEN: 'BTS สายสีเขียว',
-  BTS_GOLD: 'BTS สายสีทอง',
-  BTS_YELLOW: 'MRT สายสีเหลือง',
-  BTS_PINK: 'MRT สายสีชมพู',
-  MRT_BLUE: 'MRT สีน้ำเงิน',
-  MRT_PURPLE: 'MRT สีม่วง',
-  SRT_RED: 'SRT สีแดง',
-  ARL: 'Airport Rail Link',
-  CAR: 'รถยนต์ส่วนบุคคล',
-  TAXI: 'แท็กซี่',
-  GRAB: 'Grab/Lineman/Bolt',
-  MOTORCYCLE: 'รถจักรยานยนต์รับจ้าง',
-  PARKING: 'ค่าจอดรถ',
-  TOLL: 'ค่าธรรมเนียมผ่านทางพิเศษ (ทางด่วน)',
-  NO_CLAIM: 'ไม่เบิกค่าเดินทาง',
-  OTHER: 'อื่นๆ'
-};
-
-function formatThaiDate(dateStr){
-  if(!dateStr) return '';
-  const d = new Date(dateStr + 'T00:00:00');
-  if(isNaN(d)) return dateStr;
-  return d.toLocaleDateString('th-TH', {day:'2-digit', month:'2-digit', year:'numeric'});
-}
-
-// Returns the fuel price that applies to a given travel date: an exact
-// match if one exists, otherwise the closest *previous* event date's
-// price (falling back to the earliest available price if the travel date
-// is before every recorded price). Mirrors form.html's
-// getFuelPriceEntryForDate/getFuelPriceForDate exactly, so the price shown
-// here always matches what was actually used to calculate the amount.
-function getFuelPriceForDateIndex(dateStr, fuelPrices){
-  if(!dateStr || !fuelPrices || fuelPrices.length === 0) return 0;
-  const exact = fuelPrices.find(fp => fp.date === dateStr);
-  if(exact) return Number(exact.price) || 0;
-  const prior = fuelPrices.filter(fp => fp.date < dateStr).sort((a,b) => b.date.localeCompare(a.date));
-  if(prior.length > 0) return Number(prior[0].price) || 0;
-  const sorted = fuelPrices.slice().sort((a,b) => a.date.localeCompare(b.date));
-  return sorted.length ? (Number(sorted[0].price) || 0) : 0;
-}
-
-// Renders one travel leg. Personal Vehicle (CAR) segments get the detailed
-// fuel calculation formula placed after the destination and before the
-// final amount, e.g.:
-//   "เดินทางด้วยรถยนต์ส่วนตัว จาก ออฟฟิศ - ไป สถานที่จัดงาน 80.00/15x35.62 = 189.97 บาท"
-// Every other mode keeps the plain "... รวม [Amount] บาท" pattern.
-// Amounts, distance, and fuel price are all strictly forced to 2 decimals.
-function segmentToExcelText(seg, dateStr, fuelPrices){
-  const origin = seg.origin || '-';
-  const destination = seg.destination || '-';
-  const amount = (Number(seg.amount) || 0).toFixed(2);
-
-  if(seg.type === 'CAR'){
-    const distance = (Number(seg.distanceKm) || 0).toFixed(2);
-    const price = getFuelPriceForDateIndex(dateStr, fuelPrices).toFixed(2);
-    return `เดินทางด้วยรถยนต์ส่วนตัว จาก ${origin} - ไป ${destination} ${distance}/15x${price} = ${amount} บาท`;
-  }
-
-  const modeLabel = SEGMENT_TYPE_LABELS[seg.type] || seg.type || '-';
-  return `เดินทางด้วย${modeLabel} จาก ${origin} - ไป ${destination} รวม ${amount} บาท`;
-}
-
-// Joins every leg/segment of one direction (ขาไป or ขากลับ) with " + ",
-// so additional legs within the same direction read as one continuous
-// sentence rather than separate lines.
-function buildLegGroupText(label, segments, dateStr, fuelPrices){
-  const validSegs = (segments || []).filter(s => s && s.type);
-  if(validSegs.length === 0) return '';
-  return `${label} ${validSegs.map(s => segmentToExcelText(s, dateStr, fuelPrices)).join(' + ')}`;
-}
-
-// Builds the single-line Excel-summary text for one staff member, e.g.
-// "สมชาย ใจดี - 24/08/2569 ขาไป เดินทางด้วยรถยนต์ส่วนตัว จาก บ้าน - ไป
-// ที่ทำงาน 80.00/15x35.62 = 186.67 บาท + เดินทางด้วยค่าจอดรถ จาก - - ไป -
-// รวม 20.00 บาท ขากลับ เดินทางด้วยรถยนต์ส่วนตัว จาก ที่ทำงาน - ไป บ้าน
-// 80.00/15x35.62 = 186.67 บาท"
-// Multi-day claims are folded into the SAME single line, separated by
-// " | " between each day's block, so the whole thing still pastes into
-// exactly one Excel cell.
-function buildExcelSummaryLine(row, fuelPrices){
-  const trips = row.tripDetails || [];
-
-  // Group trips by date, preserving the ขาไป/ขากลับ split for each date.
-  const byDate = [];
-  trips.forEach(trip => {
-    if(!trip) return;
-    let bucket = byDate.find(b => b.date === trip.date);
-    if(!bucket){ bucket = {date: trip.date, outbound: [], inbound: []}; byDate.push(bucket); }
-    if(trip.label === 'ขากลับ') bucket.inbound = bucket.inbound.concat(trip.segments || []);
-    else bucket.outbound = bucket.outbound.concat(trip.segments || []);
-  });
-
-  const dayBlocks = byDate.map(b => {
-    const parts = [formatThaiDate(b.date)];
-    const outText = buildLegGroupText('ขาไป', b.outbound, b.date, fuelPrices);
-    const inText = buildLegGroupText('ขากลับ', b.inbound, b.date, fuelPrices);
-    if(outText) parts.push(outText);
-    if(inText) parts.push(inText);
-    return parts.join(' ');
-  }).filter(Boolean);
-
-  let line = `${row.employeeName || '-'} - ${dayBlocks.join(' | ')}`;
-
-  // Strip out any stray line breaks/tabs so the whole thing always stays
-  // strictly on a single line (one Excel cell) when pasted.
-  line = line.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
-  return line;
-}
-
-async function copyExcelSummaryForSelected(eventId, i){
-  const panel = document.getElementById('roster-'+i);
-  if(!panel) return;
-  const checked = Array.from(panel.querySelectorAll('.roster-check:checked'));
-  if(checked.length === 0){
-    showToast('⚠️ กรุณาเลือกสตาฟอย่างน้อย 1 คนก่อนคัดลอก', 'err');
-    return;
-  }
-
-  const rosterRows = (rosterCache[eventId] && rosterCache[eventId].roster) || [];
-  const selectedRows = checked
-    .map(cb => rosterRows[Number(cb.dataset.index)])
-    .filter(Boolean);
-
-  if(selectedRows.length === 0){
-    showToast('❌ ไม่พบข้อมูลการเดินทางของสตาฟที่เลือก', 'err');
-    return;
-  }
-
-  // Needed for the "รถยนต์ส่วนตัว" formula (distance/15 x fuel price) —
-  // only fetched if at least one selected staff member actually has a
-  // Personal Vehicle segment, and reuses the same lean/no-image endpoint
-  // apiGetEventInfo already exposes, so this stays fast.
-  const needsFuelPrices = selectedRows.some(r =>
-    (r.tripDetails || []).some(trip => (trip.segments || []).some(s => s && s.type === 'CAR'))
-  );
-  let fuelPrices = [];
-  if(needsFuelPrices){
-    try{
-      const infoRes = await callApi('getEventInfo', {eventId});
-      if(infoRes && infoRes.ok && Array.isArray(infoRes.fuelPrices)) fuelPrices = infoRes.fuelPrices;
-    }catch(err){
-      // Non-fatal — CAR segments will just show a fuel price of 0.00 in
-      // the formula rather than blocking the whole copy action.
-    }
-  }
-
-  const lines = selectedRows.map(row => buildExcelSummaryLine(row, fuelPrices));
-
-  const fullText = lines.join('\n');
-
-  try{
-    await navigator.clipboard.writeText(fullText);
-    showToast('คัดลอกข้อความสรุปสำหรับ Excel เรียบร้อยแล้ว! สามารถกด Ctrl+V วางในเซลล์ Excel ได้ทันที', 'ok');
-  }catch(err){
-    showToast('❌ คัดลอกไม่สำเร็จ: ' + err, 'err');
-  }
-}
-
-async function bulkExportSelectedPdfs(eventId, i){
-  const panel = document.getElementById('roster-'+i);
-  if(!panel) return;
-  const checked = Array.from(panel.querySelectorAll('.roster-check:checked'));
-  if(checked.length === 0){
-    showToast('⚠️ กรุณาเลือกสตาฟอย่างน้อย 1 คนก่อนดาวน์โหลด', 'err');
-    return;
-  }
-
-  const btn = panel.querySelector('.bulk-zip-btn');
-  const originalText = btn ? btn.textContent : '';
-  if(btn){ btn.disabled = true; btn.textContent = '⏳ กำลังรวมไฟล์ PDF...'; }
-
-  // Naming convention:
-  //   ZIP archive:            เอกสารเบิกค่าเดินทาง_[event_name].zip
-  //   Individual PDF inside:  เอกสารเบิกค่าเดินทาง_[event_name] - [full_name] [department].pdf
-  const ev = allEvents.find(e => e.eventId === eventId);
-  const rawEventName = ((ev && ev.eventName) || eventId).replace(/[\\/:*?"<>|]/g,'_');
-
-  try{
-    const zip = new JSZip();
-    const usedNames = new Set();
-    let successCount = 0;
-
-    for(const cb of checked){
-      const url = cb.dataset.pdfUrl;
-      const rawName = (cb.dataset.name || 'พนักงาน').replace(/[\\/:*?"<>|]/g,'_');
-      const rawDept = (cb.dataset.department || '').replace(/[\\/:*?"<>|]/g,'_');
-      if(!url) continue;
-      const res = await callApi('getFileBase64', {url});
-      if(res && res.ok && res.base64){
-        const baseFileName = `เอกสารเบิกค่าเดินทาง_${rawEventName} - ${rawName}${rawDept ? ' ' + rawDept : ''}`;
-        let fileName = baseFileName + '.pdf';
-        let n = 2;
-        while(usedNames.has(fileName)){ fileName = `${baseFileName} (${n}).pdf`; n++; }
-        usedNames.add(fileName);
-        const base64Data = res.base64.split(',')[1] || res.base64;
-        zip.file(fileName, base64Data, {base64:true});
-        successCount++;
-      }
-    }
-
-    if(successCount === 0){
-      showToast('❌ ไม่พบไฟล์ PDF ที่ดาวน์โหลดได้', 'err');
-      return;
-    }
-
-    const blob = await zip.generateAsync({type:'blob'});
-    saveAs(blob, `เอกสารเบิกค่าเดินทาง_${rawEventName}.zip`);
-    showToast(`✅ ดาวน์โหลด ZIP สำเร็จ (${successCount}/${checked.length} ไฟล์)`, 'ok');
-  }catch(err){
-    showToast('❌ สร้าง ZIP ไม่สำเร็จ: ' + err, 'err');
-  }finally{
-    if(btn){ btn.disabled = false; btn.textContent = originalText; }
-  }
-}
-
-function parseEmployees(text){
-  return text.split('\n').map(l=>l.trim()).filter(Boolean).map(line=>{
-    const idx = line.lastIndexOf('-');
-    if(idx === -1) return { name: line, department: '' };
-    return { name: line.slice(0, idx).trim(), department: line.slice(idx+1).trim() };
-  });
-}
-
-/* ===================================================================
-   📋 BULK STAFF IMPORT (paste-from-Excel modal)
-   Lets a user paste raw rows copied straight out of Excel/Google Sheets
-   (tab-separated: Name\tDepartment), preview/edit/delete the parsed
-   rows, then append them into the target textarea (#employeeList or
-   #editEmployeeList) in the "Name - Department" format that
-   parseEmployees() already understands.
-=================================================================== */
-let importTargetId = null;
-let importRows = [];
-let importRowSeq = 0;
-let importParseTimer = null;
-
-function openImportModal(targetId){
-  importTargetId = targetId;
-  importRows = [];
-  const raw = document.getElementById('importRawText');
-  raw.value = '';
-  document.getElementById('importSkipHeader').checked = false;
-  document.getElementById('importSelectAll').checked = true;
-  renderImportPreview();
-  document.getElementById('importModalOverlay').classList.add('show');
-  document.body.style.overflow = 'hidden';
-  setTimeout(()=>raw.focus(), 50);
-}
-
-function closeImportModal(){
-  document.getElementById('importModalOverlay').classList.remove('show');
-  document.body.style.overflow = '';
-  clearTimeout(importParseTimer);
-}
-
-// Debounced so parsing doesn't run on every single keystroke while typing,
-// but still feels instant after a paste.
-function handleImportRawInput(){
-  clearTimeout(importParseTimer);
-  importParseTimer = setTimeout(parseImportPreview, 150);
-}
-
-// Names already present in the target textarea — used to flag duplicates
-// in the preview so the user can spot them before adding.
-function getExistingImportNames(){
-  const set = new Set();
-  const ta = importTargetId ? document.getElementById(importTargetId) : null;
-  if(!ta) return set;
-  parseEmployees(ta.value).forEach(e=>{
-    if(e.name) set.add(e.name.trim().toLowerCase());
-  });
-  return set;
-}
-
-// Normalizes line endings and re-joins Excel cells that were broken across
-// multiple physical lines by Alt+Enter. When Excel copies a multi-line
-// cell to the clipboard as plain text, it wraps that cell's value in
-// double quotes and keeps the internal line break literally, e.g.:
-//   "Somchai\nSomsak"<TAB>IT
-// A line with an odd number of quote characters means "this logical row
-// isn't finished yet" — so we keep merging subsequent physical lines into
-// it until the quotes balance out. This stops a single multi-line cell
-// from being mistaken for several separate employee rows.
-function preprocessImportText(text){
-  const normalized = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const rawLines = normalized.split('\n');
-
-  const mergedLines = [];
-  let buffer = '';
-  let openQuote = false;
-  for(const ln of rawLines){
-    buffer = openQuote ? (buffer + ' ' + ln) : ln;
-    const quoteCount = (ln.match(/"/g) || []).length;
-    if(quoteCount % 2 === 1) openQuote = !openQuote;
-    if(!openQuote){
-      mergedLines.push(buffer);
-      buffer = '';
-    }
-  }
-  if(buffer !== '') mergedLines.push(buffer); // unterminated quote — flush what's left rather than drop it
-
-  // Strip wrapping quote characters and collapse any leftover internal
-  // line breaks/whitespace so a merged multi-line cell renders as one
-  // clean value instead of corrupting the Name/Department fields.
-  return mergedLines.map(l => l.replace(/"/g, '').replace(/\s*\n\s*/g, ' '));
-}
-
-function parseImportPreview(){
-  const rawText = document.getElementById('importRawText').value;
-  const skipHeader = document.getElementById('importSkipHeader').checked;
-  const existingNames = getExistingImportNames();
-
-  // Edge case #1: drop empty lines and lines that are whitespace-only
-  // (common when a trailing blank row gets copied along with the data).
-  const lines = preprocessImportText(rawText).filter(l => l.trim() !== '');
-  const startIdx = (skipHeader && lines.length > 0) ? 1 : 0;
-
-  // Edge case #4: decide the parsing strategy ONCE for the whole pasted
-  // block. If a tab shows up anywhere in the paste, trust tabs as the
-  // column separator for every row — a row that happens to have no tab is
-  // simply a name-only row, not a candidate for dash/space splitting.
-  // Only fall back to space/dash splitting when the ENTIRE paste has no
-  // tabs at all. This prevents a hyphenated name like "Somchai-Somsak"
-  // from being accidentally split when the data is really tab-separated.
-  const pasteHasTabs = lines.some(l => l.includes('\t'));
-
-  importRows = lines.slice(startIdx).map(rawLine=>{
-    const line = rawLine.trim();
-    if(line === '') return null; // guard: whitespace-only row slipped through
-
-    let name = '', department = '';
-
-    if(pasteHasTabs){
-      const parts = line.split('\t').map(p=>p.trim()).filter((p,i,arr)=> !(p==='' && i===arr.length-1));
-      if(parts.length >= 2){
-        name = parts[0];
-        department = parts.slice(1).join(' ').trim();
-      } else {
-        // No tab on this particular line even though the paste overall is
-        // tab-separated — treat the whole line as a name-only row rather
-        // than guessing with a dash/space split.
-        name = line;
-        department = '';
-      }
-    } else {
-      // Nothing in the whole paste is tab-separated — best-effort fallback
-      // to 2+ spaces, then " - ", for text that lost its tabs on copy.
-      const bySpaces = line.split(/\s{2,}/).map(p=>p.trim()).filter(Boolean);
-      if(bySpaces.length >= 2){
-        name = bySpaces[0];
-        department = bySpaces.slice(1).join(' ');
-      } else {
-        const dashIdx = line.lastIndexOf(' - ');
-        if(dashIdx !== -1){
-          name = line.slice(0, dashIdx).trim();
-          department = line.slice(dashIdx + 3).trim();
-        } else {
-          name = line;
-          department = '';
-        }
-      }
-    }
-
-    // Edge case #2: always normalize to a real string — never let
-    // department end up as undefined/null when only a name was pasted.
-    name = (name || '').trim();
-    department = (department || '').trim();
-    if(!name) return null;
-
-    return {
-      id: 'imp' + (importRowSeq++),
-      name, department,
-      include: true,
-      isDuplicate: existingNames.has(name.toLowerCase())
-    };
-  }).filter(Boolean);
-
-  renderImportPreview();
-}
-
-function escapeAttr(str){
-  return String(str==null ? '' : str)
-    .replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function renderImportPreview(){
-  const wrap = document.getElementById('importPreviewWrap');
-  const emptyMsg = document.getElementById('importEmptyMsg');
-  const body = document.getElementById('importTableBody');
-  const confirmBtn = document.getElementById('importConfirmBtn');
-  const rawHasText = document.getElementById('importRawText').value.trim() !== '';
-
-  if(importRows.length === 0){
-    wrap.style.display = 'none';
-    emptyMsg.style.display = rawHasText ? 'block' : 'none';
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = '➕ เพิ่มเข้ารายชื่อ';
-    return;
-  }
-
-  emptyMsg.style.display = 'none';
-  wrap.style.display = 'block';
-
-  body.innerHTML = importRows.map(r=>{
-    const rowHtml = `
-      <tr class="${r.isDuplicate ? 'dup-row' : ''}">
-        <td><input type="checkbox" ${r.include ? 'checked' : ''} onchange="toggleImportRow('${r.id}', this.checked)"></td>
-        <td><input type="text" value="${escapeAttr(r.name)}" placeholder="ชื่อ-นามสกุล" oninput="updateImportRow('${r.id}','name',this.value)"></td>
-        <td><input type="text" value="${escapeAttr(r.department)}" placeholder="แผนก" oninput="updateImportRow('${r.id}','department',this.value)"></td>
-        <td><button type="button" class="import-del-btn" title="ลบแถวนี้" onclick="deleteImportRow('${r.id}')">🗑</button></td>
-      </tr>`;
-    const dupNoteHtml = r.isDuplicate
-      ? `<tr class="dup-note-row"><td></td><td colspan="3" class="dup-note">⚠️ มีชื่อนี้อยู่ในรายชื่อแล้ว — ตรวจสอบก่อนเพิ่มซ้ำ</td></tr>`
-      : '';
-    return rowHtml + dupNoteHtml;
-  }).join('');
-
-  updateImportSummary();
-}
-
-// Lightweight updates (checkbox toggle / text edits) skip the full table
-// re-render so the input the user is actively typing in doesn't lose focus.
-// Edge case #5: the Confirm button stays disabled unless at least one row
-// is both checked AND has a non-empty name after trimming.
-function updateImportSummary(){
-  const confirmBtn = document.getElementById('importConfirmBtn');
-  const countEl = document.getElementById('importPreviewCount');
-  const includedCount = importRows.filter(r=>r.include && (r.name || '').trim() !== '').length;
-  countEl.textContent = `พบ ${importRows.length} รายการ — จะเพิ่ม ${includedCount} รายการ`;
-  confirmBtn.textContent = `➕ เพิ่มเข้ารายชื่อ (${includedCount})`;
-  confirmBtn.disabled = includedCount === 0;
-}
-
-function updateImportRow(id, field, value){
-  if(field !== 'name' && field !== 'department') return;
-  const r = importRows.find(x=>x.id===id);
-  if(!r) return;
-  // Never let a field go undefined/null — always normalize to a string.
-  r[field] = value == null ? '' : value;
-  updateImportSummary();
-}
-
-function toggleImportRow(id, checked){
-  const r = importRows.find(x=>x.id===id);
-  if(!r) return;
-  r.include = checked;
-  updateImportSummary();
-}
-
-function toggleAllImportRows(checked){
-  importRows.forEach(r=> r.include = checked);
-  renderImportPreview();
-}
-
-function deleteImportRow(id){
-  importRows = importRows.filter(x=>x.id!==id);
-  renderImportPreview();
-}
-
-function addEmptyImportRow(){
-  importRows.push({ id:'imp'+(importRowSeq++), name:'', department:'', include:true, isDuplicate:false });
-  renderImportPreview();
-}
-
-function confirmImport(){
-  // Guard again at commit time, not just via the disabled button — never
-  // write an "undefined - undefined" style line into the textarea.
-  const rows = importRows.filter(r=>r.include && (r.name || '').trim() !== '');
-  if(rows.length === 0 || !importTargetId) return;
-
-  const ta = document.getElementById(importTargetId);
-  if(!ta) return;
-
-  const lines = rows.map(r=>{
-    const name = (r.name || '').trim();
-    const dept = (r.department || '').trim();
-    return dept ? `${name} - ${dept}` : name;
-  });
-
-  const existing = ta.value.trim();
-  ta.value = existing ? existing + '\n' + lines.join('\n') : lines.join('\n');
-  markFormDirty();
-
-  closeImportModal();
-  showToast(`✅ เพิ่มรายชื่อ ${rows.length} คนแล้ว — ตรวจสอบรายชื่อก่อนบันทึก`, 'ok');
-}
-
-function showToast(message, type){
-  let toast = document.getElementById('appToast');
-  if(!toast){
-    toast = document.createElement('div');
-    toast.id = 'appToast';
-    toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);' +
-      'padding:12px 20px;border-radius:8px;font-size:14px;font-weight:600;z-index:9999;' +
-      'box-shadow:0 4px 12px rgba(0,0,0,0.15);transition:opacity .3s;color:#fff;';
-    document.body.appendChild(toast);
-  }
-  toast.style.background = type === 'err' ? '#dc2626' : '#16a34a';
-  toast.textContent = message;
-  toast.style.opacity = '1';
-  toast.style.display = 'block';
-  clearTimeout(toast._hideTimer);
-  toast._hideTimer = setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.style.display='none', 300); }, 3000);
-}
-
-async function createNewEvent(){
-  const eventName = document.getElementById('eventName').value.trim();
-  const ownerName = document.getElementById('ownerName').value.trim();
-  const venue = document.getElementById('venue').value.trim();
-  const startDate = document.getElementById('startDate').value;
-  const endDate = document.getElementById('endDate').value || startDate;
-  const employees = parseEmployees(document.getElementById('employeeList').value);
-  const msg = document.getElementById('createMsgErr');
-  const btn = document.getElementById('createBtn');
-  msg.style.display = 'none';
-
-  if(!eventName || !ownerName || !startDate || employees.length===0){
-    msg.textContent = 'กรุณากรอกข้อมูลให้ครบถ้วน';
-    msg.style.display = 'block';
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'กำลังสร้าง...';
-
-  try{
-    const fuelPrices = collectFuelPricesPayload('create');
-    const res = await callApi('createEvent', {eventName, ownerName, venue, startDate, endDate, employees, fuelPrices});
-    if(!res.ok){ msg.textContent = res.error; msg.style.display='block'; return; }
-
-    document.getElementById('eventName').value = '';
-    document.getElementById('ownerName').value = '';
-    document.getElementById('venue').value = '';
-    document.getElementById('startDate').value = '';
-    document.getElementById('endDate').value = '';
-    document.getElementById('employeeList').value = '';
-    createFuelPrices = {};
-    createBufferDates = [];
-    renderFuelInputs('create');
-
-    // Successfully saved — nothing left unsaved, so navigating away now
-    // proceeds smoothly without the exit guard stepping in.
-    isFormDirty = false;
-    isProcessingFiles = false;
-
-    await loadEvents();
-    showListView();
-    showToast('✅ สร้างกิจกรรมสำเร็จ: ' + eventName, 'ok');
-  }catch(err){
-    msg.textContent = 'เกิดข้อผิดพลาด: ' + err;
-    msg.style.display = 'block';
-  }finally{
-    btn.disabled = false;
-    btn.textContent = '✅ สร้างกิจกรรมและลิงก์';
-  }
-}
-
-let editingEventId = null;
-
-function editEvent(eventId){
-  const ev = allEvents.find(e=>e.eventId===eventId);
-  if(!ev) return;
-  editingEventId = eventId;
-  isFormDirty = false; // a freshly opened Edit Event form has nothing unsaved yet
-
-  // Bump the token so a slow response for a previously-opened event can't
-  // clobber this (possibly different) event's form once it resolves late.
-  const myRequestToken = ++editRequestToken;
-
-  document.getElementById('editEventName').value = ev.eventName;
-  document.getElementById('editOwnerName').value = ev.ownerName;
-  document.getElementById('editVenue').value = ev.venue || '';
-  // Backend dates arrive as dd/MM/yyyy (sometimes Buddhist Era) or other
-  // non-ISO formats — normalize before binding or the <input type="date">
-  // silently rejects the value and shows blank.
-  document.getElementById('editStartDate').value = toISODate(ev.startDate);
-  document.getElementById('editEndDate').value = toISODate(ev.endDate);
-
-  editFuelPrices = {};
-  editBufferDates = [];
-  const fuelContainer = document.getElementById('editFuelPricesContainer');
-  if(fuelContainer) fuelContainer.innerHTML = '<div class="hint">กำลังโหลดราคาน้ำมัน...</div>';
-
-  const empListEl = document.getElementById('editEmployeeList');
-  empListEl.value = '';
-  empListEl.disabled = true;
-  empListEl.placeholder = 'กำลังโหลดรายชื่อ...';
-
-  showEditViewEl();
-
-  callApi('getEventInfo', {eventId}).then(res=>{
-    if(myRequestToken !== editRequestToken) return;
-    if(res.ok){
-      loadFuelPricesIntoState('edit', res.fuelPrices);
-    }
-    renderFuelInputs('edit');
-
-    // Receipt images are intentionally NOT included in getEventInfo (see
-    // code.gs) so this modal can open instantly — fetch them separately in
-    // the background and merge them in the moment they arrive, instead of
-    // blocking the whole edit view on every fuel-receipt Drive fetch.
-    if(res.ok && Array.isArray(res.fuelPrices) && res.fuelPrices.some(fp => fp.receiptUrl)){
-      callApi('getFuelReceiptImages', {eventId}).then(imgRes=>{
-        if(myRequestToken !== editRequestToken) return;
-        if(!imgRes.ok || !Array.isArray(imgRes.fuelPrices)) return;
-        const stateObj = fuelStateFor('edit');
-        imgRes.fuelPrices.forEach(fp=>{
-          if(fp.receiptImage && stateObj[fp.date] && stateObj[fp.date].receipt){
-            Object.assign(stateObj[fp.date].receipt, fp.receiptImage, { isExisting:true, existingUrl: fp.receiptUrl });
-          }
-        });
-        renderFuelInputs('edit');
-      }).catch(()=>{ /* non-fatal — thumbnails just won't appear */ });
-    }
-  }).catch(()=>{
-    if(myRequestToken !== editRequestToken) return;
-    renderFuelInputs('edit');
-  });
-
-  callApi('getEventRoster', {eventId}).then(res=>{
-    // A newer edit request has since started — discard this stale result.
-    if(myRequestToken !== editRequestToken) return;
-
-    if(res.ok && Array.isArray(res.roster)){
-      const lines = res.roster
-        .filter(r => r && r.employeeName)
-        .map(r => {
-          const name = String(r.employeeName).trim();
-          const dept = String(r.department || '').trim();
-          return dept ? `${name} - ${dept}` : name;
-        });
-      empListEl.value = lines.join('\n');
-      if(lines.length === 0){
-        showToast('⚠️ ไม่พบรายชื่อสตาฟสำหรับกิจกรรมนี้', 'err');
-      }
-    } else if(!res.ok){
-      showToast('❌ โหลดรายชื่อสตาฟไม่สำเร็จ: ' + (res.error || 'unknown error'), 'err');
-    }
-  }).catch(err=>{
-    if(myRequestToken !== editRequestToken) return;
-    showToast('❌ โหลดรายชื่อสตาฟไม่สำเร็จ: ' + err, 'err');
-  }).finally(()=>{
-    if(myRequestToken !== editRequestToken) return;
-    empListEl.disabled = false;
-    empListEl.placeholder = '';
-  });
-}
-
-async function saveEditEvent(){
-  const eventName = document.getElementById('editEventName').value.trim();
-  const ownerName = document.getElementById('editOwnerName').value.trim();
-  const venue = document.getElementById('editVenue').value.trim();
-  const startDate = document.getElementById('editStartDate').value;
-  const endDate = document.getElementById('editEndDate').value || startDate;
-  const employees = parseEmployees(document.getElementById('editEmployeeList').value);
-  const msg = document.getElementById('editMsgErr');
-  const btn = document.getElementById('editSaveBtn');
-  const originalText = btn.textContent;
-
-  if(msg) msg.style.display = 'none';
-
-  // Safety net: an existing fuel receipt (isExisting) still showing
-  // "กำลังโหลดรูป..." means its background image fetch hasn't finished (or
-  // failed) yet. Its existingUrl is already preserved regardless (see
-  // loadFuelPricesIntoState), so saving now would NOT actually lose the
-  // receipt — but block anyway and ask the admin to wait a moment, so a
-  // failed background fetch is never mistaken for "no receipt on file"
-  // and doesn't get silently re-saved without ever being investigated.
-  const editFuelState = fuelStateFor('edit');
-  const stillLoadingDates = Object.keys(editFuelState).filter(d => {
-    const r = editFuelState[d].receipt;
-    return r && r.isExisting && !r.base64;
-  });
-  if(stillLoadingDates.length > 0){
-    showToast('⏳ ใบเสร็จราคาน้ำมันบางวันยังโหลดไม่เสร็จ กรุณารอสักครู่แล้วลองบันทึกอีกครั้ง', 'err');
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = '⏳ กำลังบันทึก...';
-
-  try{
-    const fuelPrices = collectFuelPricesPayload('edit');
-    const res = await callApi('updateEvent', {
-      eventId: editingEventId, eventName, ownerName, venue, startDate, endDate, employees, fuelPrices
+async function buildDocx(row, fp, images){
+  const D = window.docx; if(!D) throw new Error('โหลดไลบรารีสร้างไฟล์ Word ไม่สำเร็จ');
+  const FONT = 'TH Sarabun New', SZ = { body:24, title:32, heading:28, sub:24, total:28 };
+  const run = (t, o = {}) => new D.TextRun({ text:String(t == null ? '' : t), font:FONT, size:o.size || SZ.body, bold:!!o.bold, color:o.color });
+  const para = (t, o = {}) => new D.Paragraph({ alignment:o.align, spacing:{ after: o.after == null ? 80 : o.after }, children:[run(t, o)] });
+  const COLS = [600, 2300, 5106, 1900], dxa = p => Math.round(9906 * p / 100);
+  const cell = (t, w, o = {}) => new D.TableCell({ width:{ size:dxa(w), type:D.WidthType.DXA }, columnSpan:o.span, shading:o.shade ? { fill:o.shade, type:D.ShadingType.CLEAR, color:'auto' } : undefined,
+    children:[para(t, { size:SZ.body, bold:o.bold, after:0, align:o.right ? D.AlignmentType.RIGHT : undefined })] });
+  const days = tripsToDays(row.tripDetails);
+  const kids = [para('เอกสารค่าเดินทาง', { bold:true, size:SZ.title }), para(UI.roster.event.eventName || ''),
+    para('ผู้เบิก: ' + row.employeeName + '     แผนก/ฝ่าย: ' + (row.department || '-'), { after:200 })];
+  days.forEach((d, di) => {
+    kids.push(para(days.length > 1 ? `วันที่ ${di + 1} — ${thDate(d.date)}` : (thDate(d.date) || 'รายละเอียดการเดินทาง'), { bold:true, size:SZ.heading, after:120 }));
+    [['ขาไป', d.out], ['ขากลับ', d.ret]].forEach(([label, segs]) => {
+      let sub = 0; const head = ['#', 'ประเภท', 'รายละเอียด', 'จำนวนเงิน'];
+      const rows = [new D.TableRow({ tableHeader:true, children: head.map((t, k) => cell(t, [6, 23, 52, 20][k] - (k === 3 ? 1 : 0), { bold:true, shade:'EEF2EC', right:k === 3 })) })];
+      segs.forEach((sg, k) => { sub += Number(sg.amount) || 0; rows.push(new D.TableRow({ children:[cell(String(k + 1), 6), cell(typeLabel(sg), 23), cell(segDetail(sg, d.date, fp), 52), cell((Number(sg.amount) || 0).toFixed(2), 19, { right:true })] })); });
+      rows.push(new D.TableRow({ children:[cell('ยอดรวม ' + label, 81, { bold:true, span:3, shade:'FAFAFA' }), cell(sub.toFixed(2), 19, { bold:true, right:true, shade:'FAFAFA' })] }));
+      kids.push(para(label, { bold:true, size:SZ.sub, after:40 }));
+      kids.push(new D.Table({ width:{ size:9906, type:D.WidthType.DXA }, columnWidths:COLS, layout:D.TableLayoutType.FIXED, rows }));
+      kids.push(para('', { after:120 }));
     });
-
-    if(res.ok){
-      delete rosterCache[editingEventId];
-      editFuelPrices = {};
-      editBufferDates = [];
-      // Successfully saved — nothing left unsaved, so navigating away now
-      // proceeds smoothly without the exit guard stepping in.
-      isFormDirty = false;
-      isProcessingFiles = false;
-      await loadEvents();
-      showListView();
-      showToast('✅ บันทึกการแก้ไขสำเร็จ', 'ok');
-    } else if(msg){
-      msg.textContent = res.error;
-      msg.style.display = 'block';
-    }
-  }catch(err){
-    if(msg){ msg.textContent = 'เกิดข้อผิดพลาด: ' + err; msg.style.display = 'block'; }
-  }finally{
-    btn.disabled = false;
-    btn.textContent = originalText;
-  }
-}
-
-async function exportEventsToExcel(){
-  // Only count a checkbox if its row is both CHECKED and currently VISIBLE
-  // — a box that was checked before a filter hid its row should not sneak
-  // into the export.
-  const checked = Array.from(document.querySelectorAll('#exportEventList .export-event-row .export-check:checked'))
-    .filter(c => c.closest('.export-event-row').style.display !== 'none')
-    .map(c => c.value);
-  if(checked.length===0) return;
-
-  const btn = document.getElementById('exportBtn');
-  const originalText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '⏳ กำลังดาวน์โหลด...';
-
-  try{
-    const rows = [];
-    for(const eventId of checked){
-      const ev = allEvents.find(e=>e.eventId===eventId);
-      const eventName = ev ? ev.eventName : eventId;
-      const res = await callApi('getEventRoster', {eventId});
-      if(res.ok && res.roster){
-        let eventTotal = 0;
-        res.roster.forEach((r,idx)=>{
-          // Round to strictly 2 decimal places (e.g. 150.00, 1250.50) so
-          // the exported figures never show stray floating-point digits.
-          const amount = r.submitted ? Number((Number(r.totalAmount)||0).toFixed(2)) : 0;
-          eventTotal += amount;
-          rows.push({
-            'ชื่องาน': eventName,
-            'ลำดับสตาฟ': idx + 1,
-            'ชื่อสตาฟ': r.employeeName,
-            'แผนก': r.department || '',
-            'ยอดเงิน': amount.toFixed(2),
-            'link pdf': r.pdfUrl || ''
-          });
-        });
-
-        eventTotal = Number(eventTotal.toFixed(2));
-        // Append a grand-total summary row at the bottom of this event's
-        // block of data before moving on to the next selected event.
-        rows.push({
-          'ชื่องาน': eventName,
-          'ลำดับสตาฟ': '',
-          'ชื่อสตาฟ': 'ยอดรวมทั้งสิ้น (Grand Total)',
-          'แผนก': '',
-          'ยอดเงิน': eventTotal.toFixed(2),
-          'link pdf': ''
-        });
-      }
-    }
-
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'รายงานเบิกค่าเดินทาง');
-    XLSX.writeFile(wb, `รายงานเบิกค่าเดินทาง.xlsx`);
-    showToast('✅ ดาวน์โหลด Excel สำเร็จ', 'ok');
-  }catch(err){
-    showToast('❌ ดาวน์โหลดไม่สำเร็จ: ' + err, 'err');
-  }finally{
-    btn.disabled = false;
-    btn.textContent = originalText;
-  }
-}
-
-document.addEventListener('DOMContentLoaded', loadEvents);
-
-/* ===================================================================
-   🔄 AUTO-REFRESH ON PAGE NAVIGATION
-   When the user navigates back to this page (browser Back button, or
-   returning from form.html/an external link), the browser may restore a
-   stale cached snapshot instead of re-running the page's scripts. Force
-   a full reload in that case so event/roster data is always fresh.
-=================================================================== */
-window.addEventListener('pageshow', function(event) {
-  if (event.persisted || (window.performance && window.performance.navigation && window.performance.navigation.type === 2)) {
-    window.location.reload();
-  }
-});
-
-/* ===================================================================
-   🖱️ CLICK-OUTSIDE DROPDOWN AUTO-CLOSE
-   Any open <details> dropdown (e.g. a future type/menu selector) should
-   close itself the moment the user clicks or taps anywhere outside it,
-   instead of staying open until explicitly toggled shut again.
-=================================================================== */
-function closeDropdownsOutside(evt){
-  document.querySelectorAll('details[open]').forEach(function(d){
-    if(!d.contains(evt.target)) d.removeAttribute('open');
   });
+  kids.push(para('ยอดรวมทั้งสิ้น ' + fmt(row.totalAmount) + ' บาท', { bold:true, size:SZ.total, after:240 }));
+  const ev = [];
+  days.forEach(d => [['ขาไป', d.out], ['ขากลับ', d.ret]].forEach(([dir, segs]) => segs.forEach(sg => (sg.attachmentUrls || []).forEach(u => ev.push({ u, cap:`หลักฐาน: ${dir} — ${typeLabel(sg)} (${thDate(d.date)})` })))));
+  if(ev.length){
+    kids.push(new D.Paragraph({ pageBreakBefore:true, spacing:{ after:160 }, children:[run('หลักฐานประกอบการเบิกจ่าย', { bold:true, size:SZ.heading })] }));
+    for(const e of ev){
+      kids.push(para(e.cap, { after:60 }));
+      const att = images[e.u];
+      if(!att || !/^data:image\//.test(att.base64 || '')){ kids.push(para(att ? '(ไฟล์ PDF — เปิดดูได้ที่ลิงก์ใน Drive)' : '(โหลดไฟล์นี้ไม่สำเร็จ)', { color:'7A7A7A' })); continue; }
+      const img = await new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = att.base64; });
+      if(!img){ kids.push(para('(แสดงรูปนี้ไม่ได้)', { color:'7A7A7A' })); continue; }
+      let w = 340, hh = Math.round(img.naturalHeight * 340 / img.naturalWidth); if(hh > 800){ hh = 800; w = Math.round(img.naturalWidth * 800 / img.naturalHeight); }
+      const bytes = Uint8Array.from(atob(att.base64.split(',')[1]), c => c.charCodeAt(0));
+      kids.push(new D.Paragraph({ alignment:D.AlignmentType.CENTER, spacing:{ after:200 }, children:[new D.ImageRun({ data:bytes, transformation:{ width:w, height:hh } })] }));
+    }
+  }
+  const doc = new D.Document({ styles:{ default:{ document:{ run:{ font:FONT, size:SZ.body } } } },
+    sections:[{ properties:{ page:{ size:{ width:11906, height:16838 }, margin:{ top:1000, bottom:1000, left:1000, right:1000 } } }, children:kids }] });
+  return D.Packer.toBlob(doc);
 }
-document.addEventListener('click', closeDropdownsOutside, true);
-document.addEventListener('touchstart', closeDropdownsOutside, true);
+async function docxForRow(row){
+  const fp = await eventFuelPrices();
+  let images = {};
+  try{ const r = await callApi('getSubmissionAttachmentImages', { eventId: UI.roster.id, employeeName: row.employeeName }); if(r && r.ok) images = r.images || {}; }catch(e){ if(String(e.message) === 'UNAUTHORIZED') throw e; }
+  return buildDocx(row, fp, images);
+}
+async function downloadOneDocx(i){
+  const row = UI.roster.rows[i]; toast('กำลังสร้างไฟล์ Word ของ ' + row.employeeName + '…', null, null, 20000);
+  try{ const blob = await docxForRow(row); saveAs(blob, zipNames().name(row, '.docx')); toast('ดาวน์โหลดไฟล์ Word แล้ว'); }
+  catch(err){ if(String(err.message) !== 'UNAUTHORIZED') toast('สร้างไฟล์ Word ไม่สำเร็จ: ' + err.message, null, null, 8000); }
+}
+async function zipDocx(btn){
+  const rows = selectedRows(); const orig = btn.textContent; btn.disabled = true; let done = 0;
+  const zip = new JSZip(), N = zipNames(), failed = [];
+  try{
+    await runPool(rows, 2, async r => {
+      try{ zip.file(N.name(r, '.docx'), await docxForRow(r)); }catch(e){ if(String(e.message) === 'UNAUTHORIZED') throw e; failed.push(r.employeeName); }
+      btn.textContent = `กำลังสร้าง ZIP (${++done}/${rows.length})…`;
+    });
+    if(failed.length === rows.length){ toast('สร้างไฟล์ Word ไม่สำเร็จ', null, null, 8000); return; }
+    saveAs(await zip.generateAsync({ type:'blob' }), `เอกสารเบิกค่าเดินทาง_${N.evName} (Word).zip`);
+    toast(failed.length ? `ได้ ${rows.length - failed.length} จาก ${rows.length} ไฟล์ — สร้างไม่สำเร็จ: ${failed.join(', ')}` : `ดาวน์โหลด ZIP แล้ว (${rows.length} ไฟล์)`, null, null, failed.length ? 12000 : 5000);
+  }finally{ btn.disabled = false; btn.textContent = orig; }
+}
+
+/* ---------- copy summary for Excel (same text format as before) ---------- */
+function thDateDMY(s){ if(!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('th-TH', { day:'2-digit', month:'2-digit', year:'numeric' }); }
+function segExcel(seg, dateStr, fp){
+  const o = seg.origin || '-', d = seg.destination || '-', amt = (Number(seg.amount) || 0).toFixed(2);
+  if(seg.type === 'CAR') return `เดินทางด้วยรถยนต์ส่วนตัว จาก ${o} - ไป ${d} ${(Number(seg.distanceKm) || 0).toFixed(2)}/15x${fuelPriceFor(dateStr, fp).toFixed(2)} = ${amt} บาท`;
+  return `เดินทางด้วย${TYPE_LABELS[seg.type] || seg.type || '-'} จาก ${o} - ไป ${d} รวม ${amt} บาท`;
+}
+function excelLine(row, fp){
+  const blocks = tripsToDays(row.tripDetails).map(b => {
+    const parts = [thDateDMY(b.date)];
+    const leg = (label, segs) => { const v = segs.filter(s => s && s.type); return v.length ? `${label} ${v.map(s => segExcel(s, b.date, fp)).join(' + ')}` : ''; };
+    const o = leg('ขาไป', b.out), r = leg('ขากลับ', b.ret); if(o) parts.push(o); if(r) parts.push(r);
+    return parts.join(' ');
+  });
+  return `${row.employeeName || '-'} - ${blocks.join(' | ')}`.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+}
+async function copyExcelSummary(btn){
+  const rows = selectedRows();
+  const needFuel = rows.some(r => (r.tripDetails || []).some(t => (t.segments || []).some(s => s && s.type === 'CAR')));
+  const fp = needFuel ? await eventFuelPrices() : [];
+  await copyText(rows.map(r => excelLine(r, fp)).join('\n'));
+  toast(`คัดลอกสรุป ${rows.length} คนแล้ว วางในเซลล์ Excel ได้เลย (1 คน = 1 บรรทัด)`);
+}
+function excelRows(eventName, roster){
+  const out = []; let total = 0;
+  roster.forEach((r, idx) => { const amt = r.submitted ? Number((Number(r.totalAmount) || 0).toFixed(2)) : 0; total += amt;
+    out.push({ 'ชื่องาน':eventName, 'ลำดับสตาฟ':idx + 1, 'ชื่อสตาฟ':r.employeeName, 'แผนก':r.department || '', 'ยอดเงิน':amt.toFixed(2), 'link pdf':r.pdfUrl || '' }); });
+  out.push({ 'ชื่องาน':eventName, 'ลำดับสตาฟ':'', 'ชื่อสตาฟ':'ยอดรวมทั้งสิ้น (Grand Total)', 'แผนก':'', 'ยอดเงิน':total.toFixed(2), 'link pdf':'' });
+  return out;
+}
+function writeExcel(rows, name){
+  const ws = XLSX.utils.json_to_sheet(rows), wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'รายงานเบิกค่าเดินทาง'); XLSX.writeFile(wb, name);
+}
+function exportSelectedExcel(){
+  writeExcel(excelRows(UI.roster.event.eventName, selectedRows()), `รายงานเบิกค่าเดินทาง_${safeName(UI.roster.event.eventName)}.xlsx`);
+  toast('ดาวน์โหลด Excel แล้ว');
+}
+
+/* ---------- extend deadline (sends the full event back — update replaces staff & fuel) ---------- */
+function extendDeadline(){
+  const R = UI.roster, ev = R.event, notSent = R.rows.filter(r => !r.submitted).length;
+  modal(`<div class="row between"><h2>ขยายเวลาปิดรับเอกสาร</h2><button type="button" class="btn btn-ghost" data-close onclick="closeModal()">ปิด ✕</button></div>
+    <p class="muted" style="margin:0">ตอนนี้ปิดรับแล้วเมื่อ ${h(thDT(ev.closeAt))} · ยังไม่ส่ง ${notSent} คน</p>
+    <div class="grid g2"><div class="fld"><label for="xd">ปิดรับใหม่วันที่ <span class="req">*</span></label><input id="xd" type="date" value="${iso(2)}" min="${iso(0)}"></div><div class="fld"><label for="xt">เวลา <span class="req">*</span></label><input id="xt" type="time" value="18:00"></div></div>
+    <p class="hint" style="margin:0">พนักงานที่เปิดลิงก์จะส่ง / แก้ไขได้อีกครั้งจนถึงเวลาใหม่</p>
+    <div class="modal-actions"><button type="button" class="btn btn-ghost" onclick="closeModal()">ยกเลิก</button><button type="button" class="btn btn-primary" id="xBtn" onclick="doExtend()">ขยายเวลา</button></div>`);
+}
+async function doExtend(){
+  const d = document.getElementById('xd').value, t = document.getElementById('xt').value || '18:00';
+  if(!d){ document.getElementById('xd').classList.add('invalid'); return; }
+  const btn = document.getElementById('xBtn'); btn.disabled = true; btn.textContent = 'กำลังบันทึก…';
+  try{
+    const info = await callApi('getEventInfo', { eventId: UI.roster.id });
+    if(!info || !info.ok) throw new Error(info && info.error || 'load');
+    const ev = info.event;
+    const res = await callApi('updateEvent', { eventId: UI.roster.id, eventName:ev.eventName, ownerName:ev.ownerName, venue:ev.venue || '', startDate:ev.startDate, endDate:ev.endDate || ev.startDate,
+      closeAt: d + 'T' + t, employees:(info.employees || []).map(e => ({ name:e.name, department:e.department || '' })),
+      fuelPrices:(info.fuelPrices || []).map(fp => ({ date:fp.date, price:fp.price, receipt: fp.receiptUrl ? { isExisting:true, existingUrl:fp.receiptUrl } : null })) });
+    if(!res || !res.ok) throw new Error(res && res.error || 'save');
+    closeModal(); UI.events = null; await viewEvent(UI.roster.id); toast('ขยายเวลาแล้ว · ส่งได้ถึง ' + thDT(d + 'T' + t));
+  }catch(err){ if(String(err.message) === 'UNAUTHORIZED') return; btn.disabled = false; btn.textContent = 'ขยายเวลา'; toast('ขยายเวลาไม่สำเร็จ: ' + err.message, null, null, 8000); }
+}
+
+/* ---------- A5 submission drawer (evidence by day, history, restore) ---------- */
+function openDrawer(i){ UI.openDays = { 0:true }; UI.drawer = { i, versions:null, images:null }; renderDrawer(); loadDrawerExtras(); }
+function closeDrawer(silent){ document.getElementById('drawerRoot').innerHTML = ''; if(!silent) UI.drawer = null; }
+async function loadDrawerExtras(){
+  const dr = UI.drawer, row = UI.roster.rows[dr.i];
+  callApi('getSubmissionHistory', { eventId:UI.roster.id, employeeName:row.employeeName }).then(r => { if(UI.drawer === dr){ dr.versions = (r && r.ok) ? r.versions : []; renderDrawer(); } }).catch(() => { if(UI.drawer === dr){ dr.versions = []; renderDrawer(); } });
+  callApi('getSubmissionAttachmentImages', { eventId:UI.roster.id, employeeName:row.employeeName }).then(r => { if(UI.drawer === dr){ dr.images = (r && r.ok) ? (r.images || {}) : {}; renderDrawer(); } }).catch(() => { if(UI.drawer === dr){ dr.images = {}; renderDrawer(); } });
+  dr.fuel = await eventFuelPrices(); if(UI.drawer === dr) renderDrawer();
+}
+function renderDrawer(){
+  const dr = UI.drawer, row = UI.roster.rows[dr.i], days = tripsToDays(row.tripDetails), fp = dr.fuel || [];
+  const nSeg = days.reduce((n, d) => n + d.out.length + d.ret.length, 0);
+  const nFiles = days.reduce((n, d) => n + [...d.out, ...d.ret].reduce((a, s) => a + (s.attachmentUrls || []).length, 0), 0);
+  const day = (d, i) => {
+    const dirRows = (lab, list) => `<tr class="grp"><td colspan="3">${lab}</td><td class="num">${fmt(list.reduce((a, s) => a + (Number(s.amount) || 0), 0))}</td></tr>` +
+      list.map((s, k) => `<tr><td class="muted" style="width:24px">${k + 1}</td><td style="width:160px"><b>${h(typeLabel(s))}</b></td><td class="muted">${h(segDetail(s, d.date, fp))}</td><td class="num">${fmt(s.amount)}</td></tr>`).join('');
+    const files = [...d.out.map((s, k) => ({ s, l:'ขาไป ต่อ ' + (k + 1) })), ...d.ret.map((s, k) => ({ s, l:'ขากลับ ต่อ ' + (k + 1) }))].flatMap(({ s, l }) => (s.attachmentUrls || []).map(u => ({ u, l, t:typeLabel(s) })));
+    const total = [...d.out, ...d.ret].reduce((a, s) => a + (Number(s.amount) || 0), 0), open = !!UI.openDays[i];
+    const fig = f => { const a = dr.images && dr.images[f.u];
+      const ph = !dr.images ? '<span class="ph">กำลังโหลด…</span>' : (a && /^data:image\//.test(a.base64) ? `<button type="button" class="ph" style="padding:0;cursor:zoom-in;overflow:hidden" onclick="openLightbox(UI.drawer.images['${h(f.u)}'].base64)"><img src="${a.base64}" alt="" style="width:100%;height:100%;object-fit:cover"></button>` : `<a class="ph" href="${h(f.u)}" target="_blank" rel="noopener">${a ? 'PDF' : 'เปิดใน Drive'}</a>`);
+      return `<figure class="ev-fig">${ph}<figcaption>${h(f.l)}<br>${h(f.t)}</figcaption></figure>`; };
+    return `<div class="day-sec"><button type="button" class="day-toggle" aria-expanded="${open}" onclick="UI.openDays[${i}]=!UI.openDays[${i}]; renderDrawer()">
+      <span class="row" style="gap:10px"><span class="muted" aria-hidden="true">${open ? '▾' : '▸'}</span><b style="font-size:16px">วันที่ ${i + 1} · ${h(thDate(d.date))}</b><span class="muted small">${d.out.length + d.ret.length} รายการ · หลักฐาน ${files.length} ไฟล์</span></span><b>฿ ${fmt(total)}</b></button>
+      ${open ? `<div class="table-wrap"><table class="mini"><tbody>${dirRows('ขาไป', d.out)}${dirRows('ขากลับ', d.ret)}</tbody></table></div>
+        ${files.length ? `<div style="display:flex;flex-direction:column;gap:8px"><span class="muted small" style="font-weight:700">หลักฐานของวันนี้ (${files.length})</span><div class="ev-grid">${files.map(fig).join('')}</div></div>` : '<span class="muted small">ไม่มีไฟล์หลักฐานในวันนี้</span>'}` : ''}</div>`;
+  };
+  const vs = dr.versions;
+  const hist = vs == null ? '<p class="muted small">กำลังโหลดประวัติ…</p>' : (!vs.length ? '<p class="muted small">ไม่มีประวัติ</p>' : vs.map((v, k) => `<div class="hist"><div><b>ครั้งที่ ${vs.length - k}</b><div class="muted small">${h(v.updatedAt)}</div></div>
+      <div class="row" style="gap:10px"><b>฿ ${fmt(v.totalAmount)}</b>${v.pdfUrl ? `<a href="${h(v.pdfUrl)}" target="_blank" rel="noopener">PDF</a>` : ''}${v.current ? '<span class="chip ok">ปัจจุบัน</span>' : `<button type="button" class="btn btn-ghost btn-sm" onclick="restoreVersion(${k})">ใช้เวอร์ชันนี้</button>`}</div></div>`).join(''));
+  document.getElementById('drawerRoot').innerHTML = `<div class="drawer-wrap" onclick="if(event.target===this) closeDrawer()"><aside class="drawer" role="dialog" aria-modal="true" aria-label="รายละเอียดใบเบิกของ ${h(row.employeeName)}">
+    <div class="row between" style="align-items:flex-start;flex-wrap:nowrap"><div style="min-width:0"><h2 style="font-size:22px">${h(row.employeeName)}</h2><span class="muted">${h(row.department || '')}</span></div><button type="button" class="btn btn-ghost" onclick="closeDrawer()">ปิด ✕</button></div>
+    <div class="row" style="gap:10px">${row.editCount ? `<span class="chip warn">แก้ไขแล้ว ${row.editCount} ครั้ง</span>` : '<span class="chip ok">ส่งแล้ว</span>'}<span class="muted small">อัปเดตล่าสุด ${h(row.updatedAt)}</span></div>
+    <div class="grid g3" style="gap:10px"><div class="stat"><span class="muted small">ยอดรวม</span><b>฿ ${fmt(row.totalAmount)}</b></div><div class="stat"><span class="muted small">จำนวนวัน</span><b>${days.length} วัน</b></div><div class="stat"><span class="muted small">รายการ</span><b>${nSeg} ต่อ</b><span class="muted small">หลักฐาน ${nFiles} ไฟล์</span></div></div>
+    <div class="row" style="gap:8px">${row.pdfUrl ? `<a class="btn btn-primary" href="${h(row.pdfUrl)}" target="_blank" rel="noopener">เปิด PDF</a>` : ''}<button type="button" class="btn" onclick="downloadOneDocx(${dr.i})">ดาวน์โหลด Word</button></div>
+    ${days.map(day).join('') || '<p class="muted">ไม่มีรายการเดินทาง</p>'}
+    <div style="border-top:1px solid var(--line);padding-top:12px"><b style="font-size:16px">ประวัติการส่ง</b>${hist}</div>
+    <p class="hint" style="margin:0">“ใช้เวอร์ชันนี้” = กู้คืนเวอร์ชันเก่ากลับมาเป็นปัจจุบัน (ฉบับปัจจุบันถูกเก็บเป็นประวัติก่อนเสมอ)</p></aside></div>`;
+}
+async function restoreVersion(k){
+  const dr = UI.drawer, row = UI.roster.rows[dr.i], vs = dr.versions, v = vs[k];
+  const ok = await confirmBox({ title:`ใช้ “ครั้งที่ ${vs.length - k}” แทนฉบับปัจจุบัน?`, text:`ยอดจะเปลี่ยนจาก ฿ ${fmt(vs[0].totalAmount)} เป็น ฿ ${fmt(v.totalAmount)} · ฉบับปัจจุบันถูกเก็บไว้ในประวัติก่อน กลับมาใช้ได้อีก`, ok:'ใช้เวอร์ชันนี้' });
+  if(!ok) return;
+  try{
+    const res = await callApi('restoreVersion', { eventId:UI.roster.id, employeeName:row.employeeName, key:v.key });
+    if(!res || !res.ok){ toast('กู้คืนไม่สำเร็จ: ' + (res && res.error || ''), null, null, 8000); return; }
+    const name = row.employeeName; UI.events = null;
+    const r = await callApi('getEventRoster', { eventId:UI.roster.id });
+    if(r && r.ok){ UI.roster.rows = r.roster; UI.roster.event = r.event; }
+    const ni = UI.roster.rows.findIndex(x => x.employeeName === name);
+    renderEvent(); if(ni > -1) openDrawer(ni);
+    toast('กู้คืนแล้ว · ยอดปัจจุบัน ฿ ' + fmt(res.totalAmount));
+  }catch(err){ if(String(err.message) !== 'UNAUTHORIZED') toast('กู้คืนไม่สำเร็จ: ' + err.message, null, null, 8000); }
+}
+
+/* ---------- A6 export ---------- */
+async function viewExport(){
+  if(!UI.events){
+    setApp(shell(`<div class="card"><div class="skel" style="width:50%;height:18px"></div><div class="skel"></div><div class="skel"></div></div>`, 'export'));
+    try{ await loadEvents(true); }catch(err){ if(String(err.message) === 'UNAUTHORIZED') throw err; setApp(shell(loadFailHtml('รายการกิจกรรม'), 'export')); return; }
+  }
+  renderExport();
+}
+function renderExport(){
+  const X = UI.ex, q = X.q.trim();
+  const list = UI.events.filter(ev => (!q || (ev.name + ev.venue).includes(q)) && (!X.from || (ev.end || ev.start) >= X.from) && (!X.to || ev.start <= X.to));
+  const chosen = UI.events.filter(ev => UI.exportSel.has(ev.id));
+  const people = chosen.reduce((n, ev) => n + ev.sent, 0), total = chosen.reduce((t, ev) => t + ev.total, 0);
+  const allOn = list.length && list.every(ev => UI.exportSel.has(ev.id));
+  UI.exportList = list.map(ev => ev.id);
+  setApp(shell(`<div class="crumb"><a href="#events">กิจกรรมทั้งหมด</a> / Export Excel</div>
+    <div><h1>Export Excel หลายกิจกรรม</h1><p class="sub">เลือกกิจกรรมที่ต้องการ แล้วดาวน์โหลดเป็นไฟล์เดียว (1 ชีต)</p></div>
+    <section class="card" style="padding:20px"><div class="row between"><h2>ตัวกรอง</h2><button type="button" class="btn btn-reset" ${X.q || X.from || X.to ? '' : 'disabled'} onclick="UI.ex={q:'',from:'',to:''}; renderExport()">${ICON.reset} ล้างตัวกรอง</button></div>
+      <div class="grid g3"><div class="fld"><label for="xq">ค้นหา</label><input id="xq" value="${h(X.q)}" placeholder="ชื่อกิจกรรม / สถานที่" onchange="UI.ex.q=this.value; renderExport()"></div>
+      <div class="fld"><label for="xf">ตั้งแต่วันที่</label><input id="xf" type="date" value="${h(X.from)}" onchange="UI.ex.from=this.value; renderExport()"></div>
+      <div class="fld"><label for="xt2">ถึงวันที่</label><input id="xt2" type="date" value="${h(X.to)}" onchange="UI.ex.to=this.value; renderExport()"></div></div></section>
+    <div class="row between"><label class="row" style="gap:8px;font-weight:600"><input type="checkbox" ${allOn ? 'checked' : ''} ${list.length ? '' : 'disabled'} onchange="UI.exportList.forEach(id => this.checked ? UI.exportSel.add(id) : UI.exportSel.delete(id)); renderExport()">เลือกทั้งหมดที่แสดงอยู่ (${list.length})</label><span class="muted">แสดง ${list.length} จาก ${UI.events.length} กิจกรรมตามตัวกรอง</span></div>
+    <div class="table-wrap"><table style="min-width:860px"><thead><tr><th></th><th>กิจกรรม</th><th>วันที่</th><th>สถานที่</th><th>ส่งแล้ว</th><th class="num">ยอดรวม</th></tr></thead><tbody>
+      ${list.map(ev => `<tr><td><input type="checkbox" aria-label="เลือก ${h(ev.name)}" ${UI.exportSel.has(ev.id) ? 'checked' : ''} onchange="this.checked ? UI.exportSel.add('${h(ev.id)}') : UI.exportSel.delete('${h(ev.id)}'); renderExport()"></td><td><b>${h(ev.name)}</b></td><td>${h(thDate(ev.start))}</td><td>${h(ev.venue)}</td><td>${ev.sent}/${ev.n}</td><td class="num">฿ ${fmt(ev.total)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted" style="text-align:center;padding:24px">ไม่มีกิจกรรมในช่วงนี้</td></tr>'}
+    </tbody></table></div>
+    <section class="card" style="padding:20px"><h2>คอลัมน์ในไฟล์ Excel</h2><p class="hint" style="margin:0">ชื่องาน · ลำดับสตาฟ · ชื่อสตาฟ · แผนก · ยอดเงิน · link pdf — ต่อท้ายแต่ละกิจกรรมด้วยแถว “ยอดรวมทั้งสิ้น (Grand Total)” เหมือนไฟล์เดิม</p></section>
+    <div class="savebar"><span><b>เลือก ${chosen.length} กิจกรรม</b> · พนักงานที่ส่งแล้ว ${people} คน · ยอดรวม ฿ ${fmt(total)}</span><button type="button" class="btn btn-primary" id="exBtn" ${chosen.length ? '' : 'disabled'} onclick="downloadExportExcel()">ดาวน์โหลด Excel</button></div>`, 'export'));
+}
+async function downloadExportExcel(){
+  const ids = UI.events.filter(ev => UI.exportSel.has(ev.id)).map(ev => ev.id);
+  const btn = document.getElementById('exBtn'); btn.disabled = true; btn.textContent = 'กำลังดาวน์โหลด…';
+  try{
+    const res = await callApi('getRosters', { eventIds: ids });
+    if(!res || !res.ok) throw new Error(res && res.error || 'load');
+    const rows = [];
+    ids.forEach(id => { const r = res.rosters[id]; if(r && r.ok) rows.push(...excelRows(r.event.eventName, r.roster || [])); });
+    writeExcel(rows, 'รายงานเบิกค่าเดินทาง.xlsx');
+    toast(`ดาวน์โหลด Excel แล้ว (${ids.length} กิจกรรม)`);
+  }catch(err){ if(String(err.message) !== 'UNAUTHORIZED') toast('ดาวน์โหลดไม่สำเร็จ: ' + err.message, null, null, 8000); }
+  finally{ btn.disabled = false; btn.textContent = 'ดาวน์โหลด Excel'; }
+}
+
+/* ---------- start ---------- */
+window.addEventListener('pageshow', e => { if(e.persisted) route(); });
+route();
+
 </script>
 </body>
 </html>
