@@ -12,15 +12,34 @@ const SHEET_EVENT_EMPLOYEES = 'EventEmployees';
 const SHEET_EVENT_FUEL_PRICES = 'EventFuelPrices';
 const DRIVE_FOLDER_NAME = 'EventExpenseTracker_Files';
 const FUEL_RECEIPTS_SUBFOLDER_NAME = 'Fuel_Receipts';
+const SHEET_SUBMISSION_HISTORY = 'SubmissionHistory';
+
+// Serialises every Sheets read-modify-write so two people saving at the
+// same moment can never overwrite each other's rows. Drive uploads are
+// done BEFORE calling this, so the lock is only held for the quick
+// sheet part.
+function withLock_(fn) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    throw new Error('ระบบกำลังบันทึกข้อมูลของคนอื่นอยู่ กรุณาลองใหม่อีกครั้งในไม่กี่วินาที');
+  }
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
 
 // ---------- SETUP ----------
 function setupSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
+  // SAFE: only creates sheets that don't exist yet. Running setupSheets()
+  // again never clears existing data (the old version called sh.clear()).
   function ensureSheet(name, headers) {
     let sh = ss.getSheetByName(name);
+    if (sh && sh.getLastRow() > 0) return sh;
     if (!sh) sh = ss.insertSheet(name);
-    sh.clear();
     sh.appendRow(headers);
     sh.setFrozenRows(1);
     return sh;
@@ -43,6 +62,11 @@ function setupSheets() {
   ensureSheet(SHEET_EVENT_FUEL_PRICES, [
     'event_id', 'date', 'price', 'receipt_url'
   ]);
+
+  ensureSheet(SHEET_SUBMISSION_HISTORY, [
+    'submission_id', 'event_id', 'employee_name', 'department',
+    'updated_at', 'total_amount', 'pdf_file_url', 'trip_details_json', 'replaced_at'
+  ]);
   // Force the 'date' column to stay plain text (YYYY-MM-DD) — otherwise
   // Sheets auto-converts date-looking strings into Date serials, which
   // breaks the simple lexicographic date comparisons used for the
@@ -54,10 +78,18 @@ function setupSheets() {
   Logger.log('Setup complete.');
 }
 
+// The root folder's ID is remembered in Script Properties, so we no longer
+// search the whole Drive by name (getFoldersByName) on every request.
 function getOrCreateDriveFolder() {
+  const props = PropertiesService.getScriptProperties();
+  const savedId = props.getProperty('ROOT_FOLDER_ID');
+  if (savedId) {
+    try { return DriveApp.getFolderById(savedId); } catch (err) { /* deleted or moved: fall through */ }
+  }
   const folders = DriveApp.getFoldersByName(DRIVE_FOLDER_NAME);
-  if (folders.hasNext()) return folders.next();
-  return DriveApp.createFolder(DRIVE_FOLDER_NAME);
+  const folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(DRIVE_FOLDER_NAME);
+  props.setProperty('ROOT_FOLDER_ID', folder.getId());
+  return folder;
 }
 
 // ---------- Per-event Drive folder structure ----------
@@ -72,6 +104,18 @@ function getOrCreateSubfolder_(parentFolder, name) {
 }
 
 function getOrCreateEventFolder(eventId, eventName) {
+  const props = PropertiesService.getScriptProperties();
+  const key = 'EVENT_FOLDER_' + eventId;
+  const savedId = props.getProperty(key);
+  if (savedId) {
+    try { return DriveApp.getFolderById(savedId); } catch (err) { /* fall through and recreate */ }
+  }
+  const folder = findOrCreateEventFolder_(eventId, eventName);
+  props.setProperty(key, folder.getId());
+  return folder;
+}
+
+function findOrCreateEventFolder_(eventId, eventName) {
   const root = getOrCreateDriveFolder();
   const safeEventName = String(eventName || '').replace(/[\\/:*?"<>|]/g, '_').trim();
   const folderName = safeEventName ? (eventId + ' - ' + safeEventName) : eventId;
@@ -162,7 +206,9 @@ function doPost(e) {
   try {
     return jsonOut(routeAction(action, body.payload));
   } catch (err) {
-    return jsonOut({ ok: false, error: 'Internal Server Error: ' + String(err) });
+    Logger.log('doPost error [' + action + ']: ' + (err && err.stack ? err.stack : err));
+    const msg = (err && err.message) ? err.message : String(err);
+    return jsonOut({ ok: false, error: 'เกิดข้อผิดพลาดในระบบ: ' + msg });
   }
 }
 
@@ -190,6 +236,14 @@ function routeAction(action, payload) {
       return apiGetFileAsBase64(payload);
     case 'getFuelReceiptImages':
       return apiGetFuelReceiptImages(payload);
+    case 'getRosters':
+      return apiGetRosters(payload);
+    case 'getSubmissionHistory':
+      return apiGetSubmissionHistory(payload);
+    case 'restoreVersion':
+      return apiRestoreVersion(payload);
+    case 'verifyAdmin':
+      return { ok: true, apiVersion: API_VERSION };
     default:
       return { ok: false, error: 'ไม่พบ Action ที่ระบุ: ' + action };
   }
@@ -258,6 +312,21 @@ function cacheGetJson_(key) {
     return null; // cache miss/unavailable — caller just falls back to a real read
   }
 }
+// Every write (create/update event, submit, restore) clears the affected
+// keys, so results can safely be remembered for 10 minutes. If someone edits
+// the Google Sheet by hand, run clearCache() once to see the change at once.
+const CACHE_TTL_ = 600;
+const API_VERSION = '2026-11-v4'; // v4: no Admin passcode // index.html checks this to warn when an older deployment is still live
+
+function clearCache() {
+  const keys = [CACHE_KEY_EVENTS_LIST];
+  const ids = sheetToObjects(getSheet(SHEET_EVENTS)).map(e => e.event_id);
+  ids.forEach(id => keys.push('event_info_' + id, 'roster_' + id));
+  sheetToObjects(getSheet(SHEET_EVENT_EMPLOYEES)).forEach(e => keys.push('mysub_' + e.event_id + '_' + String(e.employee_name).trim()));
+  for (let i = 0; i < keys.length; i += 900) CacheService.getScriptCache().removeAll(keys.slice(i, i + 900));
+  Logger.log('ล้าง cache แล้ว ' + keys.length + ' รายการ');
+}
+
 function cacheSetJson_(key, obj, ttlSeconds) {
   try {
     // CacheService values are capped at 100KB — silently skip caching
@@ -271,6 +340,51 @@ function cacheRemove_(key) {
   try {
     CacheService.getScriptCache().remove(key);
   } catch (err) { /* no-op */ }
+}
+
+// created_at is stored as 'dd/MM/yyyy - HH:mm' (see nowStr), which
+// new Date() can't parse — so sorting by it silently did nothing. This
+// parses that format (and real Date values) into a sortable number.
+// ---------- Deadline (close_at) helpers ----------
+// The Events sheet gets a 'close_at' column automatically the first time it
+// is needed, so existing spreadsheets keep working without a manual step.
+function ensureEventsColumn_(name) {
+  const sh = getSheet(SHEET_EVENTS);
+  const lastCol = sh.getLastColumn();
+  const headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  let idx = headers.indexOf(name);
+  if (idx === -1) {
+    sh.getRange(1, lastCol + 1).setValue(name);
+    sh.getRange(1, lastCol + 1, sh.getMaxRows(), 1).setNumberFormat('@'); // keep as plain text
+    idx = lastCol;
+  }
+  return idx; // 0-based
+}
+
+// Normalises whatever Sheets stored (text or an auto-parsed Date) into
+// 'YYYY-MM-DDTHH:mm' (Bangkok time), or '' when no deadline is set.
+function closeAtStr_(v) {
+  if (!v) return '';
+  if (v instanceof Date) return Utilities.formatDate(v, 'GMT+7', "yyyy-MM-dd'T'HH:mm");
+  const s = String(v).trim();
+  const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(s);
+  return m ? (m[1] + 'T' + m[2]) : '';
+}
+
+function isClosed_(closeAt) {
+  const s = closeAtStr_(closeAt);
+  if (!s) return false;
+  const nowBkk = Utilities.formatDate(new Date(), 'GMT+7', "yyyy-MM-dd'T'HH:mm");
+  return nowBkk >= s; // same fixed-width format, so string comparison is safe
+}
+
+function parseStamp_(v) {
+  if (!v) return 0;
+  if (v instanceof Date) return v.getTime();
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s*-\s*(\d{1,2}):(\d{2}))?/.exec(String(v).trim());
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0)).getTime();
+  const t = new Date(v).getTime();
+  return isNaN(t) ? 0 : t;
 }
 
 function generateId(prefix) {
@@ -361,34 +475,16 @@ function driveFileToBase64Attachment_(url) {
 // Mirrors the isExisting/existingUrl pattern already used for travel-
 // receipt attachments in apiSubmitExpense, so editing an event never
 // silently deletes or re-encodes a fuel receipt that wasn't touched.
-function saveFuelPrices_(eventId, eventName, fuelPrices) {
-  const sheet = getSheet(SHEET_EVENT_FUEL_PRICES);
-  if (!sheet) return;
-
-  // Replace this event's price rows wholesale — safe because every row we
-  // write below either keeps the receipt's existing Drive URL untouched or
-  // uploads a fresh one; nothing is ever silently dropped unless the client
-  // omitted that date/receipt on purpose (i.e. the user removed it in the UI).
-  //
-  // PERFORMANCE: previously this issued one deleteRow() call per existing
-  // row PLUS one appendRow() call per new row — each one a separate,
-  // relatively slow Sheets API round-trip. Instead, read the whole sheet
-  // once, build the final data set in memory (every other event's rows +
-  // this event's new rows), and write it all back with a single batched
-  // setValues() call.
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const idCol = headers.indexOf('event_id');
-  const otherRows = data.slice(1).filter(row => row[idCol] !== eventId);
-
+// Step 1 (outside the lock): upload any new receipt images to Drive and
+// build the rows. Step 2 (inside the lock): writeFuelRows_ replaces this
+// event's rows in the sheet.
+function buildFuelRows_(eventId, eventName, fuelPrices) {
   const newRows = [];
   if (Array.isArray(fuelPrices) && fuelPrices.length > 0) {
-    let fuelFolder = null; // lazily created — only if we actually need to upload a new receipt
-
+    let fuelFolder = null;
     fuelPrices.forEach(fp => {
       if (!fp || !fp.date) return;
       let receiptUrl = '';
-
       if (fp.receipt) {
         if (fp.receipt.isExisting && fp.receipt.existingUrl) {
           receiptUrl = fp.receipt.existingUrl;
@@ -411,20 +507,33 @@ function saveFuelPrices_(eventId, eventName, fuelPrices) {
           }
         }
       }
-
       newRows.push([eventId, String(fp.date), Math.round((Number(fp.price) || 0) * 100) / 100, receiptUrl]);
     });
   }
+  return newRows;
+}
 
+function writeFuelRows_(eventId, newRows) {
+  const sheet = getSheet(SHEET_EVENT_FUEL_PRICES);
+  if (!sheet) return;
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idCol = headers.indexOf('event_id');
+  const otherRows = data.slice(1).filter(row => row[idCol] !== eventId);
   const finalRows = otherRows.concat(newRows);
-  // Clear just the data area (keep the header row + its formatting intact)
-  // then write everything back in one shot.
   const numCols = headers.length;
   const lastRow = sheet.getLastRow();
   if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, numCols).clearContent();
   if (finalRows.length > 0) {
     sheet.getRange(2, 1, finalRows.length, numCols).setValues(finalRows);
   }
+}
+
+// Kept for compatibility with any manual calls; new code uses the two
+// functions above so uploads happen outside the lock.
+function saveFuelPrices_(eventId, eventName, fuelPrices) {
+  const rows = buildFuelRows_(eventId, eventName, fuelPrices);
+  withLock_(() => writeFuelRows_(eventId, rows));
 }
 
 // Fast path — plain sheet read only, NO Drive calls. Used by
@@ -473,7 +582,13 @@ function apiCreateEvent(payload) {
   const vercelBaseUrl = 'https://event-expense-tracker-chi.vercel.app';
   const formLink = vercelBaseUrl + '/form.html?event=' + eventId;
 
-  events.appendRow([
+  // Upload fuel receipts first (slow Drive I/O), then write every sheet
+  // inside one short lock.
+  const fuelRows = buildFuelRows_(eventId, payload.eventName, payload.fuelPrices);
+
+  withLock_(() => {
+  const closeIdx = ensureEventsColumn_('close_at');
+  const row = [
     eventId, 
     String(payload.eventName).trim(), 
     String(payload.ownerName).trim(), 
@@ -483,7 +598,10 @@ function apiCreateEvent(payload) {
     formLink, 
     '', 
     nowStr()
-  ]);
+  ];
+  while (row.length <= closeIdx) row.push('');
+  row[closeIdx] = closeAtStr_(payload.closeAt);
+  events.appendRow(row);
 
   const empSheet = getSheet(SHEET_EVENT_EMPLOYEES);
   if (Array.isArray(payload.employees) && payload.employees.length > 0) {
@@ -498,7 +616,8 @@ function apiCreateEvent(payload) {
     }
   }
 
-  saveFuelPrices_(eventId, payload.eventName, payload.fuelPrices);
+  writeFuelRows_(eventId, fuelRows);
+  });
 
   cacheRemove_(CACHE_KEY_EVENTS_LIST);
 
@@ -516,6 +635,10 @@ function apiUpdateEvent(payload) {
     return { ok: false, error: 'กรุณากรอกชื่อกิจกรรมและชื่อผู้สร้าง' };
   }
 
+  const fuelRows = buildFuelRows_(payload.eventId, payload.eventName, payload.fuelPrices);
+
+  const lockedResult = withLock_(() => {
+  ensureEventsColumn_('close_at');
   const events = getSheet(SHEET_EVENTS);
   const data = events.getDataRange().getValues();
   const headers = data[0];
@@ -542,6 +665,8 @@ function apiUpdateEvent(payload) {
   if (venueCol > -1) updatedRow[venueCol] = String(payload.venue || '').trim();
   updatedRow[startCol] = payload.startDate || '';
   updatedRow[endCol] = payload.endDate || payload.startDate || '';
+  const closeCol = headers.indexOf('close_at');
+  if (closeCol > -1 && Object.prototype.hasOwnProperty.call(payload, 'closeAt')) updatedRow[closeCol] = closeAtStr_(payload.closeAt);
   events.getRange(rowIndex + 1, 1, 1, updatedRow.length).setValues([updatedRow]);
 
   // ลบรายชื่อพนักงานเดิม แล้วอัปเดตชุดใหม่ลงไป
@@ -573,7 +698,10 @@ function apiUpdateEvent(payload) {
   // isExisting/existingUrl keeps pointing at its original Drive file, so
   // editing the event never drops previously uploaded fuel receipts unless
   // the client omitted them on purpose (user removed them in the UI).
-  saveFuelPrices_(payload.eventId, payload.eventName, payload.fuelPrices);
+  writeFuelRows_(payload.eventId, fuelRows);
+  return null;
+  });
+  if (lockedResult) return lockedResult;
 
   cacheRemove_(CACHE_KEY_EVENTS_LIST);
   cacheRemove_('event_info_' + payload.eventId);
@@ -583,7 +711,7 @@ function apiUpdateEvent(payload) {
 }
 
 // ---------- API: รายการกิจกรรมทั้งหมด ----------
-const CACHE_KEY_EVENTS_LIST = 'events_list_v1';
+const CACHE_KEY_EVENTS_LIST = 'v3_events_list_v1';
 
 function apiListAllEvents() {
   const cached = cacheGetJson_(CACHE_KEY_EVENTS_LIST);
@@ -600,22 +728,35 @@ function apiListAllEvents() {
     staffCountByEvent[e.event_id] = (staffCountByEvent[e.event_id] || 0) + 1;
   });
 
+  // Per-event submitted count + total (only people still on that event's list).
+  const onList = {};
+  employees.forEach(e => { onList[e.event_id + '|' + String(e.employee_name).trim()] = true; });
+  const sentByEvent = {}, totalByEvent = {};
+  sheetToObjects(getSheet(SHEET_SUBMISSIONS)).forEach(sb => {
+    if (!onList[sb.event_id + '|' + String(sb.employee_name).trim()]) return;
+    sentByEvent[sb.event_id] = (sentByEvent[sb.event_id] || 0) + 1;
+    totalByEvent[sb.event_id] = (totalByEvent[sb.event_id] || 0) + (Number(sb.total_amount) || 0);
+  });
+
   const list = events.map(ev => {
     return {
+      submittedCount: sentByEvent[ev.event_id] || 0,
+      totalAmount: Math.round((totalByEvent[ev.event_id] || 0) * 100) / 100,
+      closeAt: closeAtStr_(ev.close_at), isClosed: isClosed_(ev.close_at),
       eventId: ev.event_id,
       eventName: ev.event_name,
       ownerName: ev.owner_name,
       venue: ev.venue || '',
-      startDate: dateStr(ev.start_date),
-      endDate: dateStr(ev.end_date),
+      startDate: isoDateStr(ev.start_date),
+      endDate: isoDateStr(ev.end_date),
       formLink: ev.form_link || (ScriptApp.getService().getUrl() + '?page=form&event=' + ev.event_id),
       staffCount: staffCountByEvent[ev.event_id] || 0,
       createdAt: ev.created_at
     };
-  }).sort((a, b) => (new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+  }).sort((a, b) => parseStamp_(b.createdAt) - parseStamp_(a.createdAt));
 
-  const result = { ok: true, events: list };
-  cacheSetJson_(CACHE_KEY_EVENTS_LIST, result, 45);
+  const result = { ok: true, apiVersion: API_VERSION, events: list };
+  cacheSetJson_(CACHE_KEY_EVENTS_LIST, result, CACHE_TTL_);
   return result;
 }
 
@@ -632,15 +773,22 @@ function apiGetEventInfo(payload) {
   const ev = events.find(e => e.event_id === eventId);
   if (!ev) return { ok: false, error: 'ไม่พบกิจกรรมนี้ในระบบ (Event ID ไม่ถูกต้อง)' };
 
+  // Names that already have a submission — shown as a small “ส่งแล้ว” tag in
+  // the staff name picker, and the trigger for the “is this you?” check.
+  const submittedNames = {};
+  sheetRowsMatching_(getSheet(SHEET_SUBMISSIONS), 'event_id', eventId)
+    .forEach(s => { submittedNames[String(s.employee_name).trim()] = true; });
+
   const employees = sheetToObjects(getSheet(SHEET_EVENT_EMPLOYEES))
     .filter(x => x.event_id === eventId)
-    .map(x => ({ name: x.employee_name, department: x.department }));
+    .map(x => ({ name: x.employee_name, department: x.department, submitted: !!submittedNames[String(x.employee_name).trim()] }));
 
   const result = {
     ok: true,
     event: {
       eventId: ev.event_id, eventName: ev.event_name, ownerName: ev.owner_name, venue: ev.venue || '',
-      startDate: dateStr(ev.start_date), endDate: dateStr(ev.end_date)
+      startDate: isoDateStr(ev.start_date), endDate: isoDateStr(ev.end_date),
+      closeAt: closeAtStr_(ev.close_at), isClosed: isClosed_(ev.close_at)
     },
     employees: employees,
     // Per-day Gasohol 91 price (receipt IMAGES are intentionally excluded
@@ -652,7 +800,7 @@ function apiGetEventInfo(payload) {
   // This endpoint fires on every single form.html page load, so caching it
   // briefly means every concurrent staff member opening the same event's
   // form link gets served instantly instead of re-scanning both sheets.
-  cacheSetJson_(cacheKey, result, 30);
+  cacheSetJson_(cacheKey, result, CACHE_TTL_);
   return result;
 }
 
@@ -700,6 +848,12 @@ function apiGetEventRoster(payload) {
     }
   }
 
+  const editCounts = {};
+  const histSheet = getSheet(SHEET_SUBMISSION_HISTORY);
+  if (histSheet) sheetRowsMatching_(histSheet, 'event_id', eventId).forEach(hr => {
+    const k = String(hr.employee_name).trim(); editCounts[k] = (editCounts[k] || 0) + 1;
+  });
+
   const rows = roster.map(emp => {
     const sub = submissions.find(s => String(s.employee_name).trim() === String(emp.employee_name).trim());
     if (!sub) {
@@ -713,7 +867,8 @@ function apiGetEventRoster(payload) {
       employeeName: emp.employee_name, department: emp.department,
       submitted: true, status: sub.submission_status, updatedAt: sub.updated_at,
       totalAmount: Math.round((Number(sub.total_amount) || 0) * 100) / 100, pdfUrl: sub.pdf_file_url, summaryText: sub.summary_text,
-      claimedDays: countClaimedDays_(sub), tripDetails: getTripDetails_(sub)
+      claimedDays: countClaimedDays_(sub), tripDetails: getTripDetails_(sub),
+      editCount: editCounts[String(emp.employee_name).trim()] || 0
     };
   });
 
@@ -721,7 +876,8 @@ function apiGetEventRoster(payload) {
     ok: true,
     event: {
       eventId: ev.event_id, eventName: ev.event_name, ownerName: ev.owner_name, venue: ev.venue || '',
-      startDate: dateStr(ev.start_date), endDate: dateStr(ev.end_date)
+      startDate: isoDateStr(ev.start_date), endDate: isoDateStr(ev.end_date),
+      closeAt: closeAtStr_(ev.close_at), isClosed: isClosed_(ev.close_at)
     },
     roster: rows
   };
@@ -729,7 +885,7 @@ function apiGetEventRoster(payload) {
   // the same event's roster panel, short enough that a fresh submission
   // never stays hidden for long even if the explicit cacheRemove_ below
   // were ever missed.
-  cacheSetJson_(cacheKey, result, 20);
+  cacheSetJson_(cacheKey, result, CACHE_TTL_);
   return result;
 }
 
@@ -743,6 +899,9 @@ function apiSubmitExpense(payload) {
   const events = sheetToObjects(getSheet(SHEET_EVENTS));
   const ev = events.find(e => e.event_id === payload.eventId);
   if (!ev) return { ok: false, error: 'ไม่พบกิจกรรมนี้ในระบบ' };
+  if (isClosed_(ev.close_at)) {
+    return { ok: false, code: 'CLOSED', error: 'ปิดรับเอกสารแล้วเมื่อ ' + closeAtStr_(ev.close_at).replace('T', ' ') + ' — กรุณาติดต่อผู้จัดงานให้ขยายเวลา' };
+  }
 
   // Travel-receipt images & the generated PDF live directly inside this
   // event's own folder (kept apart from daily fuel-price receipts, which
@@ -841,7 +1000,10 @@ function apiSubmitExpense(payload) {
     trips: tripDetails
   };
 
-  // ตรวจสอบการส่งซ้ำ + เขียนแถวลง Sheet — NO LockService (temporarily removed)
+  // ตรวจสอบการส่งซ้ำ + เขียนแถวลง Sheet — ทำภายใต้ LockService
+  // (Drive uploads above already finished, so the lock is held only for
+  // the quick sheet part).
+  const lockedOut = withLock_(() => {
   const all = sheetToObjects(submissions);
   const existingIndex = all.findIndex(
     s => s.event_id === payload.eventId && String(s.employee_name).trim() === String(payload.employeeName).trim()
@@ -872,10 +1034,27 @@ function apiSubmitExpense(payload) {
   ];
 
   if (isResubmit) {
+    // Keep the version being replaced in SubmissionHistory (a separate
+    // sheet, never read by normal page loads, so it adds no load time).
+    const old = all[existingIndex];
+    let hist = getSheet(SHEET_SUBMISSION_HISTORY);
+    if (!hist) {
+      hist = SpreadsheetApp.getActiveSpreadsheet().insertSheet(SHEET_SUBMISSION_HISTORY);
+      hist.appendRow(['submission_id', 'event_id', 'employee_name', 'department',
+        'updated_at', 'total_amount', 'pdf_file_url', 'trip_details_json', 'replaced_at']);
+      hist.setFrozenRows(1);
+    }
+    hist.appendRow([old.submission_id, old.event_id, old.employee_name, old.department,
+      old.updated_at, old.total_amount, old.pdf_file_url, old.trip_details_json, timeNow]);
     submissions.getRange(existingIndex + 2, 1, 1, rowData.length).setValues([rowData]);
   } else {
     submissions.appendRow(rowData);
   }
+  return { submissionId: submissionId, status: status, isResubmit: isResubmit };
+  });
+  const submissionId = lockedOut.submissionId;
+  const status = lockedOut.status;
+  const isResubmit = lockedOut.isResubmit;
 
   // The roster panel (index.html) must always reflect a just-submitted
   // claim immediately — never wait out the cache TTL. Same for this
@@ -883,6 +1062,8 @@ function apiSubmitExpense(payload) {
   // immediately re-select their name again.
   cacheRemove_('roster_' + payload.eventId);
   cacheRemove_('mysub_' + payload.eventId + '_' + String(payload.employeeName).trim());
+  cacheRemove_('event_info_' + payload.eventId); // refresh the “ส่งแล้ว” tags
+  cacheRemove_(CACHE_KEY_EVENTS_LIST);
 
   return { ok: true, submissionId: submissionId, status: status, pdfUrl: pdfUrl, resubmitted: isResubmit };
 }
@@ -907,7 +1088,7 @@ function apiGetMySubmission(payload) {
   const sub = eventSubs.find(s => String(s.employee_name).trim() === employeeName);
   if (!sub) {
     const notFoundResult = { ok: true, exists: false };
-    cacheSetJson_(cacheKey, notFoundResult, 15);
+    cacheSetJson_(cacheKey, notFoundResult, CACHE_TTL_);
     return notFoundResult;
   }
 
@@ -936,10 +1117,11 @@ function apiGetMySubmission(payload) {
       fuelRefPrice: details.fuelRefPrice || '',
       trips: details.trips || [],
       status: sub.submission_status,
-      updatedAt: sub.updated_at
+      updatedAt: sub.updated_at,
+      totalAmount: Number(sub.total_amount) || 0
     }
   };
-  cacheSetJson_(cacheKey, result, 15);
+  cacheSetJson_(cacheKey, result, CACHE_TTL_);
   return result;
 }
 
@@ -986,9 +1168,106 @@ function apiGetSubmissionAttachmentImages(payload) {
 // Reuses the same helper already trusted for receipt-image previews.
 function apiGetFileAsBase64(payload) {
   if (!payload || !payload.url) return { ok: false, error: 'ไม่ได้ระบุ URL ไฟล์' };
+  if (!isFileInsideRoot_(payload.url)) return { ok: false, error: 'ไฟล์นี้ไม่ได้อยู่ในโฟลเดอร์ของระบบ' };
   const att = driveFileToBase64Attachment_(payload.url);
   if (!att) return { ok: false, error: 'ไม่สามารถอ่านไฟล์นี้ได้ (อาจถูกลบ หรือไม่มีสิทธิ์เข้าถึง)' };
   return { ok: true, base64: att.base64, fileName: att.fileName, mimeType: att.mimeType };
+}
+
+// True only when the file lives inside EventExpenseTracker_Files (any
+// depth up to 3: root / event folder / Fuel_Receipts). Stops the endpoint
+// from being used to read arbitrary files in the script owner's Drive.
+function isFileInsideRoot_(url) {
+  const fileId = driveFileIdFromUrl_(url);
+  if (!fileId) return false;
+  try {
+    const rootId = getOrCreateDriveFolder().getId();
+    let frontier = [];
+    const parents = DriveApp.getFileById(fileId).getParents();
+    while (parents.hasNext()) frontier.push(parents.next());
+    for (let depth = 0; depth < 3 && frontier.length; depth++) {
+      const next = [];
+      for (const f of frontier) {
+        if (f.getId() === rootId) return true;
+        const up = f.getParents();
+        while (up.hasNext()) next.push(up.next());
+      }
+      frontier = next;
+    }
+  } catch (err) {
+    Logger.log('isFileInsideRoot_ error: ' + err);
+  }
+  return false;
+}
+
+// ---------- API: ประวัติการส่งของพนักงาน 1 คน (ฉบับปัจจุบัน + ฉบับก่อนหน้า) ----------
+function apiGetSubmissionHistory(payload) {
+  if (!payload || !payload.eventId || !payload.employeeName) return { ok: false, error: 'ระบุข้อมูลไม่สมบูรณ์' };
+  const name = String(payload.employeeName).trim();
+  const cur = sheetRowsMatching_(getSheet(SHEET_SUBMISSIONS), 'event_id', payload.eventId)
+    .find(r => String(r.employee_name).trim() === name);
+  if (!cur) return { ok: false, error: 'ยังไม่มีใบเบิกของคนนี้' };
+  const trips = j => { try { return (JSON.parse(j) || {}).trips || []; } catch (e) { return []; } };
+  const versions = [{ key: 'current', updatedAt: cur.updated_at, totalAmount: Number(cur.total_amount) || 0, pdfUrl: cur.pdf_file_url || '', trips: trips(cur.trip_details_json), current: true }];
+  const hs = getSheet(SHEET_SUBMISSION_HISTORY);
+  if (hs) {
+    sheetRowsMatching_(hs, 'event_id', payload.eventId)
+      .filter(r => String(r.employee_name).trim() === name)
+      .reverse() // newest replaced first
+      .forEach(r => versions.push({ key: String(r.updated_at) + '|' + String(r.replaced_at), updatedAt: r.updated_at, replacedAt: r.replaced_at,
+        totalAmount: Number(r.total_amount) || 0, pdfUrl: r.pdf_file_url || '', trips: trips(r.trip_details_json), current: false }));
+  }
+  return { ok: true, versions: versions };
+}
+
+// ---------- API: กู้คืนเวอร์ชันเก่า (ฉบับปัจจุบันถูกเก็บเป็นประวัติก่อนเสมอ) ----------
+function apiRestoreVersion(payload) {
+  if (!payload || !payload.eventId || !payload.employeeName || !payload.key) return { ok: false, error: 'ระบุข้อมูลไม่สมบูรณ์' };
+  const name = String(payload.employeeName).trim();
+  const out = withLock_(() => {
+    const subSheet = getSheet(SHEET_SUBMISSIONS);
+    const data = subSheet.getDataRange().getValues(); const hd = data[0];
+    const c = n => hd.indexOf(n);
+    let r = -1;
+    for (let i = 1; i < data.length; i++) if (data[i][c('event_id')] === payload.eventId && String(data[i][c('employee_name')]).trim() === name) { r = i; break; }
+    if (r === -1) return { ok: false, error: 'ไม่พบใบเบิกปัจจุบัน' };
+    const hs = getSheet(SHEET_SUBMISSION_HISTORY);
+    if (!hs) return { ok: false, error: 'ไม่พบประวัติการส่ง' };
+    const hv = hs.getDataRange().getValues(); const hh = hv[0]; const k = n => hh.indexOf(n);
+    let hr = -1;
+    for (let i = 1; i < hv.length; i++) {
+      if (hv[i][k('event_id')] === payload.eventId && String(hv[i][k('employee_name')]).trim() === name &&
+          String(hv[i][k('updated_at')]) + '|' + String(hv[i][k('replaced_at')]) === payload.key) { hr = i; break; }
+    }
+    if (hr === -1) return { ok: false, error: 'ไม่พบเวอร์ชันที่เลือก (อาจถูกกู้คืนไปแล้ว)' };
+    const curRow = data[r], old = hv[hr], timeNow = nowStr();
+    // 1) keep today's version in history first
+    hs.appendRow([curRow[c('submission_id')], curRow[c('event_id')], curRow[c('employee_name')], curRow[c('department')],
+      curRow[c('updated_at')], curRow[c('total_amount')], curRow[c('pdf_file_url')], curRow[c('trip_details_json')], timeNow]);
+    // 2) bring the chosen version back as the current one
+    const row = curRow.slice();
+    row[c('total_amount')] = old[k('total_amount')];
+    row[c('pdf_file_url')] = old[k('pdf_file_url')];
+    row[c('trip_details_json')] = old[k('trip_details_json')];
+    row[c('updated_at')] = timeNow;
+    row[c('submission_status')] = 'กู้คืนฉบับวันที่ ' + old[k('updated_at')] + ' (' + timeNow + ' น.)';
+    if (c('summary_text') > -1) row[c('summary_text')] = '';
+    subSheet.getRange(r + 1, 1, 1, row.length).setValues([row]);
+    return { ok: true, totalAmount: Number(old[k('total_amount')]) || 0 };
+  });
+  cacheRemove_('roster_' + payload.eventId);
+  cacheRemove_('mysub_' + payload.eventId + '_' + name);
+  cacheRemove_(CACHE_KEY_EVENTS_LIST);
+  return out;
+}
+
+// ---------- API: roster ของหลาย Event ในครั้งเดียว (สำหรับ Export Excel) ----------
+// Replaces N sequential getEventRoster calls with one request.
+function apiGetRosters(payload) {
+  const ids = (payload && Array.isArray(payload.eventIds)) ? payload.eventIds : [];
+  const out = {};
+  ids.forEach(id => { out[id] = apiGetEventRoster({ eventId: id }); });
+  return { ok: true, rosters: out };
 }
 
 // ---------- API: ดึงรูปใบเสร็จราคาน้ำมัน (แบบ Base64) เฉพาะตอนที่ต้องใช้จริง ----------
