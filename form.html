@@ -1058,8 +1058,10 @@ function refreshCarFaresAll(){
 // merged onto the end of the generated PDF at export time instead of
 // being rendered as an image — see generatePdfBlob().
 function compressImageForUpload(file){
-  const MAX_DIM = 1280;
-  const JPEG_QUALITY = 0.8;
+  // Receipts have small print: keep enough pixels and quality to stay readable
+  // when printed, while still shrinking 12-megapixel phone photos.
+  const MAX_DIM = 2000;
+  const JPEG_QUALITY = 0.92;
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
   return new Promise((resolve)=>{
     const reader = new FileReader();
@@ -1410,7 +1412,7 @@ async function generatePdfBlob(){
   // below) — they're already document-shaped, so unlike a photo they
   // benefit from being shown as large as fits rather than deliberately
   // shrunk down.
-  const EVIDENCE_IMG_WIDTH_RATIO = 0.5;
+  const EVIDENCE_IMG_WIDTH_RATIO = 0.75;
   const PDF_PAGE_WIDTH_RATIO = 1.0;
 
   // Shared placement primitive: draws a caption label directly above a
@@ -1456,7 +1458,9 @@ async function generatePdfBlob(){
   }
 
   async function placeOriginalPhoto(att, caption){
-    const shouldCompress = true;
+    // The photo was already resized once when attached — re-encoding it again
+    // here only loses detail, so it goes into the PDF as-is.
+    const shouldCompress = false;
     let photoData = att.base64;
     let format = guessImageFormat(att.mimeType, att.base64);
     let naturalSize;
@@ -1490,7 +1494,7 @@ async function generatePdfBlob(){
       canvas.height = viewport.height;
       await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
       const pageCaption = pdf.numPages > 1 ? `${caption} (PDF หน้า ${pageNum}/${pdf.numPages})` : `${caption} (PDF)`;
-      await placeEvidenceBlock(pageCaption, canvas.toDataURL('image/jpeg', 0.9), 'JPEG', canvas.width, canvas.height, PDF_PAGE_WIDTH_RATIO);
+      await placeEvidenceBlock(pageCaption, canvas.toDataURL('image/jpeg', 0.92), 'JPEG', canvas.width, canvas.height, PDF_PAGE_WIDTH_RATIO);
     }
   }
 
@@ -1753,19 +1757,24 @@ function collectEvidenceItems(){
 // Re-encodes any browser-decodable image as JPEG, max 1400px on the long
 // side (keeps the .docx small). Returns null if the browser can't decode it
 // (e.g. HEIC), so the caller can write a note instead of failing.
+// Uses the attached photo as-is when it is already a JPEG/PNG of sensible size
+// (re-encoding would only lose detail). Only very large or unusual images are
+// redrawn — at high quality. Returns null if the browser can't decode it (e.g.
+// HEIC), so the caller can write a note instead of failing.
 function shrinkImageForDocx(dataUrl){
   return new Promise(resolve=>{
     const img = new Image();
     img.onload = ()=>{
-      const MAX = 1400;
+      const MAX = 2000;
       let w = img.naturalWidth || 800, h = img.naturalHeight || 600;
+      if(/^data:image\/(jpeg|png)/.test(dataUrl) && w <= MAX && h <= MAX){ resolve({ dataUrl, width: w, height: h }); return; }
       if(w > MAX || h > MAX){ const k = MAX / Math.max(w, h); w = Math.round(w*k); h = Math.round(h*k); }
       const c = document.createElement('canvas');
       c.width = w; c.height = h;
       const ctx = c.getContext('2d');
       ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
       ctx.drawImage(img, 0, 0, w, h);
-      resolve({ dataUrl: c.toDataURL('image/jpeg', 0.9), width: w, height: h });
+      resolve({ dataUrl: c.toDataURL('image/jpeg', 0.92), width: w, height: h });
     };
     img.onerror = ()=>resolve(null);
     img.src = dataUrl;
@@ -1777,11 +1786,11 @@ async function pdfAttachmentToImages(att){
   const out = [];
   for(let n = 1; n <= pdf.numPages; n++){
     const page = await pdf.getPage(n);
-    const viewport = page.getViewport({ scale: 1.6 });
+    const viewport = page.getViewport({ scale: 2 });
     const c = document.createElement('canvas');
     c.width = viewport.width; c.height = viewport.height;
     await page.render({ canvasContext: c.getContext('2d'), viewport }).promise;
-    out.push({ dataUrl: c.toDataURL('image/jpeg', 0.85), width: c.width, height: c.height });
+    out.push({ dataUrl: c.toDataURL('image/jpeg', 0.92), width: c.width, height: c.height });
   }
   return out;
 }
@@ -1855,7 +1864,7 @@ async function buildDocxBlob(){
       imgs = imgs.filter(Boolean);
       if(!imgs.length){ children.push(para('(แสดงไฟล์นี้ในเอกสารไม่ได้ — โปรดแนบเป็น JPG/PNG/PDF)', { size: SZ.body, color: 'C0392B' })); continue; }
       for(const im of imgs){
-        const maxW = isPdf ? 600 : 340, maxH = 800;
+        const maxW = isPdf ? 620 : 500, maxH = 820; // photos ~3/4 of the page width
         let w = maxW, h = Math.round(im.height * maxW / im.width);
         if(h > maxH){ h = maxH; w = Math.round(im.width * maxH / im.height); }
         children.push(new D.Paragraph({ alignment: D.AlignmentType.CENTER, spacing: { after: 200 },
