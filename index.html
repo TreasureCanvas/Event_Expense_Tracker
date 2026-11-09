@@ -197,16 +197,19 @@ const TYPE_LABELS = { BTS_GREEN:'BTS สายสีเขียว', BTS_GOLD:'
 const typeLabel = s => s.type === 'OTHER' && s.otherDescription ? `อื่นๆ (${s.otherDescription})` : (TYPE_LABELS[s.type] || s.type || '-');
 
 /* ---------- API ---------- */
-function adminKey(){ try{ return localStorage.getItem('eetAdminKey') || ''; }catch(e){ return ''; } }
 async function callApi(action, payload){
-  const res = await fetch(API_URL, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body: JSON.stringify({ action, payload: payload || {}, adminKey: adminKey() }) });
+  const res = await fetch(API_URL, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body: JSON.stringify({ action, payload: payload || {} }) });
   const data = await res.json();
-  if(data && data.code === 'UNAUTHORIZED'){
-    try{ localStorage.removeItem('eetAdminKey'); }catch(e){}
-    viewLogin('รหัส Admin ถูกเปลี่ยนหรือไม่ถูกต้อง กรุณาใส่รหัสใหม่');
-    throw new Error('UNAUTHORIZED');
-  }
+  if(data && data.code === 'UNAUTHORIZED'){ showOldBackend(); throw new Error('UNAUTHORIZED'); }
   return data;
+}
+// The live Apps Script still asks for the old Admin passcode → code.gs wasn't redeployed.
+function showOldBackend(){
+  setApp(`<header class="topbar"><div class="topbar-in"><span class="brand"><span class="brand-mark" aria-hidden="true"></span>Event Expense Tracker <small>· Admin</small></span></div></header>
+    <main><section class="card" style="max-width:640px;margin:48px auto"><h1 style="font-size:22px">ต้องอัปเดต Apps Script ก่อน</h1>
+    <div class="banner warn"><div>Apps Script ที่ใช้งานอยู่ยังเป็นเวอร์ชันที่ต้องใช้รหัส Admin แต่หน้านี้เลิกใช้รหัสแล้ว</div></div>
+    <p style="margin:0">แก้: วาง <b>code.gs</b> ตัวใหม่ใน Apps Script → Deploy → <b>Manage deployments</b> → ไอคอนดินสอ (Edit) → Version: <b>New version</b> → Deploy แล้วรีเฟรชหน้านี้</p>
+    <button type="button" class="btn btn-primary" onclick="location.reload()" style="align-self:flex-start">รีเฟรช</button></section></main>`);
 }
 
 /* ---------- local cache (show last data instantly, refresh in the background) ---------- */
@@ -275,18 +278,16 @@ function closeLightbox(){ document.getElementById('lightbox').classList.remove('
 /* ---------- shell & routing ---------- */
 function shell(content, nav){
   return `<header class="topbar"><div class="topbar-in"><a class="brand" href="#events"><span class="brand-mark" aria-hidden="true"></span>Event Expense Tracker <small>· Admin</small></a>
-    <nav class="nav" aria-label="เมนู"><a href="#events" class="${nav === 'events' ? 'on' : ''}">กิจกรรมทั้งหมด</a><a href="#export" class="${nav === 'export' ? 'on' : ''}">Export Excel</a><a href="#" onclick="logout(); return false;">ออกจากหน้า Admin</a></nav></div></header>
+    <nav class="nav" aria-label="เมนู"><a href="#events" class="${nav === 'events' ? 'on' : ''}">กิจกรรมทั้งหมด</a><a href="#export" class="${nav === 'export' ? 'on' : ''}">Export Excel</a></nav></div></header>
     <main>${content}</main>`;
 }
 function setApp(html){ document.getElementById('app').innerHTML = html; }
-function logout(){ try{ localStorage.removeItem('eetAdminKey'); }catch(e){} LC.clearAll(); viewLogin(); }
 function loadFailHtml(what){
   return `<section class="card" style="text-align:center;padding:48px 24px;align-items:center"><b style="font-size:18px">โหลด${what}ไม่สำเร็จ</b><span class="muted">อินเทอร์เน็ตหลุด หรือระบบไม่ตอบสนอง ข้อมูลในระบบไม่ได้หาย</span><button type="button" class="btn btn-primary" onclick="route()">ลองโหลดอีกครั้ง</button></section>`;
 }
 async function route(){
   NAV++;
   closeDrawer(true);
-  if(!adminKey()) return viewLogin();
   const r = (location.hash || '#events').slice(1);
   try{
     if(r === 'new') return await viewForm(null);
@@ -298,32 +299,8 @@ async function route(){
 }
 window.addEventListener('hashchange', route);
 
-/* ---------- A1 passcode ---------- */
-function viewLogin(msg){
-  setApp(`<header class="topbar"><div class="topbar-in"><span class="brand"><span class="brand-mark" aria-hidden="true"></span>Event Expense Tracker <small>· Admin</small></span></div></header>
-    <main><section class="card login"><h1 style="font-size:24px">เข้าสู่หน้า Admin</h1><p class="muted" style="margin:0">ใส่รหัส Admin ครั้งเดียว เบราว์เซอร์นี้จะจำไว้ให้</p>
-      <div class="fld"><label for="pw">รหัส Admin <span class="req">*</span></label><input id="pw" type="password" class="${msg ? 'invalid' : ''}" onkeydown="if(event.key==='Enter') login()">${msg ? `<span class="fld-err" role="alert">${h(msg)}</span>` : ''}</div>
-      <button type="button" class="btn btn-primary" id="loginBtn" onclick="login()">เข้าสู่ระบบ</button>
-      <p class="hint" style="margin:0">ไม่รู้รหัส? ติดต่อผู้ดูแลระบบ · พนักงานไม่ต้องใช้รหัส ใช้ลิงก์ฟอร์มได้เลย</p></section></main>`);
-  document.getElementById('pw').focus();
-}
-async function login(){
-  const v = document.getElementById('pw').value.trim();
-  if(!v) return viewLogin('กรุณาใส่รหัส');
-  const btn = document.getElementById('loginBtn'); btn.disabled = true; btn.textContent = 'กำลังตรวจสอบ…';
-  try{ localStorage.setItem('eetAdminKey', v); }catch(e){}
-  try{
-    const res = await callApi('verifyAdmin', {});
-    if(res && res.ok) return route();
-    viewLogin('ตรวจสอบรหัสไม่สำเร็จ ลองใหม่อีกครั้ง');
-  }catch(err){
-    if(String(err && err.message) === 'UNAUTHORIZED') viewLogin('รหัสไม่ถูกต้อง ลองใหม่อีกครั้ง');
-    else { try{ localStorage.removeItem('eetAdminKey'); }catch(e){} viewLogin('เชื่อมต่อระบบไม่ได้ ลองใหม่อีกครั้ง'); }
-  }
-}
-
 /* ---------- A2 events list ---------- */
-const oldBackendBanner = () => UI.oldBackend ? `<div class="banner warn" role="alert"><div><b>Apps Script ที่ใช้งานอยู่ยังเป็นเวอร์ชันเก่า</b> — บางข้อมูล (เช่น เวลาปิดรับ, ประวัติการส่ง) จะยังไม่ทำงาน<br>
+const oldBackendBanner = () => UI.oldBackend ? `<div class="banner warn" role="alert"><div><b>Apps Script ที่ใช้งานอยู่ยังเป็นเวอร์ชันเก่า</b> — บางส่วนอาจยังไม่ทำงาน<br>
   แก้: เปิด Apps Script → Deploy → <b>Manage deployments</b> → ไอคอนดินสอ (Edit) → Version: <b>New version</b> → Deploy แล้วรีเฟรชหน้านี้</div></div>` : '';
 const eventsHead = () => oldBackendBanner() + `<div class="row between" style="align-items:flex-end"><div><h1>กิจกรรมทั้งหมด</h1><p class="sub small" id="syncNote" aria-live="polite"></p></div>
   <div class="row"><a class="btn" href="#export">Export Excel หลายกิจกรรม</a><a class="btn btn-primary" href="#new">+ สร้างกิจกรรม</a></div></div>`;
@@ -331,7 +308,7 @@ function mapEvents(list){
   return list.map(e => ({ id:e.eventId, name:e.eventName, owner:e.ownerName, venue:e.venue, start:toISO(e.startDate), end:toISO(e.endDate), closeAt:e.closeAt || '', isClosed:!!e.isClosed,
     n:e.staffCount || 0, sent:e.submittedCount || 0, total:e.totalAmount || 0, formLink:e.formLink, counted: typeof e.submittedCount === 'number' }));
 }
-const API_VERSION_EXPECTED = '2026-11-v3';
+const API_VERSION_EXPECTED = '2026-11-v4';
 async function fillCountsFromRosters(list){
   // Older Apps Script versions don't send submitted counts — count from the rosters instead.
   try{
@@ -530,10 +507,10 @@ function shrinkImage(file){
   return new Promise((res, rej) => {
     const r = new FileReader();
     r.onload = () => { const img = new Image(); img.onload = () => {
-      const MAX = 1600; let w = img.naturalWidth, hh = img.naturalHeight;
+      const MAX = 2000; let w = img.naturalWidth, hh = img.naturalHeight;
       if(w > MAX || hh > MAX){ const k = MAX / Math.max(w, hh); w = Math.round(w * k); hh = Math.round(hh * k); }
       const c = document.createElement('canvas'); c.width = w; c.height = hh; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, hh); x.drawImage(img, 0, 0, w, hh);
-      res(c.toDataURL('image/jpeg', 0.85)); }; img.onerror = () => rej(new Error('ไฟล์นี้เปิดเป็นรูปไม่ได้ (เช่น HEIC) — บันทึกเป็น JPG/PNG แล้วแนบใหม่')); img.src = r.result; };
+      res(c.toDataURL('image/jpeg', 0.92)); }; img.onerror = () => rej(new Error('ไฟล์นี้เปิดเป็นรูปไม่ได้ (เช่น HEIC) — บันทึกเป็น JPG/PNG แล้วแนบใหม่')); img.src = r.result; };
     r.onerror = () => rej(new Error('อ่านไฟล์ไม่สำเร็จ')); r.readAsDataURL(file);
   });
 }
@@ -789,7 +766,7 @@ async function buildDocx(row, fp, images){
       if(!att || !/^data:image\//.test(att.base64 || '')){ kids.push(para(att ? '(ไฟล์ PDF — เปิดดูได้ที่ลิงก์ใน Drive)' : '(โหลดไฟล์นี้ไม่สำเร็จ)', { color:'7A7A7A' })); continue; }
       const img = await new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = att.base64; });
       if(!img){ kids.push(para('(แสดงรูปนี้ไม่ได้)', { color:'7A7A7A' })); continue; }
-      let w = 340, hh = Math.round(img.naturalHeight * 340 / img.naturalWidth); if(hh > 800){ hh = 800; w = Math.round(img.naturalWidth * 800 / img.naturalHeight); }
+      let w = 500, hh = Math.round(img.naturalHeight * 500 / img.naturalWidth); if(hh > 820){ hh = 820; w = Math.round(img.naturalWidth * 820 / img.naturalHeight); }
       const bytes = Uint8Array.from(atob(att.base64.split(',')[1]), c => c.charCodeAt(0));
       kids.push(new D.Paragraph({ alignment:D.AlignmentType.CENTER, spacing:{ after:200 }, children:[new D.ImageRun({ data:bytes, transformation:{ width:w, height:hh } })] }));
     }
