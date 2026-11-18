@@ -167,7 +167,7 @@
    Event Expense Tracker — หน้า Admin (index.html)
    ⚠️ ใส่ Web App URL ของ Google Apps Script ที่บรรทัด API_URL ด้านล่าง
    ===================================================================== */
-const API_URL = 'https://script.google.com/macros/s/AKfycbwpocNSNrJea93nQsKLAZrYHhyHtBsgEpgo5E6t2L4zJyBN1jCj7yYq-D5kyt1ZwHE/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbwmrjHdnyF4r89xnA3w35zat7x5XWO7Y7c732kG7oy9RV6eQW75ykyjjrhZHAK0CIU/exec';
 
 const h = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const fmt = n => (Number(n) || 0).toLocaleString('th-TH', { minimumFractionDigits:2, maximumFractionDigits:2 });
@@ -732,7 +732,7 @@ function tripsToDays(trips){
   (trips || []).forEach(t => { if(!t) return; let d = days.find(x => x.date === t.date); if(!d){ d = { date:t.date, out:[], ret:[] }; days.push(d); } (t.label === 'ขากลับ' ? d.ret : d.out).push(...(t.segments || [])); });
   return days;
 }
-async function buildDocx(row, fp, images){
+async function buildDocx(row, fp, images, fuelImgs){
   const D = window.docx; if(!D) throw new Error('โหลดไลบรารีสร้างไฟล์ Word ไม่สำเร็จ');
   const FONT = 'TH Sarabun New', SZ = { body:24, title:32, heading:28, sub:24, total:28 };
   const run = (t, o = {}) => new D.TextRun({ text:String(t == null ? '' : t), font:FONT, size:o.size || SZ.body, bold:!!o.bold, color:o.color });
@@ -771,15 +771,53 @@ async function buildDocx(row, fp, images){
       kids.push(new D.Paragraph({ alignment:D.AlignmentType.CENTER, spacing:{ after:200 }, children:[new D.ImageRun({ data:bytes, transformation:{ width:w, height:hh } })] }));
     }
   }
+  // หลักฐานราคาน้ำมัน — one entry per travel day that used a personal car
+  const fuelItems = [];
+  days.forEach(d => {
+    if(![...d.out, ...d.ret].some(sg => sg.type === 'CAR')) return;
+    const exact = (fp || []).find(x => x.date === d.date);
+    const prior = (fp || []).filter(x => x.date < d.date).sort((a, b) => b.date.localeCompare(a.date))[0];
+    const fe = exact || prior || (fp || []).slice().sort((a, b) => a.date.localeCompare(b.date))[0];
+    if(!fe) return;
+    const notes = [];
+    if(fe.date !== d.date) notes.push(`ใช้ราคาของวันที่ ${thDateDMY(fe.date)} เพราะไม่มีราคาของวันนี้`);
+    const img = (fuelImgs || {})[fe.date];
+    if(!img) notes.push(fe.receiptUrl ? 'ดึงรูปใบเสร็จไม่สำเร็จ' : 'ไม่มีรูปใบเสร็จแนบในระบบ');
+    fuelItems.push({ cap:`ราคาน้ำมันแก๊สโซฮอล์ 91 วันที่ ${thDateDMY(d.date)}: ${(Number(fe.price) || 0).toFixed(2)} บาท/ลิตร`, note: notes.length ? '(' + notes.join(' · ') + ')' : '', img });
+  });
+  if(fuelItems.length){
+    kids.push(new D.Paragraph({ pageBreakBefore: !ev.length, spacing:{ before:240, after:160 }, children:[run('หลักฐานราคาน้ำมัน', { bold:true, size:SZ.heading })] }));
+    for(const it of fuelItems){
+      kids.push(para(it.cap, { after: it.note ? 0 : 60 }));
+      if(it.note) kids.push(para(it.note, { color:'6B6B66' }));
+      if(!it.img) continue;
+      const im = await new Promise(res => { const x = new Image(); x.onload = () => res(x); x.onerror = () => res(null); x.src = it.img; });
+      if(!im){ kids.push(para('(แสดงรูปนี้ไม่ได้)', { color:'7A7A7A' })); continue; }
+      let w = 500, hh = Math.round(im.naturalHeight * 500 / im.naturalWidth); if(hh > 820){ hh = 820; w = Math.round(im.naturalWidth * 820 / im.naturalHeight); }
+      kids.push(new D.Paragraph({ alignment:D.AlignmentType.CENTER, spacing:{ after:200 }, children:[new D.ImageRun({ data: Uint8Array.from(atob(it.img.split(',')[1]), c => c.charCodeAt(0)), transformation:{ width:w, height:hh } })] }));
+    }
+  }
   const doc = new D.Document({ styles:{ default:{ document:{ run:{ font:FONT, size:SZ.body } } } },
     sections:[{ properties:{ page:{ size:{ width:11906, height:16838 }, margin:{ top:1000, bottom:1000, left:1000, right:1000 } } }, children:kids }] });
   return D.Packer.toBlob(doc);
 }
+async function eventFuelReceiptImages(){
+  if(UI.roster.fuelImgs) return UI.roster.fuelImgs;
+  const out = {};
+  try{
+    const r = await callApi('getFuelReceiptImages', { eventId: UI.roster.id });
+    ((r && r.ok && r.fuelPrices) || []).forEach(fp => { if(fp.receiptImage && /^data:image\//.test(fp.receiptImage.base64 || '')) out[fp.date] = fp.receiptImage.base64; });
+  }catch(e){ if(String(e.message) === 'UNAUTHORIZED') throw e; }
+  UI.roster.fuelImgs = out;
+  return out;
+}
 async function docxForRow(row){
   const fp = await eventFuelPrices();
+  const usesCar = (row.tripDetails || []).some(t => (t.segments || []).some(s => s && s.type === 'CAR'));
+  const fuelImgs = usesCar ? await eventFuelReceiptImages() : {};
   let images = {};
   try{ const r = await callApi('getSubmissionAttachmentImages', { eventId: UI.roster.id, employeeName: row.employeeName }); if(r && r.ok) images = r.images || {}; }catch(e){ if(String(e.message) === 'UNAUTHORIZED') throw e; }
-  return buildDocx(row, fp, images);
+  return buildDocx(row, fp, images, fuelImgs);
 }
 async function downloadOneDocx(i){
   const row = UI.roster.rows[i]; toast('กำลังสร้างไฟล์ Word ของ ' + row.employeeName + '…', null, null, 20000);
