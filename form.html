@@ -517,7 +517,7 @@
 /* =========================================================
    CONFIG — แก้ตรงนี้หลัง Deploy Google Apps Script แล้ว 
    ========================================================= */
-const API_URL = 'https://script.google.com/macros/s/AKfycbwpocNSNrJea93nQsKLAZrYHhyHtBsgEpgo5E6t2L4zJyBN1jCj7yYq-D5kyt1ZwHE/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbwmrjHdnyF4r89xnA3w35zat7x5XWO7Y7c732kG7oy9RV6eQW75ykyjjrhZHAK0CIU/exec';
 
 let SERVER_EVENT_ID = '<?= eventId ?>';
 if (SERVER_EVENT_ID.indexOf('<?') !== -1) SERVER_EVENT_ID = '';
@@ -1585,8 +1585,8 @@ async function generatePdfBlob(){
       if(hasCarSegment){
         const fuelEntry = getFuelPriceEntryForDate(day.date);
         if(fuelEntry){
-          const fallbackNote = fuelEntry.date !== day.date ? ` (อ้างอิงราคาวันที่ ${fuelEntry.date} เนื่องจากไม่มีราคาของวันนี้)` : '';
-          const caption = `⛽ ใบเสร็จราคาน้ำมันแก๊สโซฮอล์ 91 วันที่ ${formatThaiDate(day.date)}: ${Number(fuelEntry.price||0).toFixed(2)} บาท/ลิตร${fallbackNote}`;
+          const fallbackNote = fuelEntry.date !== day.date ? ` (ใช้ราคาของวันที่ ${formatThaiDate(fuelEntry.date)} เพราะไม่มีราคาของวันนี้)` : '';
+          const caption = `ราคาน้ำมันแก๊สโซฮอล์ 91 วันที่ ${formatThaiDate(day.date)}: ${Number(fuelEntry.price||0).toFixed(2)} บาท/ลิตร${fallbackNote}`;
           if(fuelEntry.receiptImage && fuelEntry.receiptImage.base64){
             fuelEvidenceQueue.push({ att: fuelEntry.receiptImage, caption, isPdf: false });
           } else if(fuelEntry.receiptUrl){
@@ -1628,8 +1628,13 @@ async function generatePdfBlob(){
       }
 
       if(fuelEvidenceQueue.length > 0){
-        const fuelTitleCanvas = await captureSectionTitle('⛽ หลักฐานราคาน้ำมัน (แนบโดยผู้ดูแลกิจกรรม)');
-        placeImage(fuelTitleCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', (fuelTitleCanvas.height * contentWidth) / fuelTitleCanvas.width);
+        const fuelTitleCanvas = await captureSectionTitle('หลักฐานราคาน้ำมัน');
+        const fuelTitleH = (fuelTitleCanvas.height * contentWidth) / fuelTitleCanvas.width;
+        // Keep the heading with its first receipt: if less than ~45% of a page
+        // is left, start the section on a fresh page instead of leaving the
+        // heading stranded at the bottom.
+        if(cursorY + fuelTitleH + (pageHeight - margin * 2) * 0.45 > pageHeight - margin) forceNewPage = true;
+        placeImage(fuelTitleCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', fuelTitleH);
 
         for(const item of fuelEvidenceQueue){
           await placeEvidenceItem(item);
@@ -1744,14 +1749,16 @@ function collectEvidenceItems(){
     if(hasCar){
       const fe = getFuelPriceEntryForDate(day.date);
       if(fe){
-        const note = fe.date !== day.date ? ` (อ้างอิงราคาวันที่ ${fe.date})` : '';
-        const caption = `ใบเสร็จราคาน้ำมันแก๊สโซฮอล์ 91 วันที่ ${formatThaiDate(day.date)}: ${Number(fe.price||0).toFixed(2)} บาท/ลิตร${note}`;
-        if(fe.receiptImage && fe.receiptImage.base64) fuel.push({ att: fe.receiptImage, caption });
-        else fuel.push({ att: null, caption: caption + (fe.receiptUrl ? ' (ดึงรูปใบเสร็จไม่สำเร็จ)' : ' (ไม่มีใบเสร็จแนบในระบบ)') });
+        const caption = `ราคาน้ำมันแก๊สโซฮอล์ 91 วันที่ ${formatThaiDate(day.date)}: ${Number(fe.price||0).toFixed(2)} บาท/ลิตร`;
+        const notes = [];
+        if(fe.date !== day.date) notes.push(`ใช้ราคาของวันที่ ${formatThaiDate(fe.date)} เพราะไม่มีราคาของวันนี้`);
+        const hasImg = !!(fe.receiptImage && fe.receiptImage.base64);
+        if(!hasImg) notes.push(fe.receiptUrl ? 'ดึงรูปใบเสร็จไม่สำเร็จ' : 'ไม่มีรูปใบเสร็จแนบในระบบ');
+        fuel.push({ att: hasImg ? fe.receiptImage : null, caption, note: notes.length ? '(' + notes.join(' · ') + ')' : '' });
       }
     }
   });
-  return travel.concat(fuel);
+  return { travel, fuel };
 }
 
 // Re-encodes any browser-decodable image as JPEG, max 1400px on the long
@@ -1850,26 +1857,32 @@ async function buildDocxBlob(){
   });
   children.push(para('ยอดรวมทั้งสิ้น ' + fmt(total) + ' บาท', { bold: true, size: SZ.total, after: 240 }));
 
-  const items = collectEvidenceItems();
-  if(items.length){
+  const evidence = collectEvidenceItems();
+  async function addEvidenceImage(it){
+    if(!it.att || !it.att.base64) return;
+    let imgs = [];
+    const isPdf = isPdfAttachment(it.att);
+    try{ imgs = isPdf ? await pdfAttachmentToImages(it.att) : [await shrinkImageForDocx(it.att.base64)]; }catch(err){ imgs = []; }
+    imgs = imgs.filter(Boolean);
+    if(!imgs.length){ children.push(para('(แสดงไฟล์นี้ในเอกสารไม่ได้ — โปรดแนบเป็น JPG/PNG/PDF)', { size: SZ.body, color: 'C0392B' })); return; }
+    for(const im of imgs){
+      const maxW = isPdf ? 620 : 500, maxH = 820; // photos ~3/4 of the page width
+      let w = maxW, h = Math.round(im.height * maxW / im.width);
+      if(h > maxH){ h = maxH; w = Math.round(im.width * maxH / im.height); }
+      children.push(new D.Paragraph({ alignment: D.AlignmentType.CENTER, spacing: { after: 200 },
+        children: [ new D.ImageRun({ data: dataUriToUint8Array(im.dataUrl), transformation: { width: w, height: h } }) ] }));
+    }
+  }
+  if(evidence.travel.length){
     children.push(new D.Paragraph({ pageBreakBefore: true, spacing: { after: 160 }, children: [run('หลักฐานประกอบการเบิกจ่าย', { bold: true, size: SZ.heading })] }));
-    for(const it of items){
-      children.push(para(it.caption, { size: SZ.body, after: 60 }));
-      if(!it.att || !it.att.base64) continue;
-      let imgs = [];
-      const isPdf = isPdfAttachment(it.att);
-      try{
-        imgs = isPdf ? await pdfAttachmentToImages(it.att) : [await shrinkImageForDocx(it.att.base64)];
-      }catch(err){ imgs = []; }
-      imgs = imgs.filter(Boolean);
-      if(!imgs.length){ children.push(para('(แสดงไฟล์นี้ในเอกสารไม่ได้ — โปรดแนบเป็น JPG/PNG/PDF)', { size: SZ.body, color: 'C0392B' })); continue; }
-      for(const im of imgs){
-        const maxW = isPdf ? 620 : 500, maxH = 820; // photos ~3/4 of the page width
-        let w = maxW, h = Math.round(im.height * maxW / im.width);
-        if(h > maxH){ h = maxH; w = Math.round(im.width * maxH / im.height); }
-        children.push(new D.Paragraph({ alignment: D.AlignmentType.CENTER, spacing: { after: 200 },
-          children: [ new D.ImageRun({ data: dataUriToUint8Array(im.dataUrl), transformation: { width: w, height: h } }) ] }));
-      }
+    for(const it of evidence.travel){ children.push(para(it.caption, { size: SZ.body, after: 60 })); await addEvidenceImage(it); }
+  }
+  if(evidence.fuel.length){
+    children.push(new D.Paragraph({ pageBreakBefore: !evidence.travel.length, spacing: { before: 240, after: 160 }, children: [run('หลักฐานราคาน้ำมัน', { bold: true, size: SZ.heading })] }));
+    for(const it of evidence.fuel){
+      children.push(para(it.caption, { size: SZ.body, after: it.note ? 0 : 60 }));
+      if(it.note) children.push(para(it.note, { size: SZ.body, color: '6B6B66', after: 60 }));
+      await addEvidenceImage(it);
     }
   }
 
